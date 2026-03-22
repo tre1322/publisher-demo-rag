@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Publisher Chat{% endblock %}</title>
+
+    <!-- Inter font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <!-- CSS Frameworks (toggle between them) -->
+    <link id="pico-css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <link id="bulma-css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.2/css/bulma.min.css" disabled>
+
+    <script src="https://unpkg.com/marked@15.0.4/marked.min.js"></script>
+    <style>
+        /* Inter font for both frameworks */
+        :root {
+            --pico-font-family: 'Inter', sans-serif;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Base styles that work with both frameworks */
+        .site-header {
+            background: #1a1a2e;
+            color: white;
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .site-header h1 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin: 0;
+            color: white;
+        }
+        .theme-toggle {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.875rem;
+        }
+        .theme-toggle:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        /* Hide normal header when in iframe, show compact one */
+        .in-iframe .site-header {
+            display: none;
+        }
+        .iframe-header {
+            display: none;
+            background: #1a1a2e;
+            color: white;
+            padding: 12px 16px;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .in-iframe .iframe-header {
+            display: flex;
+        }
+        .iframe-header h1 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin: 0;
+            color: white;
+        }
+        .iframe-header .header-buttons {
+            display: flex;
+            gap: 6px;
+        }
+        .iframe-header .header-btn {
+            background: rgba(255,255,255,0.1);
+            border: none;
+            color: white;
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .iframe-header .header-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        /* When in iframe, use flex layout so header + content fill exactly 100% */
+        .in-iframe {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .in-iframe .iframe-header {
+            flex-shrink: 0;
+        }
+        {% block extra_styles %}{% endblock %}
+    </style>
+</head>
+<body>
+    <!-- Compact header for iframe embed -->
+    <header class="iframe-header">
+        <h1>Publisher News Assistant</h1>
+        <div class="header-buttons">
+            <button class="header-btn" id="enlarge-btn" title="Enlarge">⛶</button>
+            <button class="header-btn" id="minimize-btn" title="Minimize">−</button>
+        </div>
+    </header>
+    <!-- Normal header for standalone page -->
+    <header class="site-header">
+        <h1>Publisher News Assistant</h1>
+        <button class="theme-toggle" id="theme-toggle">
+            Theme: <span id="theme-name">Pico</span>
+        </button>
+    </header>
+    {% block content %}{% endblock %}
+    <script>
+        // Detect iframe and add class
+        const inIframe = window.self !== window.top;
+        if (inIframe) {
+            document.body.classList.add('in-iframe');
+
+            // Enlarge button sends message to parent
+            document.getElementById('enlarge-btn').addEventListener('click', () => {
+                window.parent.postMessage({ type: 'chat-toggle-size' }, '*');
+            });
+
+            // Minimize button sends message to parent
+            document.getElementById('minimize-btn').addEventListener('click', () => {
+                window.parent.postMessage({ type: 'chat-minimize' }, '*');
+            });
+        }
+
+        // Theme switching
+        const picoCSS = document.getElementById('pico-css');
+        const bulmaCSS = document.getElementById('bulma-css');
+        const themeToggle = document.getElementById('theme-toggle');
+        const themeName = document.getElementById('theme-name');
+
+        function setTheme(theme) {
+            if (theme === 'bulma') {
+                picoCSS.disabled = true;
+                bulmaCSS.disabled = false;
+                themeName.textContent = 'Bulma';
+            } else {
+                picoCSS.disabled = false;
+                bulmaCSS.disabled = true;
+                themeName.textContent = 'Pico';
+            }
+            localStorage.setItem('chat-theme', theme);
+        }
+
+        // Load saved preference
+        const savedTheme = localStorage.getItem('chat-theme') || 'pico';
+        setTheme(savedTheme);
+
+        // Toggle on click
+        themeToggle.addEventListener('click', () => {
+            const current = localStorage.getItem('chat-theme') || 'pico';
+            setTheme(current === 'pico' ? 'bulma' : 'pico');
+        });
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

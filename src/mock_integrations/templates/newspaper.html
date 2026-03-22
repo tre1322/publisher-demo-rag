@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Daily Tribune - Local News</title>
+
+    <!-- Inter font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
+
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f8f8f8;
+            color: #222;
+            line-height: 1.6;
+        }
+
+        /* Masthead */
+        .masthead {
+            background: white;
+            border-bottom: 3px solid #222;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .masthead h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: 3rem;
+            font-weight: 900;
+            letter-spacing: -1px;
+        }
+
+        .masthead .tagline {
+            font-size: 0.875rem;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .masthead .date {
+            font-size: 0.75rem;
+            color: #999;
+            margin-top: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Demo controls */
+        .demo-controls {
+            background: #1a1a2e;
+            color: white;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .demo-controls span {
+            font-size: 0.875rem;
+        }
+
+        .embed-toggle {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: background 0.2s;
+        }
+
+        .embed-toggle:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .embed-toggle.active {
+            background: rgba(255,255,255,0.3);
+            border-color: white;
+        }
+
+        /* Main content */
+        .main-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 30px 20px;
+            transition: margin-right 0.3s;
+        }
+
+        .main-content.sidebar-active {
+            margin-right: 420px;
+        }
+
+        /* Hero article */
+        .hero-article {
+            background: white;
+            padding: 30px;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #222;
+        }
+
+        .hero-article h2 {
+            font-family: 'Playfair Display', serif;
+            font-size: 2.5rem;
+            font-weight: 700;
+            line-height: 1.2;
+            margin-bottom: 12px;
+        }
+
+        .hero-article .meta {
+            font-size: 0.875rem;
+            color: #666;
+            margin-bottom: 16px;
+        }
+
+        .hero-article .summary {
+            font-size: 1.125rem;
+            color: #444;
+        }
+
+        /* Article grid */
+        .article-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 24px;
+        }
+
+        .article-card {
+            background: white;
+            padding: 20px;
+            border-left: 3px solid #1a1a2e;
+        }
+
+        .article-card h3 {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            line-height: 1.3;
+        }
+
+        .article-card .meta {
+            font-size: 0.75rem;
+            color: #666;
+            margin-bottom: 8px;
+        }
+
+        .article-card .summary {
+            font-size: 0.875rem;
+            color: #555;
+        }
+
+        /* Sidebar embed */
+        .chat-sidebar {
+            display: none;
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 400px;
+            height: 100vh;
+            background: white;
+            box-shadow: -4px 0 20px rgba(0,0,0,0.1);
+            z-index: 999;
+        }
+
+        .chat-sidebar.active {
+            display: block;
+        }
+
+        .chat-sidebar iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        /* Inline embed */
+        .chat-inline {
+            display: none;
+            max-width: 800px;
+            margin: 40px auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .chat-inline.active {
+            display: block;
+        }
+
+        .chat-inline-header {
+            background: #1a1a2e;
+            color: white;
+            padding: 16px 20px;
+            font-weight: 600;
+        }
+
+        .chat-inline iframe {
+            width: 100%;
+            height: 500px;
+            border: none;
+        }
+
+        /* Section headers */
+        .section-header {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #222;
+        }
+
+        /* Hide widget when not in floating mode */
+        body:not(.embed-floating) #chat-widget-button,
+        body:not(.embed-floating) #chat-widget-modal {
+            display: none !important;
+        }
+    </style>
+</head>
+<body class="embed-floating">
+    <!-- Demo controls -->
+    <div class="demo-controls">
+        <span>Chat Embed Style:</span>
+        <button class="embed-toggle active" data-mode="floating">Floating Widget</button>
+        <button class="embed-toggle" data-mode="sidebar">Sidebar</button>
+        <button class="embed-toggle" data-mode="inline">Inline</button>
+        <button class="embed-toggle" data-mode="none">None</button>
+    </div>
+
+    <!-- Masthead -->
+    <header class="masthead">
+        <h1>The Daily Tribune</h1>
+        <div class="tagline">Your Trusted Source for Local News</div>
+        <div class="date">{{ articles[0].publish_date if articles else 'Today' }}</div>
+    </header>
+
+    <!-- Main content -->
+    <main class="main-content" id="main-content">
+        {% if articles %}
+        <!-- Hero article -->
+        <article class="hero-article">
+            <h2>{{ articles[0].title }}</h2>
+            <div class="meta">
+                {% if articles[0].author %}By {{ articles[0].author }} • {% endif %}
+                {{ articles[0].publish_date }}
+                {% if articles[0].location %} • {{ articles[0].location }}{% endif %}
+            </div>
+            <p class="summary">{{ articles[0].summary or 'Read more about this developing story...' }}</p>
+        </article>
+
+        <!-- Article grid -->
+        <h2 class="section-header">More Stories</h2>
+        <div class="article-grid">
+            {% for article in articles[1:] %}
+            <article class="article-card">
+                <h3>{{ article.title }}</h3>
+                <div class="meta">
+                    {{ article.publish_date }}
+                    {% if article.author %} • {{ article.author }}{% endif %}
+                </div>
+                <p class="summary">{{ article.summary or '' }}</p>
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p>No articles available.</p>
+        {% endif %}
+
+        <!-- Inline chat embed -->
+        <div class="chat-inline" id="chat-inline">
+            <div class="chat-inline-header">Ask Our AI Assistant</div>
+            <iframe src="/chat" title="Chat Assistant"></iframe>
+        </div>
+    </main>
+
+    <!-- Sidebar chat embed -->
+    <div class="chat-sidebar" id="chat-sidebar">
+        <iframe src="/chat" title="Chat Assistant"></iframe>
+    </div>
+
+    <!-- Floating widget via external script -->
+    <script src="/static/chat-widget.js"></script>
+
+    <script>
+        // Embed mode switching
+        const toggleButtons = document.querySelectorAll('.embed-toggle');
+        const chatSidebar = document.getElementById('chat-sidebar');
+        const chatInline = document.getElementById('chat-inline');
+        const mainContent = document.getElementById('main-content');
+
+        function setEmbedMode(mode) {
+            // Update button states
+            toggleButtons.forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.mode === mode);
+            });
+
+            // Update body class for widget visibility
+            document.body.classList.remove('embed-floating', 'embed-sidebar', 'embed-inline', 'embed-none');
+            document.body.classList.add('embed-' + mode);
+
+            // Hide all embeds
+            chatSidebar.classList.remove('active');
+            chatInline.classList.remove('active');
+            mainContent.classList.remove('sidebar-active');
+
+            // Close widget if open and switching away from floating
+            if (mode !== 'floating' && window.ChatWidget) {
+                ChatWidget.close();
+            }
+
+            // Show selected embed
+            if (mode === 'sidebar') {
+                chatSidebar.classList.add('active');
+                mainContent.classList.add('sidebar-active');
+            } else if (mode === 'inline') {
+                chatInline.classList.add('active');
+            }
+
+            localStorage.setItem('embed-mode', mode);
+        }
+
+        // Load saved preference
+        const savedMode = localStorage.getItem('embed-mode') || 'floating';
+        setEmbedMode(savedMode);
+
+        // Toggle button clicks
+        toggleButtons.forEach(btn => {
+            btn.addEventListener('click', () => setEmbedMode(btn.dataset.mode));
+        });
+    </script>
+</body>
+</html>

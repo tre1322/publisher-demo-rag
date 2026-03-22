@@ -1,0 +1,34 @@
+[project]
+name = "publisher-rag-demo"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "anthropic>=0.74.1",
+    "beautifulsoup4>=4.14.2",
+    "boto3>=1.35.0",
+    "chromadb>=1.3.5",
+    "feedparser>=6.0.12",
+    "gradio>=5.50.0",
+    "jinja2>=3.1.6",
+    "llama-index>=0.14.8",
+    "llama-index-embeddings-huggingface>=0.6.1",
+    "llama-index-llms-anthropic>=0.10.2",
+    "pdfplumber>=0.11.8",
+    "python-dotenv>=1.2.1",
+    "sentence-transformers>=5.1.2",
+    # Note: torch is installed separately in Dockerfile with CPU-only index
+    "striprtf>=0.0.26",
+]
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.407",
+    "pytest>=9.0.1",
+    "ruff>=0.14.5",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]

@@ -1,0 +1,66 @@
+#!/bin/bash
+set -e  # Exit on any error
+
+echo "======================================"
+echo "Publisher RAG Demo - Initialization"
+echo "======================================"
+
+# Check for required environment variable
+if [ -z "$ANTHROPIC_API_KEY" ]; then
+    echo "ERROR: ANTHROPIC_API_KEY environment variable is not set"
+    exit 1
+fi
+
+# Check for pre-ingested databases (baked into Docker image)
+echo ""
+echo "[1/4] Checking for pre-ingested databases..."
+
+if [ -d "data/chroma_db" ] && [ -f "data/articles.db" ]; then
+    echo "✓ Databases found (baked into image)"
+else
+    echo "⚠ Warning: Databases not found, starting with empty database"
+    mkdir -p data/chroma_db
+fi
+
+echo ""
+echo "[2/4] Initializing database tables..."
+if python scripts/init_db.py; then
+    echo "✓ Database tables initialized"
+else
+    echo "⚠ Warning: Failed to initialize database tables"
+fi
+
+echo ""
+echo "[3/4] Loading sample advertisements..."
+if python scripts/load_sample_ads.py; then
+    echo "✓ Sample ads loaded"
+else
+    echo "⚠ Warning: Failed to load sample ads (continuing anyway)"
+fi
+
+echo ""
+echo "[4/4] Loading sample events..."
+if python scripts/load_sample_events.py; then
+    echo "✓ Sample events loaded"
+else
+    echo "⚠ Warning: Failed to load sample events (continuing anyway)"
+fi
+
+echo ""
+echo "======================================"
+echo "Initialization complete!"
+echo "======================================"
+echo ""
+
+# Start admin dashboard in background
+echo "Starting admin dashboard on port 7861..."
+python src/admin_dashboard.py &
+ADMIN_PID=$!
+echo "✓ Admin dashboard started (PID: $ADMIN_PID)"
+
+echo ""
+echo "Starting chatbot on port 7860..."
+echo ""
+
+# Start the main chatbot (foreground)
+exec python src/chatbot.py

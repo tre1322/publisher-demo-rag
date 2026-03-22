@@ -1,0 +1,94 @@
+name: publisher-rag-demo
+region: nyc
+
+services:
+  - name: web
+    # GitHub integration (update with your repo details)
+    github:
+      repo: newspaiper/publisher-rag-demo
+      branch: main
+      deploy_on_push: true
+
+    # Force Docker build (prevents buildpack auto-detection)
+    type: DOCKERFILE
+    dockerfile_path: Dockerfile
+
+    # Gradio runs on port 7860
+    http_port: 7860
+
+    # Instance configuration
+    instance_count: 1
+    instance_size_slug: basic-s  # 512MB RAM, 1 vCPU (upgrade if needed)
+
+    # Routing
+    routes:
+      - path: /
+
+    # Environment variables
+    envs:
+      - key: ANTHROPIC_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+        # Set this in DigitalOcean console or via doctl CLI
+
+      # DigitalOcean Spaces configuration (for pre-ingested databases)
+      - key: SPACES_BUCKET
+        scope: RUN_TIME
+        value: "publisher-rag-data"
+
+      - key: SPACES_REGION
+        scope: RUN_TIME
+        value: "nyc3"
+
+      - key: SPACES_KEY
+        scope: RUN_TIME
+        type: SECRET
+        # Set this in DigitalOcean console or via doctl CLI
+
+      - key: SPACES_SECRET
+        scope: RUN_TIME
+        type: SECRET
+        # Set this in DigitalOcean console or via doctl CLI
+
+      # Application configuration
+      - key: LLM_MODEL
+        scope: RUN_TIME
+        value: "claude-sonnet-4-20250514"
+
+      - key: LLM_TEMPERATURE
+        scope: RUN_TIME
+        value: "0.3"
+
+      - key: EMBEDDING_MODEL
+        scope: RUN_TIME
+        value: "all-MiniLM-L6-v2"
+
+      - key: SIMILARITY_THRESHOLD
+        scope: RUN_TIME
+        value: "0.7"
+
+      - key: PYTHONUNBUFFERED
+        scope: RUN_TIME
+        value: "1"
+
+      # Admin dashboard password
+      - key: ADMIN_PASSWORD
+        scope: RUN_TIME
+        type: SECRET
+        # Set this in DigitalOcean console or via doctl CLI
+
+    # Health check
+    health_check:
+      http_path: /
+      initial_delay_seconds: 60  # Allow time for DB download from Spaces and startup
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+
+    # Resource alerts (optional)
+    alerts:
+      - rule: CPU_UTILIZATION
+        value: 85
+      - rule: MEM_UTILIZATION
+        value: 90

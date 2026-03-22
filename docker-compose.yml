@@ -1,0 +1,32 @@
+services:
+  publisher-rag-demo:
+    build: .
+    image: publisher-rag-demo:latest
+    container_name: publisher-rag-demo
+    ports:
+      - "7860:7860"
+    environment:
+      # Required: Set your Anthropic API key
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+
+      # Optional: Override defaults
+      - LLM_MODEL=${LLM_MODEL:-claude-sonnet-4-20250514}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.3}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-all-MiniLM-L6-v2}
+      - SIMILARITY_THRESHOLD=${SIMILARITY_THRESHOLD:-0.7}
+    volumes:
+      # Persist vector database
+      - ./data/chroma_db:/app/data/chroma_db
+      # Persist SQLite database
+      - ./data/articles.db:/app/data/articles.db
+      # Mount documents directory for ingestion
+      - ./data/documents:/app/data/documents
+      # Persist ingestion tracking
+      - ./data/ingested_files.json:/app/data/ingested_files.json
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

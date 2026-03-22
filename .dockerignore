@@ -1,0 +1,49 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.venv/
+venv/
+ENV/
+
+# Environment variables (use .env.example as template)
+.env
+
+# Source documents (not needed in image, data is pre-ingested)
+data/documents/*
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Documentation
+CLAUDE.md
+docs/
+
+# Tests
+tests/
+*.pytest_cache/
+
+# CI/CD
+.github/
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Lock file (generated with Mac CUDA packages, not suitable for Linux deployment)
+uv.lock

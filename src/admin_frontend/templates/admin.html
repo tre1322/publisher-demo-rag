@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Publisher RAG Demo</title>
+
+    <!-- Tabler CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0/dist/css/tabler.min.css">
+
+    <style>
+        .nav-link-icon { width: 1.5rem; }
+        .cursor-pointer { cursor: pointer; }
+    </style>
+</head>
+<body class="d-flex flex-column">
+    <div class="page">
+        <!-- Sidebar -->
+        <aside class="navbar navbar-vertical navbar-expand-lg navbar-dark bg-dark">
+            <div class="container-fluid">
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#sidebar-menu">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <h1 class="navbar-brand navbar-brand-autodark">
+                    <span class="text-white">📊 Admin</span>
+                </h1>
+                <div class="collapse navbar-collapse" id="sidebar-menu">
+                    <ul class="navbar-nav pt-lg-3">
+                        <li class="nav-item">
+                            <a class="nav-link active" href="#" data-tab="queries">
+                                <span class="nav-link-icon d-md-none d-lg-inline-block">📊</span>
+                                <span class="nav-link-title">Query Analytics</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#" data-tab="conversations">
+                                <span class="nav-link-icon d-md-none d-lg-inline-block">💬</span>
+                                <span class="nav-link-title">Conversations</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#" data-tab="export">
+                                <span class="nav-link-icon d-md-none d-lg-inline-block">📥</span>
+                                <span class="nav-link-title">Export</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#" data-tab="engagement">
+                                <span class="nav-link-icon d-md-none d-lg-inline-block">📈</span>
+                                <span class="nav-link-title">Engagement</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#" data-tab="database">
+                                <span class="nav-link-icon d-md-none d-lg-inline-block">🗄️</span>
+                                <span class="nav-link-title">Database</span>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Page wrapper -->
+        <div class="page-wrapper">
+            <!-- Page header with stats -->
+            <div class="page-header d-print-none">
+                <div class="container-xl">
+                    <div class="page-pretitle">Publisher RAG Demo</div>
+                    <h2 class="page-title mb-4">Admin Dashboard</h2>
+                    <div class="row row-deck row-cards">
+                        <div class="col-sm-6 col-lg-3">
+                            <div class="card">
+                                <div class="card-body">
+                                    <div class="d-flex align-items-center">
+                                        <div class="subheader">Total Conversations</div>
+                                    </div>
+                                    <div class="h1 mb-0" id="stat-conversations">-</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <div class="card">
+                                <div class="card-body">
+                                    <div class="d-flex align-items-center">
+                                        <div class="subheader">Total Messages</div>
+                                    </div>
+                                    <div class="h1 mb-0" id="stat-messages">-</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <div class="card">
+                                <div class="card-body">
+                                    <div class="d-flex align-items-center">
+                                        <div class="subheader">Avg Messages/Conv</div>
+                                    </div>
+                                    <div class="h1 mb-0" id="stat-avg">-</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <div class="card">
+                                <div class="card-body">
+                                    <div class="d-flex align-items-center">
+                                        <div class="subheader">Most Recent</div>
+                                    </div>
+                                    <div class="h3 mb-0 text-muted" id="stat-recent" style="font-size: 0.875rem;">-</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <button class="btn btn-primary" onclick="loadStats()">🔄 Refresh Statistics</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Page body -->
+            <div class="page-body">
+                <div class="container-xl">
+                    <!-- Tab: Query Analytics -->
+                    <div class="tab-content active" id="tab-queries">
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h3 class="card-title">Most Common Queries</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-3 mb-3">
+                                    <div class="col-auto">
+                                        <label class="form-label">Conversations to Analyze</label>
+                                        <input type="number" class="form-control" id="query-limit" value="100" min="10" max="500" step="10" style="width: 120px;">
+                                    </div>
+                                    <div class="col-auto">
+                                        <label class="form-label">Top N Queries</label>
+                                        <input type="number" class="form-control" id="query-top-n" value="20" min="5" max="50" step="5" style="width: 100px;">
+                                    </div>
+                                    <div class="col-auto d-flex align-items-end">
+                                        <button class="btn btn-primary" onclick="loadQueries()">Analyze</button>
+                                    </div>
+                                </div>
+                                <div id="queries-table" class="table-responsive"></div>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="card-title">Most Common Words</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-3 mb-3">
+                                    <div class="col-auto">
+                                        <label class="form-label">Conversations to Analyze</label>
+                                        <input type="number" class="form-control" id="words-limit" value="100" min="10" max="500" step="10" style="width: 120px;">
+                                    </div>
+                                    <div class="col-auto">
+                                        <label class="form-label">Top N Words</label>
+                                        <input type="number" class="form-control" id="words-top-n" value="30" min="10" max="50" step="5" style="width: 100px;">
+                                    </div>
+                                    <div class="col-auto d-flex align-items-end">
+                                        <button class="btn btn-primary" onclick="loadWords()">Analyze</button>
+                                    </div>
+                                </div>
+                                <div id="words-table" class="table-responsive"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab: Conversations -->
+                    <div class="tab-content" id="tab-conversations" style="display: none;">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="card-title">Recent Conversation History</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-3 mb-3">
+                                    <div class="col-auto">
+                                        <label class="form-label">Number of Conversations</label>
+                                        <input type="number" class="form-control" id="conv-limit" value="10" min="5" max="50" step="5" style="width: 100px;">
+                                    </div>
+                                    <div class="col-auto d-flex align-items-end">
+                                        <button class="btn btn-primary" onclick="loadConversations()">Load</button>
+                                    </div>
+                                </div>
+                                <div id="conversations-table" class="table-responsive"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab: Export -->
+                    <div class="tab-content" id="tab-export" style="display: none;">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="card-title">Export Conversation Data</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-3 mb-3">
+                                    <div class="col-auto">
+                                        <label class="form-label">Conversations to Export</label>
+                                        <input type="number" class="form-control" id="export-limit" value="100" min="10" max="1000" step="10" style="width: 120px;">
+                                    </div>
+                                    <div class="col-auto d-flex align-items-end">
+                                        <button class="btn btn-primary" onclick="exportData()">Export to JSON</button>
+                                    </div>
+                                </div>
+                                <div id="export-status"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab: Engagement -->
+                    <div class="tab-content" id="tab-engagement" style="display: none;">
+                        <div class="row row-deck row-cards mb-4">
+                            <div class="col-sm-4">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <div class="subheader">Total Impressions</div>
+                                        <div class="h1 mb-0" id="eng-impressions">-</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-sm-4">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <div class="subheader">Total Clicks</div>
+                                        <div class="h1 mb-0" id="eng-clicks">-</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-sm-4">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <div class="subheader">Overall CTR</div>
+                                        <div class="h1 mb-0" id="eng-ctr">-</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <button class="btn btn-primary" onclick="loadEngagement()">🔄 Refresh Engagement</button>
+                        </div>
+
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h3 class="card-title">Click-Through Rate by Type</h3>
+                            </div>
+                            <div class="card-body">
+                                <div id="ctr-table" class="table-responsive"></div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h3 class="card-title">Top Clicked Content</h3>
+                                    </div>
+                                    <div class="card-body">
+                                        <div id="top-clicked-table" class="table-responsive"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h3 class="card-title">Top Shown Content</h3>
+                                    </div>
+                                    <div class="card-body">
+                                        <div id="top-shown-table" class="table-responsive"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab: Database -->
+                    <div class="tab-content" id="tab-database" style="display: none;">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="card-title">Browse Database Tables</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-3 mb-3">
+                                    <div class="col-auto">
+                                        <label class="form-label">Select Table</label>
+                                        <select class="form-select" id="table-select" style="width: 200px;">
+                                            <option value="articles">articles</option>
+                                            <option value="advertisements">advertisements</option>
+                                            <option value="events">events</option>
+                                            <option value="conversations">conversations</option>
+                                            <option value="conversation_messages">conversation_messages</option>
+                                            <option value="content_impressions">content_impressions</option>
+                                            <option value="url_clicks">url_clicks</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-auto">
+                                        <label class="form-label">Rows Per Page</label>
+                                        <input type="number" class="form-control" id="page-size" value="25" min="10" max="100" step="5" style="width: 100px;">
+                                    </div>
+                                    <div class="col-auto d-flex align-items-end">
+                                        <button class="btn btn-primary" onclick="loadTable(1)">Load Table</button>
+                                    </div>
+                                </div>
+                                <div id="database-table" class="table-responsive"></div>
+                                <div class="d-flex align-items-center mt-3" id="pagination" style="display: none !important;">
+                                    <button class="btn btn-outline-secondary me-2" onclick="prevPage()">← Previous</button>
+                                    <span class="text-muted" id="page-info">Page 1</span>
+                                    <button class="btn btn-outline-secondary ms-2" onclick="nextPage()">Next →</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabler JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0/dist/js/tabler.min.js"></script>
+
+    <script>
+        // Current state
+        let currentPage = 1;
+        let currentTable = 'articles';
+        let totalPages = 1;
+
+        // Track loaded tabs to avoid reloading
+        const loadedTabs = new Set();
+
+        // Load data for a tab
+        function loadTabData(tab) {
+            if (loadedTabs.has(tab)) return;
+            loadedTabs.add(tab);
+
+            switch(tab) {
+                case 'queries':
+                    loadQueries();
+                    loadWords();
+                    break;
+                case 'conversations':
+                    loadConversations();
+                    break;
+                case 'engagement':
+                    loadEngagement();
+                    break;
+                case 'database':
+                    loadTable(1);
+                    break;
+            }
+        }
+
+        // Tab switching
+        document.querySelectorAll('[data-tab]').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const tab = link.dataset.tab;
+
+                // Update nav active state
+                document.querySelectorAll('[data-tab]').forEach(l => l.classList.remove('active'));
+                link.classList.add('active');
+
+                // Show selected tab content
+                document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+                document.getElementById('tab-' + tab).style.display = 'block';
+
+                // Auto-load tab data
+                loadTabData(tab);
+            });
+        });
+
+        // Helper: render table
+        function renderTable(containerId, columns, rows, wrapColumns = []) {
+            const container = document.getElementById(containerId);
+            if (!rows || rows.length === 0) {
+                container.innerHTML = '<div class="text-muted text-center py-4">No data available</div>';
+                return;
+            }
+
+            let html = '<table class="table table-vcenter card-table"><thead><tr>';
+            columns.forEach(col => {
+                html += `<th>${col}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+
+            rows.forEach(row => {
+                html += '<tr>';
+                columns.forEach(col => {
+                    const key = col.toLowerCase().replace(/ /g, '_');
+                    const value = row[key] !== undefined ? row[key] : row[col] || '';
+                    const isWrap = wrapColumns.includes(col);
+                    html += `<td style="${isWrap ? 'white-space: pre-wrap; max-width: 400px;' : ''}">${escapeHtml(String(value))}</td>`;
+                });
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        // Helper: escape HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Load stats
+        async function loadStats() {
+            try {
+                const response = await fetch('/admin/api/stats');
+                const data = await response.json();
+
+                document.getElementById('stat-conversations').textContent = data.total_conversations || 0;
+                document.getElementById('stat-messages').textContent = data.total_messages || 0;
+                document.getElementById('stat-avg').textContent = data.avg_messages_per_conversation?.toFixed(1) || '0';
+                document.getElementById('stat-recent').textContent = data.most_recent_conversation || 'None';
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        // Load queries
+        async function loadQueries() {
+            const limit = document.getElementById('query-limit').value;
+            const topN = document.getElementById('query-top-n').value;
+
+            document.getElementById('queries-table').innerHTML = '<div class="text-muted">Loading...</div>';
+
+            try {
+                const response = await fetch(`/admin/api/queries?limit=${limit}&top_n=${topN}`);
+                const data = await response.json();
+                renderTable('queries-table', ['Query', 'Count'], data);
+            } catch (error) {
+                document.getElementById('queries-table').innerHTML = '<div class="text-danger">Error loading data</div>';
+            }
+        }
+
+        // Load words
+        async function loadWords() {
+            const limit = document.getElementById('words-limit').value;
+            const topN = document.getElementById('words-top-n').value;
+
+            document.getElementById('words-table').innerHTML = '<div class="text-muted">Loading...</div>';
+
+            try {
+                const response = await fetch(`/admin/api/words?limit=${limit}&top_n=${topN}`);
+                const data = await response.json();
+                renderTable('words-table', ['Word', 'Count'], data);
+            } catch (error) {
+                document.getElementById('words-table').innerHTML = '<div class="text-danger">Error loading data</div>';
+            }
+        }
+
+        // Load conversations
+        async function loadConversations() {
+            const limit = document.getElementById('conv-limit').value;
+
+            document.getElementById('conversations-table').innerHTML = '<div class="text-muted">Loading...</div>';
+
+            try {
+                const response = await fetch(`/admin/api/conversations?limit=${limit}`);
+                const data = await response.json();
+                renderTable('conversations-table',
+                    ['Session ID', 'Started At', 'Messages', 'Duration', 'Preview'],
+                    data.map(c => ({
+                        'session_id': c.session_id,
+                        'started_at': c.started_at,
+                        'messages': c.message_count,
+                        'duration': c.duration,
+                        'preview': c.preview
+                    })),
+                    ['Preview']
+                );
+            } catch (error) {
+                document.getElementById('conversations-table').innerHTML = '<div class="text-danger">Error loading data</div>';
+            }
+        }
+
+        // Export data
+        async function exportData() {
+            const limit = document.getElementById('export-limit').value;
+
+            document.getElementById('export-status').innerHTML = '<div class="text-muted">Exporting...</div>';
+
+            try {
+                const response = await fetch(`/admin/api/export?limit=${limit}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('export-status').innerHTML =
+                        `<div class="alert alert-success">✓ Exported ${data.count} conversations to ${data.path}</div>`;
+                } else {
+                    throw new Error('Export failed');
+                }
+            } catch (error) {
+                document.getElementById('export-status').innerHTML =
+                    '<div class="alert alert-danger">✗ Export failed</div>';
+            }
+        }
+
+        // Load engagement
+        async function loadEngagement() {
+            try {
+                const response = await fetch('/admin/api/engagement');
+                const data = await response.json();
+
+                document.getElementById('eng-impressions').textContent = data.total_impressions;
+                document.getElementById('eng-clicks').textContent = data.total_clicks;
+                document.getElementById('eng-ctr').textContent = data.overall_ctr;
+
+                renderTable('ctr-table', ['Type', 'Shown', 'Clicked', 'CTR'], data.ctr_by_type);
+                renderTable('top-clicked-table', ['Type', 'Content ID', 'Clicks'], data.top_clicked);
+                renderTable('top-shown-table', ['Type', 'Content ID', 'Impressions'], data.top_shown);
+            } catch (error) {
+                console.error('Error loading engagement:', error);
+            }
+        }
+
+        // Load database table
+        async function loadTable(page) {
+            currentTable = document.getElementById('table-select').value;
+            const pageSize = document.getElementById('page-size').value;
+            currentPage = page;
+
+            document.getElementById('database-table').innerHTML = '<div class="text-muted">Loading...</div>';
+
+            try {
+                const response = await fetch(`/admin/api/table/${currentTable}?page=${page}&page_size=${pageSize}`);
+                const data = await response.json();
+
+                totalPages = data.total_pages;
+
+                // Render table with dynamic columns
+                const container = document.getElementById('database-table');
+                if (!data.rows || data.rows.length === 0) {
+                    container.innerHTML = '<div class="text-muted text-center py-4">No data available</div>';
+                    document.getElementById('pagination').style.display = 'none';
+                    return;
+                }
+
+                let html = '<table class="table table-vcenter card-table table-striped"><thead><tr>';
+                data.columns.forEach(col => {
+                    html += `<th>${col}</th>`;
+                });
+                html += '</tr></thead><tbody>';
+
+                data.rows.forEach(row => {
+                    html += '<tr>';
+                    data.columns.forEach(col => {
+                        const value = row[col] !== undefined ? row[col] : '';
+                        html += `<td>${escapeHtml(String(value))}</td>`;
+                    });
+                    html += '</tr>';
+                });
+
+                html += '</tbody></table>';
+                container.innerHTML = html;
+
+                // Update pagination
+                document.getElementById('page-info').textContent =
+                    `Page ${data.page} of ${data.total_pages} (${data.total_count} rows)`;
+                document.getElementById('pagination').style.display = 'flex';
+            } catch (error) {
+                document.getElementById('database-table').innerHTML = '<div class="text-danger">Error loading data</div>';
+            }
+        }
+
+        function nextPage() {
+            if (currentPage < totalPages) {
+                loadTable(currentPage + 1);
+            }
+        }
+
+        function prevPage() {
+            if (currentPage > 1) {
+                loadTable(currentPage - 1);
+            }
+        }
+
+        // Load initial data
+        loadStats();
+        loadTabData('queries');  // Load first tab
+    </script>
+</body>
+</html>
