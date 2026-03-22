@@ -1,15 +1,26 @@
 #!/bin/bash
 set -e  # Exit on any error
 
+# Change to script directory
+cd "$(dirname "$0")/.."
+
 echo "======================================"
 echo "Publisher RAG Demo - Initialization"
 echo "======================================"
+
+# Show working directory for debugging
+echo "Working directory: $(pwd)"
+echo "Data directory: $(pwd)/data"
 
 # Check for required environment variable
 if [ -z "$ANTHROPIC_API_KEY" ]; then
     echo "ERROR: ANTHROPIC_API_KEY environment variable is not set"
     exit 1
 fi
+
+# Ensure data directory exists
+mkdir -p data/chroma_db data/documents data/ads data/events
+touch data/ingested_files.json
 
 # Check for pre-ingested databases (baked into Docker image)
 echo ""
@@ -24,11 +35,8 @@ fi
 
 echo ""
 echo "[2/4] Initializing database tables..."
-if python scripts/init_db.py; then
-    echo "✓ Database tables initialized"
-else
-    echo "⚠ Warning: Failed to initialize database tables"
-fi
+python3 scripts/init_db.py
+echo "✓ Database tables initialized"
 
 echo ""
 echo "[3/4] Loading sample advertisements..."
