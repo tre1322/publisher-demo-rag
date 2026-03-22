@@ -41,14 +41,10 @@ COPY scripts/ scripts/
 COPY static/ static/
 COPY .env.example .env.example
 
-# Copy pre-ingested data (ChromaDB, SQLite, tracking file)
-COPY data/chroma_db/ data/chroma_db/
-COPY data/articles.db data/articles.db
-COPY data/ingested_files.json data/ingested_files.json
-
-# Create documents directory and make scripts executable
-RUN mkdir -p data/documents && \
-    chmod +x scripts/init.sh && \
+# Create data directories
+RUN mkdir -p data/chroma_db data/documents data/ads data/events && \
+    touch data/ingested_files.json && \
+    chmod +x scripts/init.sh scripts/*.sh && \
     find /root/.local -type f -name "*.pyc" -delete && \
     find /root/.local -type d -name "__pycache__" -delete
 
