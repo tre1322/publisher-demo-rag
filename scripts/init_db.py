@@ -45,19 +45,22 @@ def main() -> None:
     # Create articles table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS articles (
-            article_id TEXT PRIMARY KEY,
+            doc_id TEXT PRIMARY KEY,
             title TEXT NOT NULL,
-            body TEXT,
-            summary TEXT,
             author TEXT,
             publish_date TEXT,
-            category TEXT,
+            source_file TEXT NOT NULL,
             location TEXT,
-            source_file TEXT,
+            subjects TEXT,
+            summary TEXT,
+            url TEXT,
             publisher TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_publish_date ON articles(publish_date)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_author ON articles(author)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_location ON articles(location)")
     print("✓ articles table initialized")
     
     # Create events table
@@ -74,12 +77,14 @@ def main() -> None:
             end_time TEXT,
             category TEXT,
             price REAL,
-            organizer TEXT,
             url TEXT,
+            raw_text TEXT,
             publisher TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_event_category ON events(category)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_event_date ON events(event_date)")
     print("✓ events table initialized")
     
     # Create conversations table
