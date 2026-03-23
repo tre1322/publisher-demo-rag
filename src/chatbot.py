@@ -429,11 +429,6 @@ def create_app() -> FastAPI:
     if static_dir.exists():
         app.mount("/static", StaticFiles(directory="static"), name="static")
 
-    @app.get("/")
-    def root():
-        """Root endpoint - returns simple HTML to confirm app is running."""
-        return {"status": "ok", "message": "Publisher RAG Demo is running"}
-    
     @app.get("/health")
     def health_check():
         """Health check endpoint for Railway."""
