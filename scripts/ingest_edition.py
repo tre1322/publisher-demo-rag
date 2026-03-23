@@ -49,8 +49,14 @@ def main() -> None:
     parser.add_argument(
         "--publisher",
         type=str,
-        required=True,
+        default=None,
         help="Publisher name (e.g., 'Pipestone Star')",
+    )
+    parser.add_argument(
+        "--org",
+        type=str,
+        default=None,
+        help="Organization name (auto-creates if needed)",
     )
     parser.add_argument(
         "--publication",
@@ -102,10 +108,29 @@ def main() -> None:
     # Initialize database tables
     init_all_tables()
 
+    # Auto-create org/publication if names provided
+    organization_id = None
+    publication_id = None
+
+    org_name = args.org or args.publisher
+    pub_name = args.publication or args.publisher
+
+    if org_name:
+        from src.modules.organizations import insert_organization, insert_publication
+        organization_id = insert_organization(org_name)
+        if pub_name:
+            publication_id = insert_publication(
+                organization_id=organization_id,
+                name=pub_name,
+                market=None,
+            )
+
     # Run ingestion
     ingester = EditionIngester(
         publisher=args.publisher,
-        publication_name=args.publication,
+        publication_name=pub_name,
+        organization_id=organization_id,
+        publication_id=publication_id,
     )
 
     results = ingester.ingest_bulk(pdf_paths, edition_date=args.date)

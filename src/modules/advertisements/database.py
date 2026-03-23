@@ -34,14 +34,24 @@ def init_table() -> None:
         )
     """)
 
-    # Add edition columns if they don't exist (migration for existing DBs)
-    for col, coltype in [("edition_id", "INTEGER"), ("page", "INTEGER")]:
+    # Add columns if they don't exist (migration for existing DBs)
+    for col, coltype in [
+        ("edition_id", "INTEGER"),
+        ("organization_id", "INTEGER"),
+        ("publication_id", "INTEGER"),
+        ("page", "INTEGER"),
+        ("headline", "TEXT"),
+        ("cleaned_text", "TEXT"),
+        ("status", "TEXT DEFAULT 'active'"),
+        ("checksum", "TEXT"),
+        ("parse_metadata_json", "TEXT"),
+    ]:
         try:
             cursor.execute(f"ALTER TABLE advertisements ADD COLUMN {col} {coltype}")
         except Exception:
             pass
 
-    # Create indexes for ad queries
+    # Create indexes
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_ad_category ON advertisements(category)"
     )
@@ -50,6 +60,12 @@ def init_table() -> None:
     )
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_ads_edition ON advertisements(edition_id)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ads_org ON advertisements(organization_id)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ads_checksum ON advertisements(checksum)"
     )
 
     conn.commit()
@@ -124,45 +140,47 @@ def insert_edition_advertisement(
     ad_id: str,
     advertiser_name: str,
     extracted_text: str,
-    edition_id: int,
+    edition_id: int | None = None,
     page: int | None = None,
     category: str | None = None,
     publisher: str | None = None,
+    organization_id: int | None = None,
+    publication_id: int | None = None,
+    headline: str | None = None,
+    checksum: str | None = None,
+    source_filename: str | None = None,
 ) -> None:
-    """Insert an advertisement extracted from a newspaper edition.
-
-    Args:
-        ad_id: Unique ad identifier.
-        advertiser_name: Advertiser/business name.
-        extracted_text: Raw text from the ad.
-        edition_id: ID of the parent edition.
-        page: Page number where ad appears.
-        category: Ad category if detectable.
-        publisher: Publisher name.
-    """
+    """Insert an advertisement (from edition or standalone upload)."""
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute(
         """
         INSERT OR REPLACE INTO advertisements
-        (ad_id, product_name, advertiser, raw_text, edition_id, page, category, publisher)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (ad_id, product_name, advertiser, raw_text, edition_id, page, category,
+         publisher, organization_id, publication_id, headline, checksum,
+         cleaned_text, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
         """,
         (
-            ad_id,
-            advertiser_name,
-            advertiser_name,
-            extracted_text,
-            edition_id,
-            page,
-            category,
-            publisher,
+            ad_id, advertiser_name, advertiser_name, extracted_text,
+            edition_id, page, category, publisher, organization_id,
+            publication_id, headline, checksum, extracted_text,
         ),
     )
 
     conn.commit()
     conn.close()
+
+
+def get_ad_by_checksum(checksum: str) -> dict | None:
+    """Check if an ad with this checksum already exists."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM advertisements WHERE checksum = ?", (checksum,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 
 def search_advertisements(

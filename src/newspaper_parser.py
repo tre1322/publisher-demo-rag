@@ -106,6 +106,22 @@ class PageRegion:
     forward_jump_target: str | None = None
     backward_jump_source: str | None = None
 
+    @property
+    def bbox(self) -> dict:
+        """Bounding box encompassing all blocks in this region."""
+        if not self.blocks:
+            return {"x0": 0, "y0": 0, "x1": 0, "y1": 0}
+        return {
+            "x0": min(b.x0 for b in self.blocks),
+            "y0": min(b.y0 for b in self.blocks),
+            "x1": max(b.x1 for b in self.blocks),
+            "y1": max(b.y1 for b in self.blocks),
+        }
+
+    @property
+    def raw_text(self) -> str:
+        return "\n".join(b.text for b in self.blocks)
+
 
 @dataclass
 class ParsedArticle:
@@ -117,6 +133,7 @@ class ParsedArticle:
     start_page: int = 0  # 1-indexed for display
     continuation_pages: list[int] = field(default_factory=list)
     section: str = ""
+    regions: list[PageRegion] = field(default_factory=list)
 
     @property
     def full_text(self) -> str:
@@ -139,6 +156,7 @@ class ParsedAd:
     text: str
     page_num: int  # 1-indexed
     advertiser_name: str = ""
+    region: PageRegion | None = None
 
 
 @dataclass
@@ -456,6 +474,7 @@ class NewspaperParser:
                 byline=start_region.byline,
                 body_parts=[body_text],
                 start_page=start_region.page_num + 1,
+                regions=[start_region],
             )
 
             # Follow forward jumps
@@ -469,6 +488,7 @@ class NewspaperParser:
                         cont_text = "\n".join(b.text for b in cont.blocks)
                         article.body_parts.append(cont_text)
                         article.continuation_pages.append(target_page + 1)
+                        article.regions.append(cont)
                         continuations.remove(cont)
                     else:
                         self.warnings.append(
@@ -482,7 +502,6 @@ class NewspaperParser:
         for cont in continuations:
             if cont.backward_jump_source:
                 source_page = self._normalize_page_ref(cont.backward_jump_source)
-                # Try to find matching article by start page
                 matched = False
                 if source_page is not None:
                     for article in articles:
@@ -490,10 +509,10 @@ class NewspaperParser:
                             cont_text = "\n".join(b.text for b in cont.blocks)
                             article.body_parts.append(cont_text)
                             article.continuation_pages.append(cont.page_num + 1)
+                            article.regions.append(cont)
                             matched = True
                             break
                 if not matched:
-                    # Create standalone article from continuation
                     cont_text = "\n".join(b.text for b in cont.blocks)
                     if len(cont_text.strip()) > 50:
                         articles.append(ParsedArticle(
@@ -501,6 +520,7 @@ class NewspaperParser:
                             byline="",
                             body_parts=[cont_text],
                             start_page=cont.page_num + 1,
+                            regions=[cont],
                         ))
 
         # Handle orphan body regions (text without clear article start)
@@ -513,6 +533,7 @@ class NewspaperParser:
                     byline="",
                     body_parts=[body_text],
                     start_page=body.page_num + 1,
+                    regions=[body],
                 ))
 
         # Filter out very short "articles" (likely fragments)
@@ -555,6 +576,7 @@ class NewspaperParser:
                 text=text,
                 page_num=region.page_num + 1,
                 advertiser_name=advertiser,
+                region=region,
             ))
 
         return ads

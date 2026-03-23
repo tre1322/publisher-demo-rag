@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Article Review - Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Inter', sans-serif; background: #f5f5f7; color: #1a1a2e; }
+
+        .topbar {
+            background: #1a1f36; color: white; padding: 14px 24px;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .topbar h1 { font-size: 1.1rem; font-weight: 600; }
+        .topbar a { color: rgba(255,255,255,0.7); text-decoration: none; font-size: 0.85rem; }
+        .topbar a:hover { color: white; }
+
+        .container { max-width: 1200px; margin: 24px auto; padding: 0 24px; }
+
+        /* Tabs */
+        .tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+        .tab {
+            padding: 8px 16px; border-radius: 8px; border: 1px solid #d1d5db;
+            background: white; cursor: pointer; font-size: 0.85rem; font-weight: 500;
+        }
+        .tab.active { background: #1a1f36; color: white; border-color: #1a1f36; }
+
+        /* Upload panels */
+        .upload-panel {
+            background: white; border-radius: 12px; padding: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 20px; display: none;
+        }
+        .upload-panel.active { display: block; }
+        .upload-panel h2 { font-size: 1rem; margin-bottom: 16px; }
+
+        .form-row { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+        .form-row label { font-size: 0.8rem; font-weight: 500; color: #666; display: block; margin-bottom: 4px; }
+        .form-row input, .form-row select {
+            padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 8px;
+            font-size: 0.875rem; font-family: inherit;
+        }
+        .form-row input[type="file"] { border: none; padding: 0; }
+
+        .btn {
+            padding: 8px 20px; border: none; border-radius: 8px; font-size: 0.85rem;
+            font-weight: 600; cursor: pointer; font-family: inherit;
+        }
+        .btn-primary { background: #1a1f36; color: white; }
+        .btn-primary:hover { background: #2d3250; }
+        .btn-success { background: #16a34a; color: white; }
+        .btn-success:hover { background: #15803d; }
+        .btn-danger { background: #dc2626; color: white; }
+        .btn-danger:hover { background: #b91c1c; }
+        .btn-secondary { background: #e5e7eb; color: #374151; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .status-msg { margin-top: 12px; padding: 10px; border-radius: 8px; font-size: 0.85rem; }
+        .status-msg.success { background: #dcfce7; color: #166534; }
+        .status-msg.error { background: #fef2f2; color: #991b1b; }
+
+        /* Article list */
+        .article-list { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+        .article-row {
+            display: flex; align-items: center; padding: 12px 20px;
+            border-bottom: 1px solid #f0f0f0; gap: 16px; cursor: pointer;
+        }
+        .article-row:hover { background: #f9fafb; }
+        .article-row .title { flex: 1; font-weight: 500; font-size: 0.9rem; }
+        .article-row .meta { font-size: 0.75rem; color: #6b7280; }
+        .badge {
+            padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+        }
+        .badge-review { background: #fef3c7; color: #92400e; }
+        .badge-approved { background: #dcfce7; color: #166534; }
+        .badge-flagged { background: #fef2f2; color: #991b1b; }
+        .badge-parsed { background: #e0e7ff; color: #3730a3; }
+
+        /* Article detail modal */
+        .modal-overlay {
+            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+            z-index: 1000; justify-content: center; align-items: start; padding: 40px 20px;
+            overflow-y: auto;
+        }
+        .modal-overlay.open { display: flex; }
+        .modal {
+            background: white; border-radius: 16px; max-width: 900px; width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2); max-height: 90vh; overflow-y: auto;
+        }
+        .modal-header {
+            padding: 20px 24px; border-bottom: 1px solid #eee;
+            display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; background: white; z-index: 1;
+        }
+        .modal-header h2 { font-size: 1rem; }
+        .modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #999; }
+        .modal-body { padding: 24px; }
+
+        .field-group { margin-bottom: 16px; }
+        .field-group label { font-size: 0.8rem; font-weight: 600; color: #374151; display: block; margin-bottom: 4px; }
+        .field-group input, .field-group textarea {
+            width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px;
+            font-size: 0.875rem; font-family: inherit;
+        }
+        .field-group textarea { min-height: 200px; line-height: 1.6; resize: vertical; }
+
+        .meta-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
+        .meta-item { font-size: 0.8rem; }
+        .meta-item .label { color: #6b7280; }
+        .meta-item .value { font-weight: 500; }
+
+        .action-bar { display: flex; gap: 8px; padding: 16px 24px; border-top: 1px solid #eee; }
+
+        .empty-state { padding: 40px; text-align: center; color: #9ca3af; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+
+<div class="topbar">
+    <h1>Article Review</h1>
+    <div><a href="/admin">Dashboard</a></div>
+</div>
+
+<div class="container">
+    <!-- Tabs -->
+    <div class="tabs">
+        <button class="tab active" data-panel="review-panel">Review Articles</button>
+        <button class="tab" data-panel="edition-upload-panel">Upload Editions</button>
+        <button class="tab" data-panel="ad-upload-panel">Upload Ads</button>
+        <button class="tab" data-panel="editions-panel">Editions</button>
+    </div>
+
+    <!-- Edition upload panel -->
+    <div class="upload-panel" id="edition-upload-panel">
+        <h2>Upload Newspaper Edition PDFs</h2>
+        <form id="edition-form">
+            <div class="form-row">
+                <div><label>Publisher *</label><input type="text" name="publisher" required placeholder="Pipestone Star"></div>
+                <div><label>Organization</label><input type="text" name="organization_name" placeholder="Grand Network"></div>
+                <div><label>Publication</label><input type="text" name="publication_name" placeholder="Pipestone Star"></div>
+                <div><label>Edition Date</label><input type="date" name="edition_date"></div>
+            </div>
+            <div class="form-row">
+                <div><label>PDF Files *</label><input type="file" name="files" accept=".pdf" multiple required></div>
+            </div>
+            <button type="submit" class="btn btn-primary" id="edition-submit">Upload &amp; Process</button>
+            <div id="edition-status"></div>
+        </form>
+    </div>
+
+    <!-- Ad upload panel -->
+    <div class="upload-panel" id="ad-upload-panel">
+        <h2>Upload Individual Ad PDFs</h2>
+        <form id="ad-form">
+            <div class="form-row">
+                <div><label>Publisher *</label><input type="text" name="publisher" required placeholder="Pipestone Star"></div>
+                <div><label>Organization</label><input type="text" name="organization_name" placeholder="Grand Network"></div>
+                <div><label>Publication</label><input type="text" name="publication_name" placeholder="Pipestone Star"></div>
+            </div>
+            <div class="form-row">
+                <div><label>Ad PDF Files *</label><input type="file" name="files" accept=".pdf" multiple required></div>
+            </div>
+            <button type="submit" class="btn btn-primary" id="ad-submit">Upload Ads</button>
+            <div id="ad-status"></div>
+        </form>
+    </div>
+
+    <!-- Editions list panel -->
+    <div class="upload-panel" id="editions-panel">
+        <h2>Processed Editions</h2>
+        <div id="editions-list"><div class="empty-state">Loading...</div></div>
+    </div>
+
+    <!-- Article review panel (default) -->
+    <div class="upload-panel active" id="review-panel">
+        <h2>Articles Needing Review</h2>
+        <div id="article-list"><div class="empty-state">Loading...</div></div>
+    </div>
+</div>
+
+<!-- Article detail modal -->
+<div class="modal-overlay" id="article-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>Edit Article</h2>
+            <button class="modal-close" id="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="meta-grid" id="article-meta"></div>
+
+            <div class="field-group">
+                <label>Headline</label>
+                <input type="text" id="edit-title">
+            </div>
+            <div class="field-group">
+                <label>Subheadline</label>
+                <input type="text" id="edit-subheadline">
+            </div>
+            <div class="field-group">
+                <label>Byline</label>
+                <input type="text" id="edit-author">
+            </div>
+            <div class="field-group">
+                <label>Article Text (editable)</label>
+                <textarea id="edit-text"></textarea>
+            </div>
+        </div>
+        <div class="action-bar">
+            <button class="btn btn-primary" id="save-btn">Save Changes</button>
+            <button class="btn btn-success" id="approve-btn">Approve</button>
+            <button class="btn btn-danger" id="flag-btn">Flag Problem</button>
+            <button class="btn btn-secondary" id="cancel-btn">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentDocId = null;
+
+    // Tab switching
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.upload-panel').forEach(p => p.classList.remove('active'));
+            tab.classList.add('active');
+            document.getElementById(tab.dataset.panel).classList.add('active');
+
+            if (tab.dataset.panel === 'review-panel') loadArticles();
+            if (tab.dataset.panel === 'editions-panel') loadEditions();
+        });
+    });
+
+    // Edition upload
+    document.getElementById('edition-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const btn = document.getElementById('edition-submit');
+        const statusEl = document.getElementById('edition-status');
+        btn.disabled = true;
+        btn.textContent = 'Processing...';
+        statusEl.innerHTML = '';
+
+        const formData = new FormData(form);
+        try {
+            const res = await fetch('/admin/api/editions/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.success) {
+                statusEl.innerHTML = '<div class="status-msg success">Processed ' + data.files_processed + ' file(s): ' + data.total_articles + ' articles, ' + data.total_ads + ' ads' + (data.failures ? ', ' + data.failures + ' failures' : '') + '</div>';
+            } else {
+                statusEl.innerHTML = '<div class="status-msg error">' + (data.detail || 'Upload failed') + '</div>';
+            }
+        } catch (err) {
+            statusEl.innerHTML = '<div class="status-msg error">Error: ' + err.message + '</div>';
+        }
+        btn.disabled = false;
+        btn.textContent = 'Upload & Process';
+    });
+
+    // Ad upload
+    document.getElementById('ad-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const btn = document.getElementById('ad-submit');
+        const statusEl = document.getElementById('ad-status');
+        btn.disabled = true;
+        btn.textContent = 'Uploading...';
+        statusEl.innerHTML = '';
+
+        const formData = new FormData(form);
+        try {
+            const res = await fetch('/admin/api/ads/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+            statusEl.innerHTML = '<div class="status-msg success">Ingested: ' + data.ingested + ', Duplicates rejected: ' + data.duplicates_rejected + ', Failures: ' + data.failures + '</div>';
+        } catch (err) {
+            statusEl.innerHTML = '<div class="status-msg error">Error: ' + err.message + '</div>';
+        }
+        btn.disabled = false;
+        btn.textContent = 'Upload Ads';
+    });
+
+    // Load articles
+    async function loadArticles() {
+        const el = document.getElementById('article-list');
+        try {
+            const res = await fetch('/admin/api/articles?needs_review=true');
+            const data = await res.json();
+            if (!data.articles || data.articles.length === 0) {
+                el.innerHTML = '<div class="empty-state">No articles to review</div>';
+                return;
+            }
+            el.innerHTML = data.articles.map(a => {
+                const status = a.status || 'parsed';
+                const badgeClass = status === 'approved' ? 'badge-approved' : status === 'flagged' ? 'badge-flagged' : a.needs_review ? 'badge-review' : 'badge-parsed';
+                return '<div class="article-row" data-id="' + a.doc_id + '">' +
+                    '<span class="badge ' + badgeClass + '">' + status + '</span>' +
+                    '<span class="title">' + escapeHtml(a.title || 'Untitled') + '</span>' +
+                    '<span class="meta">p.' + (a.start_page || '?') + (a.author ? ' | ' + escapeHtml(a.author) : '') + '</span>' +
+                '</div>';
+            }).join('');
+
+            el.querySelectorAll('.article-row').forEach(row => {
+                row.addEventListener('click', () => openArticle(row.dataset.id));
+            });
+        } catch (err) {
+            el.innerHTML = '<div class="empty-state">Failed to load articles</div>';
+        }
+    }
+
+    // Load editions
+    async function loadEditions() {
+        const el = document.getElementById('editions-list');
+        try {
+            const res = await fetch('/admin/api/editions');
+            const data = await res.json();
+            if (!data.editions || data.editions.length === 0) {
+                el.innerHTML = '<div class="empty-state">No editions yet</div>';
+                return;
+            }
+            el.innerHTML = '<div class="article-list">' + data.editions.map(e => {
+                return '<div class="article-row">' +
+                    '<span class="badge badge-' + (e.processing_status === 'completed' ? 'approved' : e.processing_status === 'failed' ? 'flagged' : 'review') + '">' + e.processing_status + '</span>' +
+                    '<span class="title">' + escapeHtml(e.source_filename || e.source_pdf_path || 'Unknown') + '</span>' +
+                    '<span class="meta">' + (e.edition_date || '') + ' | ' + (e.article_count || 0) + ' articles, ' + (e.ad_count || 0) + ' ads</span>' +
+                '</div>';
+            }).join('') + '</div>';
+        } catch (err) {
+            el.innerHTML = '<div class="empty-state">Failed to load editions</div>';
+        }
+    }
+
+    // Open article detail
+    async function openArticle(docId) {
+        currentDocId = docId;
+        try {
+            const res = await fetch('/admin/api/articles/' + docId);
+            const data = await res.json();
+            const a = data.article;
+
+            document.getElementById('article-meta').innerHTML =
+                '<div class="meta-item"><span class="label">Page</span><br><span class="value">' + (a.start_page || '?') + '</span></div>' +
+                '<div class="meta-item"><span class="label">Edition ID</span><br><span class="value">' + (a.edition_id || 'N/A') + '</span></div>' +
+                '<div class="meta-item"><span class="label">Status</span><br><span class="value">' + (a.status || 'parsed') + '</span></div>' +
+                '<div class="meta-item"><span class="label">Source</span><br><span class="value">' + escapeHtml(a.source_file || '') + '</span></div>';
+
+            document.getElementById('edit-title').value = a.title || '';
+            document.getElementById('edit-subheadline').value = a.subheadline || '';
+            document.getElementById('edit-author').value = a.author || '';
+            document.getElementById('edit-text').value = a.cleaned_text || a.full_text || '';
+
+            document.getElementById('article-modal').classList.add('open');
+        } catch (err) {
+            alert('Failed to load article: ' + err.message);
+        }
+    }
+
+    // Modal controls
+    document.getElementById('modal-close').addEventListener('click', closeModal);
+    document.getElementById('cancel-btn').addEventListener('click', closeModal);
+
+    function closeModal() {
+        document.getElementById('article-modal').classList.remove('open');
+        currentDocId = null;
+    }
+
+    // Save
+    document.getElementById('save-btn').addEventListener('click', async () => {
+        if (!currentDocId) return;
+        await fetch('/admin/api/articles/' + currentDocId, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title: document.getElementById('edit-title').value,
+                subheadline: document.getElementById('edit-subheadline').value,
+                author: document.getElementById('edit-author').value,
+                cleaned_text: document.getElementById('edit-text').value,
+            }),
+        });
+        closeModal();
+        loadArticles();
+    });
+
+    // Approve
+    document.getElementById('approve-btn').addEventListener('click', async () => {
+        if (!currentDocId) return;
+        await fetch('/admin/api/articles/' + currentDocId + '/approve', { method: 'POST' });
+        closeModal();
+        loadArticles();
+    });
+
+    // Flag
+    document.getElementById('flag-btn').addEventListener('click', async () => {
+        if (!currentDocId) return;
+        const reason = prompt('Reason for flagging:');
+        if (reason === null) return;
+        await fetch('/admin/api/articles/' + currentDocId + '/flag', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason }),
+        });
+        closeModal();
+        loadArticles();
+    });
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // Initial load
+    loadArticles();
+</script>
+
+</body>
+</html>

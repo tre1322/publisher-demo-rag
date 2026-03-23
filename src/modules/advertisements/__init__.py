@@ -2,6 +2,7 @@
 
 from src.modules.advertisements.database import (
     clear_advertisements,
+    get_ad_by_checksum,
     get_advertisement_by_id,
     get_advertisement_count,
     get_all_ad_categories,
@@ -22,6 +23,7 @@ __all__ = [
     "AdvertisementSearch",
     "get_ad_tools_schema",
     "clear_advertisements",
+    "get_ad_by_checksum",
     "get_advertisement_by_id",
     "get_advertisement_count",
     "get_all_ad_categories",

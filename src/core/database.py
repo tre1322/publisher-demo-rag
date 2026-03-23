@@ -34,7 +34,9 @@ def init_all_tables() -> None:
     from src.modules.conversations import database as conversations_db
     from src.modules.editions import database as editions_db
     from src.modules.events import database as events_db
+    from src.modules.organizations import database as orgs_db
 
+    orgs_db.init_table()
     articles_db.init_table()
     ads_db.init_table()
     events_db.init_table()

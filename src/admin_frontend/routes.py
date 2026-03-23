@@ -22,7 +22,25 @@ from src.modules.conversations.database import (
     get_conversation_messages,
     get_conversation_stats,
 )
-from src.modules.editions import get_all_editions, get_edition_count
+from src.modules.articles import (
+    get_article_by_id,
+    get_articles_for_edition,
+    get_articles_needing_review,
+    update_article,
+)
+from src.modules.editions import (
+    get_all_editions,
+    get_edition_count,
+    get_regions_for_article,
+    get_review_actions_for_article,
+    insert_review_action,
+)
+from src.modules.organizations import (
+    get_all_organizations,
+    get_all_publications,
+    insert_organization,
+    insert_publication,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +56,10 @@ BROWSABLE_TABLES = [
     "advertisements",
     "events",
     "editions",
+    "organizations",
+    "publications",
+    "page_regions",
+    "review_actions",
     "conversations",
     "conversation_messages",
     "content_impressions",
@@ -345,16 +367,20 @@ async def get_editions_list(
 async def upload_editions(
     files: list[UploadFile] = File(...),
     publisher: str = Form(...),
+    organization_name: str = Form(""),
     publication_name: str = Form(""),
     edition_date: str = Form(""),
     _username: str = Depends(verify_credentials),
 ) -> JSONResponse:
-    """Upload and process newspaper edition PDFs.
-
-    Saves PDFs to data/editions/ then runs the ingestion pipeline.
-    """
+    """Upload and process newspaper edition PDFs."""
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
+
+    # Auto-create org/pub
+    org_name = organization_name or publisher
+    pub_name = publication_name or publisher
+    organization_id = insert_organization(org_name)
+    publication_id = insert_publication(organization_id=organization_id, name=pub_name)
 
     # Save uploaded files
     saved_paths: list[Path] = []
@@ -367,25 +393,21 @@ async def upload_editions(
         with open(dest, "wb") as f:
             shutil.copyfileobj(file.file, f)
         saved_paths.append(dest)
-        logger.info(f"Saved upload: {dest}")
 
     if not saved_paths:
         raise HTTPException(status_code=400, detail="No valid PDF files in upload")
 
-    # Run ingestion in-process (blocking for now)
     from src.edition_ingestion import EditionIngester
 
     ingester = EditionIngester(
         publisher=publisher,
-        publication_name=publication_name or None,
+        publication_name=pub_name,
+        organization_id=organization_id,
+        publication_id=publication_id,
     )
 
-    results = ingester.ingest_bulk(
-        saved_paths,
-        edition_date=edition_date or None,
-    )
+    results = ingester.ingest_bulk(saved_paths, edition_date=edition_date or None)
 
-    # Summarize
     total_articles = sum(r.get("articles", 0) for r in results)
     total_ads = sum(r.get("ads", 0) for r in results)
     failures = sum(1 for r in results if r.get("error"))
@@ -398,3 +420,207 @@ async def upload_editions(
         "failures": failures,
         "details": results,
     })
+
+
+# ── Ad upload endpoints (Track 1) ──
+
+
+@router.post("/api/ads/upload")
+async def upload_ads(
+    files: list[UploadFile] = File(...),
+    publisher: str = Form(...),
+    organization_name: str = Form(""),
+    publication_name: str = Form(""),
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Upload individual ad PDFs with checksum dedup."""
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+
+    org_name = organization_name or publisher
+    pub_name = publication_name or publisher
+    organization_id = insert_organization(org_name)
+    publication_id = insert_publication(organization_id=organization_id, name=pub_name)
+
+    from src.ad_ingestion import AdIngester
+
+    ingester = AdIngester()
+    results = []
+
+    for file in files:
+        if not file.filename or not file.filename.lower().endswith(".pdf"):
+            results.append({"filename": file.filename, "error": "Not a PDF"})
+            continue
+
+        data = await file.read()
+        result = ingester.ingest_ad_bytes(
+            data=data,
+            filename=file.filename,
+            organization_id=organization_id,
+            publication_id=publication_id,
+            publisher=publisher,
+        )
+        results.append(result)
+
+    ingested = sum(1 for r in results if r.get("ad_id") and not r.get("error"))
+    duplicates = sum(1 for r in results if r.get("duplicate"))
+    failures = sum(1 for r in results if r.get("error") and not r.get("duplicate"))
+
+    return JSONResponse(content={
+        "success": True,
+        "files_received": len(files),
+        "ingested": ingested,
+        "duplicates_rejected": duplicates,
+        "failures": failures,
+        "details": results,
+    })
+
+
+# ── Organization/Publication endpoints ──
+
+
+@router.get("/api/organizations")
+async def list_organizations(
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    return JSONResponse(content={"organizations": get_all_organizations()})
+
+
+@router.get("/api/publications")
+async def list_publications(
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    return JSONResponse(content={"publications": get_all_publications()})
+
+
+# ── Article review/edit endpoints ──
+
+
+@router.get("/api/articles")
+async def list_articles(
+    edition_id: int | None = None,
+    needs_review: bool | None = None,
+    limit: int = 50,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """List articles with optional filters."""
+    if edition_id:
+        articles = get_articles_for_edition(edition_id)
+    elif needs_review:
+        articles = get_articles_needing_review(limit=limit)
+    else:
+        articles = get_articles_needing_review(limit=limit)
+    return JSONResponse(content={"articles": articles})
+
+
+@router.get("/api/articles/{doc_id}")
+async def get_article_detail(
+    doc_id: str,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Get full article detail including regions and review history."""
+    article = get_article_by_id(doc_id)
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    regions = get_regions_for_article(doc_id)
+    review_history = get_review_actions_for_article(doc_id)
+
+    return JSONResponse(content={
+        "article": article,
+        "regions": regions,
+        "review_history": review_history,
+    })
+
+
+@router.put("/api/articles/{doc_id}")
+async def edit_article(
+    doc_id: str,
+    request: Request,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Edit article fields (headline, byline, text, status)."""
+    article = get_article_by_id(doc_id)
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    body = await request.json()
+
+    # Record before state for audit
+    before = {
+        "title": article.get("title"),
+        "author": article.get("author"),
+        "cleaned_text": (article.get("cleaned_text") or "")[:200],
+        "subheadline": article.get("subheadline"),
+    }
+
+    update_article(
+        doc_id=doc_id,
+        title=body.get("title"),
+        author=body.get("author"),
+        cleaned_text=body.get("cleaned_text"),
+        subheadline=body.get("subheadline"),
+        status=body.get("status"),
+        needs_review=body.get("needs_review"),
+    )
+
+    after = {k: body.get(k) for k in ["title", "author", "cleaned_text", "subheadline", "status"] if body.get(k) is not None}
+    insert_review_action(
+        article_id=doc_id,
+        action_type="edit",
+        before_json=before,
+        after_json=after,
+    )
+
+    return JSONResponse(content={"success": True})
+
+
+@router.post("/api/articles/{doc_id}/approve")
+async def approve_article(
+    doc_id: str,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Mark article as reviewed/approved."""
+    article = get_article_by_id(doc_id)
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    update_article(doc_id=doc_id, status="approved", needs_review=False)
+    insert_review_action(article_id=doc_id, action_type="approve")
+
+    return JSONResponse(content={"success": True})
+
+
+@router.post("/api/articles/{doc_id}/flag")
+async def flag_article(
+    doc_id: str,
+    request: Request,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Flag article as problematic."""
+    article = get_article_by_id(doc_id)
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    body = await request.json()
+    reason = body.get("reason", "")
+
+    update_article(doc_id=doc_id, status="flagged", needs_review=True)
+    insert_review_action(
+        article_id=doc_id,
+        action_type="flag",
+        after_json={"reason": reason},
+    )
+
+    return JSONResponse(content={"success": True})
+
+
+# ── Review page ──
+
+
+@router.get("/review", response_class=HTMLResponse)
+async def review_page(
+    request: Request, _username: str = Depends(verify_credentials)
+) -> HTMLResponse:
+    """Render the article review page."""
+    return templates.TemplateResponse("review.html", {"request": request})
