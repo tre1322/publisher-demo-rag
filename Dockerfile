@@ -32,7 +32,7 @@ RUN uv venv && \
     pip install --no-cache-dir \
       anthropic boto3 chromadb feedparser gradio llama-index \
       llama-index-embeddings-huggingface llama-index-llms-anthropic \
-      pdfplumber python-dotenv striprtf
+      pdfplumber pymupdf python-dotenv striprtf
 
 # Copy application files
 COPY README.md .
@@ -42,7 +42,7 @@ COPY static/ static/
 COPY .env.example .env.example
 
 # Create data directories
-RUN mkdir -p data/chroma_db data/documents data/ads data/events && \
+RUN mkdir -p data/chroma_db data/documents data/ads data/events data/editions && \
     touch data/ingested_files.json && \
     chmod +x scripts/init.sh scripts/*.sh && \
     find /root/.local -type f -name "*.pyc" -delete && \

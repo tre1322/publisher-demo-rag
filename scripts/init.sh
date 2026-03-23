@@ -19,7 +19,7 @@ if [ -z "$ANTHROPIC_API_KEY" ]; then
 fi
 
 # Ensure data directory exists
-mkdir -p data/chroma_db data/documents data/ads data/events
+mkdir -p data/chroma_db data/documents data/ads data/events data/editions
 touch data/ingested_files.json
 
 # Check for pre-ingested databases (baked into Docker image)
