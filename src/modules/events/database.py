@@ -22,6 +22,7 @@ def init_table() -> None:
             address TEXT,
             event_date TEXT,
             event_time TEXT,
+            end_date TEXT,
             end_time TEXT,
             category TEXT,
             price REAL,
@@ -31,6 +32,15 @@ def init_table() -> None:
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # Add columns if they don't exist (migration for existing DBs)
+    for col, coltype in [
+        ("end_date", "TEXT"),
+    ]:
+        try:
+            cursor.execute(f"ALTER TABLE events ADD COLUMN {col} {coltype}")
+        except Exception:
+            pass
 
     # Create indexes for event queries
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_event_category ON events(category)")

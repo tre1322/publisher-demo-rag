@@ -18,80 +18,11 @@ from fastapi.templating import Jinja2Templates
 # Import config first to configure logging with timestamps
 import src.core.config  # noqa: F401
 
-# Initialize database tables on startup
-from pathlib import Path
-import sqlite3
-PROJECT_ROOT = Path(__file__).parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
-DATABASE_PATH = DATA_DIR / "articles.db"
+# Initialize all database tables on startup (single authoritative path
+# via each module's init_table(), which handles CREATE + ALTER migrations).
+from src.core.database import init_all_tables
 
-def ensure_tables():
-    """Ensure database tables exist."""
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DATABASE_PATH))
-    cur = conn.cursor()
-    # Create tables if they don't exist
-    cur.execute("""CREATE TABLE IF NOT EXISTS advertisements (
-        ad_id TEXT PRIMARY KEY, product_name TEXT NOT NULL, advertiser TEXT NOT NULL,
-        description TEXT, category TEXT, price REAL, original_price REAL, discount_percent REAL,
-        valid_from TEXT, valid_to TEXT, url TEXT, raw_text TEXT, publisher TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
-    cur.execute("""CREATE TABLE IF NOT EXISTS articles (
-        doc_id TEXT PRIMARY KEY, title TEXT NOT NULL, author TEXT, publish_date TEXT,
-        source_file TEXT NOT NULL, location TEXT, subjects TEXT, summary TEXT, url TEXT,
-        publisher TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
-    cur.execute("""CREATE TABLE IF NOT EXISTS events (
-        event_id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, location TEXT,
-        address TEXT, event_date TEXT, event_time TEXT, end_date TEXT, end_time TEXT,
-        category TEXT, price REAL, url TEXT, raw_text TEXT, publisher TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
-    # Fix schema mismatch: if conversations table exists with old schema
-    # (conversation_id TEXT PK instead of id INTEGER PK), recreate it
-    cur.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='conversations'")
-    schema_row = cur.fetchone()
-    if schema_row and schema_row[0] and 'conversation_id TEXT PRIMARY KEY' in schema_row[0]:
-        cur.execute("DROP TABLE IF EXISTS conversation_messages")
-        cur.execute("DROP TABLE IF EXISTS conversations")
-
-    cur.execute("""CREATE TABLE IF NOT EXISTS conversations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT UNIQUE NOT NULL,
-        started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, ended_at TEXT,
-        message_count INTEGER DEFAULT 0)""")
-    cur.execute("""CREATE TABLE IF NOT EXISTS conversation_messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id INTEGER NOT NULL, role TEXT NOT NULL,
-        content TEXT NOT NULL, timestamp TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, metadata TEXT,
-        FOREIGN KEY (conversation_id) REFERENCES conversations(id))""")
-    cur.execute("""CREATE TABLE IF NOT EXISTS analytics (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT, user_query TEXT,
-        response_text TEXT, sources_used TEXT, timestamp TEXT DEFAULT CURRENT_TIMESTAMP)""")
-    cur.execute("""CREATE TABLE IF NOT EXISTS editions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, publication_id INTEGER,
-        edition_date TEXT, issue_label TEXT, source_filename TEXT NOT NULL,
-        checksum TEXT, page_count INTEGER, article_count INTEGER DEFAULT 0,
-        ad_count INTEGER DEFAULT 0, processing_status TEXT DEFAULT 'pending',
-        processing_notes TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
-    cur.execute("""CREATE TABLE IF NOT EXISTS organizations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
-        slug TEXT UNIQUE NOT NULL,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
-    cur.execute("""CREATE TABLE IF NOT EXISTS publications (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, organization_id INTEGER NOT NULL,
-        name TEXT NOT NULL, slug TEXT UNIQUE NOT NULL, market TEXT, state TEXT, timezone TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
-    cur.execute("""CREATE TABLE IF NOT EXISTS page_regions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, edition_id INTEGER NOT NULL,
-        article_id TEXT, page_number INTEGER NOT NULL, region_type TEXT NOT NULL,
-        bbox_json TEXT, raw_text TEXT, role TEXT, metadata_json TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
-    cur.execute("""CREATE TABLE IF NOT EXISTS review_actions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, article_id TEXT NOT NULL,
-        action_type TEXT NOT NULL, before_json TEXT, after_json TEXT,
-        user_identifier TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
-    conn.commit()
-    conn.close()
-
-ensure_tables()
+init_all_tables()
 
 from src.modules.advertisements import get_random_advertisements
 from src.modules.analytics import log_content_impression, log_url_click

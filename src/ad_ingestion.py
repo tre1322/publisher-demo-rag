@@ -92,6 +92,10 @@ class AdIngester:
             name=COLLECTION_NAME,
             metadata={"hnsw:space": "cosine"},
         )
+        logger.info(
+            f"AdIngester initialized: collection '{COLLECTION_NAME}' "
+            f"with {self.collection.count()} existing chunks"
+        )
 
     def chunk_text(self, text: str) -> list[str]:
         words = text.split()
@@ -160,33 +164,48 @@ class AdIngester:
             source_filename=pdf_path.name,
         )
 
-        # Index in ChromaDB
+        # Index in ChromaDB — DB record is already saved, so indexing
+        # failure should warn but not lose the upload.
+        result["ad_id"] = ad_id
         chunks = self.chunk_text(text)
         if chunks:
-            embeddings = self.embedding_model.encode(chunks).tolist()
-            ids = [f"{ad_id}_{i}" for i in range(len(chunks))]
-            metadatas = [
-                {
-                    "doc_id": ad_id,
-                    "title": advertiser[:200],
-                    "publish_date": "",
-                    "author": advertiser,
-                    "source_file": pdf_path.name,
-                    "chunk_index": i,
-                    "location": "",
-                    "subjects": "",
-                    "content_type": "advertisement",
-                }
-                for i in range(len(chunks))
-            ]
-            self.collection.add(
-                ids=ids,
-                embeddings=embeddings,
-                documents=chunks,
-                metadatas=metadatas,
-            )
+            try:
+                logger.info(
+                    f"Indexing ad '{advertiser}' ({pdf_path.name}): "
+                    f"{len(chunks)} chunks"
+                )
+                embeddings = self.embedding_model.encode(chunks).tolist()
+                ids = [f"{ad_id}_{i}" for i in range(len(chunks))]
+                metadatas = [
+                    {
+                        "doc_id": ad_id,
+                        "title": advertiser[:200],
+                        "publish_date": "",
+                        "author": advertiser,
+                        "source_file": pdf_path.name,
+                        "chunk_index": i,
+                        "location": "",
+                        "subjects": "",
+                        "content_type": "advertisement",
+                    }
+                    for i in range(len(chunks))
+                ]
+                self.collection.add(
+                    ids=ids,
+                    embeddings=embeddings,
+                    documents=chunks,
+                    metadatas=metadatas,
+                )
+                logger.info(
+                    f"Indexing complete for ad '{advertiser}' ({pdf_path.name})"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Vector indexing failed for ad '{advertiser}' "
+                    f"({pdf_path.name}): {e}. DB record was saved."
+                )
+                result["warning"] = f"Ad saved but vector indexing failed: {e}"
 
-        result["ad_id"] = ad_id
         logger.info(f"Ad ingested: {advertiser} ({pdf_path.name})")
         return result
 
@@ -238,31 +257,45 @@ class AdIngester:
             source_filename=filename,
         )
 
+        result["ad_id"] = ad_id
         chunks = self.chunk_text(text)
         if chunks:
-            embeddings = self.embedding_model.encode(chunks).tolist()
-            ids = [f"{ad_id}_{i}" for i in range(len(chunks))]
-            metadatas = [
-                {
-                    "doc_id": ad_id,
-                    "title": advertiser[:200],
-                    "publish_date": "",
-                    "author": advertiser,
-                    "source_file": filename,
-                    "chunk_index": i,
-                    "location": "",
-                    "subjects": "",
-                    "content_type": "advertisement",
-                }
-                for i in range(len(chunks))
-            ]
-            self.collection.add(
-                ids=ids,
-                embeddings=embeddings,
-                documents=chunks,
-                metadatas=metadatas,
-            )
+            try:
+                logger.info(
+                    f"Indexing uploaded ad '{advertiser}' ({filename}): "
+                    f"{len(chunks)} chunks"
+                )
+                embeddings = self.embedding_model.encode(chunks).tolist()
+                ids = [f"{ad_id}_{i}" for i in range(len(chunks))]
+                metadatas = [
+                    {
+                        "doc_id": ad_id,
+                        "title": advertiser[:200],
+                        "publish_date": "",
+                        "author": advertiser,
+                        "source_file": filename,
+                        "chunk_index": i,
+                        "location": "",
+                        "subjects": "",
+                        "content_type": "advertisement",
+                    }
+                    for i in range(len(chunks))
+                ]
+                self.collection.add(
+                    ids=ids,
+                    embeddings=embeddings,
+                    documents=chunks,
+                    metadatas=metadatas,
+                )
+                logger.info(
+                    f"Indexing complete for uploaded ad '{advertiser}' ({filename})"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Vector indexing failed for uploaded ad '{advertiser}' "
+                    f"({filename}): {e}. DB record was saved."
+                )
+                result["warning"] = f"Ad saved but vector indexing failed: {e}"
 
-        result["ad_id"] = ad_id
         logger.info(f"Ad ingested from upload: {advertiser} ({filename})")
         return result

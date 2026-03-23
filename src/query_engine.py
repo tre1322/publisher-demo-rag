@@ -43,11 +43,21 @@ class QueryEngine:
         self.chroma_client = chromadb.PersistentClient(path=str(CHROMA_PERSIST_DIR))
 
         try:
-            self.collection = self.chroma_client.get_collection(name=COLLECTION_NAME)
-        except Exception:
-            logger.warning(
-                f"Collection '{COLLECTION_NAME}' not found. Please run ingestion first."
+            self.collection = self.chroma_client.get_or_create_collection(
+                name=COLLECTION_NAME,
+                metadata={"hnsw:space": "cosine"},
             )
+            count = self.collection.count()
+            logger.info(
+                f"Collection '{COLLECTION_NAME}' ready with {count} chunks"
+            )
+            if count == 0:
+                logger.warning(
+                    f"Collection '{COLLECTION_NAME}' is empty. "
+                    "Queries will return no results until documents are ingested."
+                )
+        except Exception as e:
+            logger.error(f"Failed to initialize collection '{COLLECTION_NAME}': {e}")
             self.collection = None
 
         if not ANTHROPIC_API_KEY:
@@ -56,8 +66,12 @@ class QueryEngine:
         self.anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
         # Initialize search agent for intelligent search
-        self.search_agent = SearchAgent()
-        logger.info("Search agent initialized")
+        try:
+            self.search_agent = SearchAgent()
+            logger.info("Search agent initialized")
+        except Exception as e:
+            logger.error(f"Search agent init failed: {e}. Falling back to direct retrieval.")
+            self.search_agent = None
 
         # Track consecutive empty results for help suggestions
         self._consecutive_empty_results = 0
@@ -334,9 +348,13 @@ class QueryEngine:
                 "chunks": [],
             }
 
-        # Use search agent for intelligent retrieval
-        logger.info(f"Processing query with search agent: '{query}'")
-        chunks = self.search_agent.search(query)
+        # Use search agent for intelligent retrieval, fall back to direct retrieval
+        if self.search_agent is not None:
+            logger.info(f"Processing query with search agent: '{query}'")
+            chunks = self.search_agent.search(query)
+        else:
+            logger.info(f"Search agent unavailable, using direct retrieval: '{query}'")
+            chunks = self.retrieve(query)
 
         # Generate response with conversation history
         response = self.generate_response(query, chunks, history)

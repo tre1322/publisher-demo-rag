@@ -31,9 +31,16 @@ class ArticleSearch:
         self.chroma_client = chromadb.PersistentClient(path=str(CHROMA_PERSIST_DIR))
 
         try:
-            self.collection = self.chroma_client.get_collection(name=COLLECTION_NAME)
-        except Exception:
-            logger.warning(f"Collection '{COLLECTION_NAME}' not found.")
+            self.collection = self.chroma_client.get_or_create_collection(
+                name=COLLECTION_NAME,
+                metadata={"hnsw:space": "cosine"},
+            )
+            logger.info(
+                f"ArticleSearch: collection '{COLLECTION_NAME}' ready "
+                f"with {self.collection.count()} chunks"
+            )
+        except Exception as e:
+            logger.error(f"ArticleSearch: failed to init collection: {e}")
             self.collection = None
 
     def semantic_search(

@@ -30,6 +30,11 @@ INGESTED_FILES_PATH = DATA_DIR / "ingested_files.json"
 DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
 CHROMA_PERSIST_DIR.mkdir(parents=True, exist_ok=True)
 
+# Startup logging for deploy debugging
+_config_logger = logging.getLogger(__name__)
+_config_logger.info(f"DATA_DIR: {DATA_DIR}")
+_config_logger.info(f"CHROMA_PERSIST_DIR: {CHROMA_PERSIST_DIR}")
+
 # API Keys
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 

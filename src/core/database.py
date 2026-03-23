@@ -26,7 +26,12 @@ def init_all_tables() -> None:
     """Initialize all database tables.
 
     This imports and initializes tables from all modules.
+    Single authoritative runtime init path — each module's init_table()
+    handles CREATE TABLE IF NOT EXISTS + ALTER TABLE migrations.
     """
+    logger.info(f"Initializing database at {DATABASE_PATH}")
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+
     # Import modules to trigger their table initialization
     from src.modules.advertisements import database as ads_db
     from src.modules.analytics import database as analytics_db
@@ -44,7 +49,25 @@ def init_all_tables() -> None:
     analytics_db.init_table()
     editions_db.init_table()
 
-    logger.info(f"All database tables initialized at {DATABASE_PATH}")
+    # Verify critical migration columns exist
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(advertisements)")
+    ad_cols = {row[1] for row in cursor.fetchall()}
+    cursor.execute("PRAGMA table_info(editions)")
+    ed_cols = {row[1] for row in cursor.fetchall()}
+    conn.close()
+
+    if "checksum" not in ad_cols:
+        logger.error(
+            f"CRITICAL: advertisements.checksum MISSING after init_all_tables! "
+            f"DB: {DATABASE_PATH}, columns: {sorted(ad_cols)}"
+        )
+    else:
+        logger.info(
+            f"All database tables initialized at {DATABASE_PATH} "
+            f"(advertisements.checksum: OK, editions.checksum: {'OK' if 'checksum' in ed_cols else 'MISSING'})"
+        )
 
 
 def get_all_publishers() -> list[str]:

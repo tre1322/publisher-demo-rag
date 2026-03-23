@@ -7,6 +7,19 @@ from src.core.database import get_connection
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Columns that must exist for ad operations (added via migrations)
+_REQUIRED_MIGRATIONS = [
+    ("edition_id", "INTEGER"),
+    ("organization_id", "INTEGER"),
+    ("publication_id", "INTEGER"),
+    ("page", "INTEGER"),
+    ("headline", "TEXT"),
+    ("cleaned_text", "TEXT"),
+    ("status", "TEXT DEFAULT 'active'"),
+    ("checksum", "TEXT"),
+    ("parse_metadata_json", "TEXT"),
+]
+
 
 def init_table() -> None:
     """Initialize the advertisements table."""
@@ -35,21 +48,12 @@ def init_table() -> None:
     """)
 
     # Add columns if they don't exist (migration for existing DBs)
-    for col, coltype in [
-        ("edition_id", "INTEGER"),
-        ("organization_id", "INTEGER"),
-        ("publication_id", "INTEGER"),
-        ("page", "INTEGER"),
-        ("headline", "TEXT"),
-        ("cleaned_text", "TEXT"),
-        ("status", "TEXT DEFAULT 'active'"),
-        ("checksum", "TEXT"),
-        ("parse_metadata_json", "TEXT"),
-    ]:
+    for col, coltype in _REQUIRED_MIGRATIONS:
         try:
             cursor.execute(f"ALTER TABLE advertisements ADD COLUMN {col} {coltype}")
+            logger.info(f"  + Added advertisements.{col}")
         except Exception:
-            pass
+            pass  # Column already exists
 
     # Create indexes
     cursor.execute(
@@ -69,8 +73,19 @@ def init_table() -> None:
     )
 
     conn.commit()
+
+    # Verify critical columns exist after migration
+    cursor.execute("PRAGMA table_info(advertisements)")
+    existing_cols = {row[1] for row in cursor.fetchall()}
+    if "checksum" in existing_cols:
+        logger.info(f"Advertisements table initialized (columns: {sorted(existing_cols)})")
+    else:
+        logger.error(
+            "CRITICAL: advertisements.checksum missing after migration! "
+            f"Existing columns: {sorted(existing_cols)}"
+        )
+
     conn.close()
-    logger.info("Advertisements table initialized")
 
 
 def insert_advertisement(
@@ -154,22 +169,74 @@ def insert_edition_advertisement(
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        INSERT OR REPLACE INTO advertisements
-        (ad_id, product_name, advertiser, raw_text, edition_id, page, category,
-         publisher, organization_id, publication_id, headline, checksum,
-         cleaned_text, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
-        """,
-        (
-            ad_id, advertiser_name, advertiser_name, extracted_text,
-            edition_id, page, category, publisher, organization_id,
-            publication_id, headline, checksum, extracted_text,
-        ),
-    )
+    try:
+        cursor.execute(
+            """
+            INSERT OR REPLACE INTO advertisements
+            (ad_id, product_name, advertiser, raw_text, edition_id, page, category,
+             publisher, organization_id, publication_id, headline, checksum,
+             cleaned_text, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+            """,
+            (
+                ad_id, advertiser_name, advertiser_name, extracted_text,
+                edition_id, page, category, publisher, organization_id,
+                publication_id, headline, checksum, extracted_text,
+            ),
+        )
+    except Exception as e:
+        conn.close()
+        if "no such column" in str(e):
+            logger.error(f"Missing column during ad insert: {e}")
+            _ensure_checksum_column()
+            # Retry with fresh connection
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO advertisements
+                (ad_id, product_name, advertiser, raw_text, edition_id, page, category,
+                 publisher, organization_id, publication_id, headline, checksum,
+                 cleaned_text, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+                """,
+                (
+                    ad_id, advertiser_name, advertiser_name, extracted_text,
+                    edition_id, page, category, publisher, organization_id,
+                    publication_id, headline, checksum, extracted_text,
+                ),
+            )
+        else:
+            raise
 
     conn.commit()
+    conn.close()
+
+
+def _ensure_checksum_column() -> None:
+    """Defensive guard: ensure checksum column exists at query time.
+
+    This handles the case where init_table() migrations didn't take effect
+    (e.g., old DB from prior deploy, init ordering issue, etc.).
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(advertisements)")
+    existing = {row[1] for row in cursor.fetchall()}
+    if "checksum" not in existing:
+        logger.warning(
+            "advertisements.checksum missing at query time — applying migration now"
+        )
+        for col, coltype in _REQUIRED_MIGRATIONS:
+            if col not in existing:
+                try:
+                    cursor.execute(
+                        f"ALTER TABLE advertisements ADD COLUMN {col} {coltype}"
+                    )
+                    logger.info(f"  + Runtime migration: added advertisements.{col}")
+                except Exception:
+                    pass
+        conn.commit()
     conn.close()
 
 
@@ -177,7 +244,23 @@ def get_ad_by_checksum(checksum: str) -> dict | None:
     """Check if an ad with this checksum already exists."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM advertisements WHERE checksum = ?", (checksum,))
+    try:
+        cursor.execute(
+            "SELECT * FROM advertisements WHERE checksum = ?", (checksum,)
+        )
+    except Exception as e:
+        conn.close()
+        if "no such column: checksum" in str(e):
+            logger.error(f"checksum column missing at query time: {e}")
+            _ensure_checksum_column()
+            # Retry with a fresh connection
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM advertisements WHERE checksum = ?", (checksum,)
+            )
+        else:
+            raise
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None

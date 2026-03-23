@@ -112,8 +112,15 @@ async def admin_page(
 @router.get("/api/stats")
 async def get_stats(_username: str = Depends(verify_credentials)) -> JSONResponse:
     """Get conversation statistics."""
-    stats = get_conversation_stats()
-    return JSONResponse(content=stats)
+    try:
+        stats = get_conversation_stats()
+        return JSONResponse(content=stats)
+    except Exception as e:
+        logger.error(f"Failed to get stats: {e}")
+        return JSONResponse(
+            content={"error": str(e), "total_conversations": 0, "total_messages": 0},
+            status_code=200,
+        )
 
 
 @router.get("/api/queries")
@@ -275,44 +282,52 @@ async def get_table(
     if table_name not in BROWSABLE_TABLES:
         raise HTTPException(status_code=400, detail=f"Invalid table: {table_name}")
 
-    conn = get_connection()
-    cursor = conn.cursor()
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
 
-    # Get total count
-    cursor.execute(f"SELECT COUNT(*) FROM {table_name}")  # noqa: S608
-    total_count = cursor.fetchone()[0]
+        # Get total count
+        cursor.execute(f"SELECT COUNT(*) FROM {table_name}")  # noqa: S608
+        total_count = cursor.fetchone()[0]
 
-    # Get paginated data
-    offset = (page - 1) * page_size
-    cursor.execute(
-        f"SELECT * FROM {table_name} LIMIT ? OFFSET ?",  # noqa: S608
-        (page_size, offset),
-    )
-    rows = cursor.fetchall()
+        # Get paginated data
+        offset = (page - 1) * page_size
+        cursor.execute(
+            f"SELECT * FROM {table_name} LIMIT ? OFFSET ?",  # noqa: S608
+            (page_size, offset),
+        )
+        rows = cursor.fetchall()
 
-    # Get column names
-    columns = [desc[0] for desc in cursor.description] if cursor.description else []
-    conn.close()
+        # Get column names
+        columns = [desc[0] for desc in cursor.description] if cursor.description else []
+        conn.close()
 
-    # Convert to list of dicts and truncate long text
-    data = []
-    for row in rows:
-        row_dict = dict(row)
-        for col in TRUNCATE_COLUMNS:
-            if col in row_dict and row_dict[col] and len(str(row_dict[col])) > TRUNCATE_LENGTH:
-                row_dict[col] = str(row_dict[col])[:TRUNCATE_LENGTH] + "..."
-        data.append(row_dict)
+        # Convert to list of dicts and truncate long text
+        data = []
+        for row in rows:
+            row_dict = dict(row)
+            for col in TRUNCATE_COLUMNS:
+                if col in row_dict and row_dict[col] and len(str(row_dict[col])) > TRUNCATE_LENGTH:
+                    row_dict[col] = str(row_dict[col])[:TRUNCATE_LENGTH] + "..."
+            data.append(row_dict)
 
-    total_pages = max(1, (total_count + page_size - 1) // page_size)
+        total_pages = max(1, (total_count + page_size - 1) // page_size)
 
-    return JSONResponse(content={
-        "columns": columns,
-        "rows": data,
-        "page": page,
-        "page_size": page_size,
-        "total_pages": total_pages,
-        "total_count": total_count,
-    })
+        return JSONResponse(content={
+            "columns": columns,
+            "rows": data,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "total_count": total_count,
+        })
+    except Exception as e:
+        logger.error(f"Failed to browse table '{table_name}': {e}")
+        return JSONResponse(
+            content={"columns": [], "rows": [], "page": 1, "total_pages": 0,
+                     "total_count": 0, "error": str(e)},
+            status_code=200,
+        )
 
 
 @router.get("/api/export")
@@ -397,14 +412,21 @@ async def upload_editions(
     if not saved_paths:
         raise HTTPException(status_code=400, detail="No valid PDF files in upload")
 
-    from src.edition_ingestion import EditionIngester
+    try:
+        from src.edition_ingestion import EditionIngester
 
-    ingester = EditionIngester(
-        publisher=publisher,
-        publication_name=pub_name,
-        organization_id=organization_id,
-        publication_id=publication_id,
-    )
+        ingester = EditionIngester(
+            publisher=publisher,
+            publication_name=pub_name,
+            organization_id=organization_id,
+            publication_id=publication_id,
+        )
+    except Exception as e:
+        logger.error(f"Edition ingester initialization failed: {e}")
+        return JSONResponse(
+            content={"success": False, "error": f"Ingester init failed: {e}"},
+            status_code=500,
+        )
 
     results = ingester.ingest_bulk(saved_paths, edition_date=edition_date or None)
 
@@ -442,9 +464,16 @@ async def upload_ads(
     organization_id = insert_organization(org_name)
     publication_id = insert_publication(organization_id=organization_id, name=pub_name)
 
-    from src.ad_ingestion import AdIngester
+    try:
+        from src.ad_ingestion import AdIngester
 
-    ingester = AdIngester()
+        ingester = AdIngester()
+    except Exception as e:
+        logger.error(f"Ad ingester initialization failed: {e}")
+        return JSONResponse(
+            content={"success": False, "error": f"Ingester init failed: {e}"},
+            status_code=500,
+        )
     results = []
 
     for file in files:
@@ -465,6 +494,7 @@ async def upload_ads(
     ingested = sum(1 for r in results if r.get("ad_id") and not r.get("error"))
     duplicates = sum(1 for r in results if r.get("duplicate"))
     failures = sum(1 for r in results if r.get("error") and not r.get("duplicate"))
+    warnings = sum(1 for r in results if r.get("warning"))
 
     return JSONResponse(content={
         "success": True,
@@ -472,6 +502,7 @@ async def upload_ads(
         "ingested": ingested,
         "duplicates_rejected": duplicates,
         "failures": failures,
+        "indexing_warnings": warnings,
         "details": results,
     })
 

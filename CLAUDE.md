@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-RAG-based chatbot for querying a local publisher's news articles and editorials. Uses LlamaIndex for orchestration, ChromaDB for vector storage, and Gradio for the chat interface.
+RAG-based chatbot for querying a local publisher's news articles and editorials. Uses LlamaIndex for orchestration, ChromaDB for vector storage, and Gradio for the chat interfacing.
 
 ## Project Structure
 
