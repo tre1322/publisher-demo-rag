@@ -118,9 +118,12 @@ class QueryEngine:
                 metadata = results["metadatas"][0][i] if results["metadatas"] else {}
                 title = str(metadata.get("title", "Unknown"))[:50]
 
+                content_type = str(metadata.get("content_type", "article"))
+                doc_preview = str(doc)[:120].replace("\n", " ") if doc else "(empty)"
                 logger.info(
                     f"  Chunk {i + 1}: score={score:.3f}, "
-                    f"distance={distance:.3f}, title='{title}...'"
+                    f"type={content_type}, title='{title}', "
+                    f"text='{doc_preview}...'"
                 )
 
                 # Filter by similarity threshold
@@ -274,6 +277,13 @@ class QueryEngine:
             logger.info(
                 f"Context size: {context_words} words from {len(chunks)} chunks"
             )
+            # Log assembled context for debugging retrieval issues
+            for ci, ch in enumerate(chunks):
+                ch_type = ch.get("search_type", ch.get("metadata", {}).get("content_type", "article"))
+                ch_text = str(ch.get("text", ""))[:150].replace("\n", " ")
+                logger.info(
+                    f"  Context chunk {ci + 1} [{ch_type}]: '{ch_text}...'"
+                )
 
         # Build prompt
         user_message = QUERY_TEMPLATE.format(context=context, question=query)

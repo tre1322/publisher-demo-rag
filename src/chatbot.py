@@ -149,7 +149,10 @@ def create_chatbot() -> gr.Blocks:
                 return
 
             # Perform search (blocking)
-            chunks = engine.search_agent.search(message)
+            if engine.search_agent is not None:
+                chunks = engine.search_agent.search(message)
+            else:
+                chunks = engine.retrieve(message)
 
             # Log content impressions for analytics
             for chunk in chunks:

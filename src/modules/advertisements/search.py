@@ -54,16 +54,39 @@ class AdvertisementSearch:
                 if ad.get("original_price") and ad.get("discount_percent"):
                     price_info += f" (was ${ad['original_price']:.2f}, {ad['discount_percent']:.0f}% off)"
 
+            # Use description if available, fall back to cleaned_text/raw_text
+            # (uploaded ads store content in raw_text/cleaned_text, not description)
+            content = (
+                ad.get("description")
+                or ad.get("cleaned_text")
+                or ad.get("raw_text")
+                or ""
+            )
+            # Truncate very long content for the result text
+            if len(content) > 500:
+                content = content[:500] + "..."
+
+            text_parts = [f"[Sponsored] {ad['advertiser']} advertisement"]
+            if ad.get("product_name") and ad["product_name"] != ad.get("advertiser"):
+                text_parts[0] += f" - {ad['product_name']}"
+            if content:
+                text_parts.append(content)
+            if price_info:
+                text_parts.append(price_info)
+
             result = {
-                "text": f"[Sponsored] {ad['product_name']} from {ad['advertiser']}: {ad.get('description', '')} - {price_info}",
+                "text": ": ".join(text_parts[:1]) + "\n" + "\n".join(text_parts[1:]),
                 "metadata": {
                     "ad_id": ad["ad_id"],
-                    "product_name": ad["product_name"],
-                    "advertiser": ad["advertiser"],
+                    "doc_id": ad["ad_id"],
+                    "product_name": ad.get("product_name", ""),
+                    "advertiser": ad.get("advertiser", ""),
+                    "title": ad.get("advertiser", ""),
                     "category": ad.get("category", ""),
                     "price": ad.get("price"),
                     "discount_percent": ad.get("discount_percent"),
                     "url": ad.get("url", ""),
+                    "content_type": "advertisement",
                 },
                 "score": 1.0,
                 "search_type": "advertisement",

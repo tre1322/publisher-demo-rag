@@ -97,13 +97,20 @@ class AdIngester:
             f"with {self.collection.count()} existing chunks"
         )
 
-    def chunk_text(self, text: str) -> list[str]:
+    def chunk_text(self, text: str, advertiser: str = "") -> list[str]:
+        """Chunk text into overlapping windows, prepending advertiser context."""
+        # Prepend advertiser context so each chunk is self-describing
+        if advertiser:
+            prefix = f"{advertiser} advertisement: "
+        else:
+            prefix = ""
+
         words = text.split()
         chunks = []
         start = 0
         while start < len(words):
             end = start + CHUNK_SIZE
-            chunk = " ".join(words[start:end])
+            chunk = prefix + " ".join(words[start:end])
             chunks.append(chunk)
             if end >= len(words):
                 break
@@ -167,7 +174,7 @@ class AdIngester:
         # Index in ChromaDB — DB record is already saved, so indexing
         # failure should warn but not lose the upload.
         result["ad_id"] = ad_id
-        chunks = self.chunk_text(text)
+        chunks = self.chunk_text(text, advertiser=advertiser)
         if chunks:
             try:
                 logger.info(
@@ -258,7 +265,7 @@ class AdIngester:
         )
 
         result["ad_id"] = ad_id
-        chunks = self.chunk_text(text)
+        chunks = self.chunk_text(text, advertiser=advertiser)
         if chunks:
             try:
                 logger.info(
