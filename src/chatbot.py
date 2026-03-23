@@ -45,13 +45,22 @@ def ensure_tables():
         address TEXT, event_date TEXT, event_time TEXT, end_date TEXT, end_time TEXT,
         category TEXT, price REAL, url TEXT, raw_text TEXT, publisher TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+    # Fix schema mismatch: if conversations table exists with old schema
+    # (conversation_id TEXT PK instead of id INTEGER PK), recreate it
+    cur.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='conversations'")
+    schema_row = cur.fetchone()
+    if schema_row and schema_row[0] and 'conversation_id TEXT PRIMARY KEY' in schema_row[0]:
+        cur.execute("DROP TABLE IF EXISTS conversation_messages")
+        cur.execute("DROP TABLE IF EXISTS conversations")
+
     cur.execute("""CREATE TABLE IF NOT EXISTS conversations (
-        conversation_id TEXT PRIMARY KEY, user_id TEXT, publisher TEXT,
-        started_at TEXT DEFAULT CURRENT_TIMESTAMP, ended_at TEXT, message_count INTEGER DEFAULT 0)""")
+        id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT UNIQUE NOT NULL,
+        started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, ended_at TEXT,
+        message_count INTEGER DEFAULT 0)""")
     cur.execute("""CREATE TABLE IF NOT EXISTS conversation_messages (
-        message_id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id TEXT, role TEXT,
-        content TEXT, timestamp TEXT DEFAULT CURRENT_TIMESTAMP, metadata TEXT,
-        FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id))""")
+        id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id INTEGER NOT NULL, role TEXT NOT NULL,
+        content TEXT NOT NULL, timestamp TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, metadata TEXT,
+        FOREIGN KEY (conversation_id) REFERENCES conversations(id))""")
     cur.execute("""CREATE TABLE IF NOT EXISTS analytics (
         id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT, user_query TEXT,
         response_text TEXT, sources_used TEXT, timestamp TEXT DEFAULT CURRENT_TIMESTAMP)""")

@@ -55,11 +55,15 @@ async def get_history(session_id: str) -> dict:
     Returns:
         Dictionary with messages list.
     """
-    conversation = get_conversation(session_id)
-    if not conversation:
-        return {"messages": []}
+    try:
+        conversation = get_conversation(session_id)
+        if not conversation:
+            return {"messages": []}
 
-    messages = get_conversation_messages(conversation["id"])
+        messages = get_conversation_messages(conversation["id"])
+    except Exception as e:
+        logger.error(f"Error loading history: {e}")
+        return {"messages": []}
     # Return only role and content for frontend
     return {
         "messages": [
@@ -86,15 +90,19 @@ async def stream_response(
     # Get or create conversation for this session
     conversation_id: int | None = None
     if session_id:
-        conversation = get_conversation(session_id)
-        if conversation:
-            conversation_id = int(conversation["id"])
-        else:
-            conversation_id = insert_conversation(session_id)
-            logger.info(f"Created new conversation for session: {session_id}")
+        try:
+            conversation = get_conversation(session_id)
+            if conversation:
+                conversation_id = int(conversation["id"])
+            else:
+                conversation_id = insert_conversation(session_id)
+                logger.info(f"Created new conversation for session: {session_id}")
 
-        # Log user message
-        insert_message(conversation_id, "user", message)
+            # Log user message
+            insert_message(conversation_id, "user", message)
+        except Exception as e:
+            logger.error(f"Conversation tracking error: {e}")
+            conversation_id = None
 
     def generate() -> Iterator[bytes]:
         # Check if engine is ready
