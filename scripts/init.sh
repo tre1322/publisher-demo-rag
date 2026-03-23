@@ -38,6 +38,28 @@ echo "[2/4] Initializing database tables..."
 python3 scripts/init_db.py
 echo "✓ Database tables initialized"
 
+# Verify tables exist
+echo ""
+echo "Verifying database..."
+python3 -c "
+import sqlite3
+from pathlib import Path
+db_path = Path('data/articles.db')
+if not db_path.exists():
+    print('ERROR: Database not created!')
+    exit(1)
+conn = sqlite3.connect(str(db_path))
+cur = conn.cursor()
+cur.execute(\"SELECT name FROM sqlite_master WHERE type='table'\")
+tables = [r[0] for r in cur.fetchall()]
+print(f'Tables: {tables}')
+if 'advertisements' not in tables:
+    print('ERROR: advertisements table missing!')
+    exit(1)
+print('✓ Database verified')
+conn.close()
+"
+
 echo ""
 echo "[3/4] Loading sample advertisements..."
 if python scripts/load_sample_ads.py; then

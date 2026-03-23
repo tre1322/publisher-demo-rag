@@ -16,6 +16,49 @@ from fastapi.responses import RedirectResponse
 
 # Import config first to configure logging with timestamps
 import src.core.config  # noqa: F401
+
+# Initialize database tables on startup
+from pathlib import Path
+import sqlite3
+PROJECT_ROOT = Path(__file__).parent.parent
+DATA_DIR = PROJECT_ROOT / "data"
+DATABASE_PATH = DATA_DIR / "articles.db"
+
+def ensure_tables():
+    """Ensure database tables exist."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(DATABASE_PATH))
+    cur = conn.cursor()
+    # Create tables if they don't exist
+    cur.execute("""CREATE TABLE IF NOT EXISTS advertisements (
+        ad_id TEXT PRIMARY KEY, product_name TEXT NOT NULL, advertiser TEXT NOT NULL,
+        description TEXT, category TEXT, price REAL, original_price REAL, discount_percent REAL,
+        valid_from TEXT, valid_to TEXT, url TEXT, raw_text TEXT, publisher TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS articles (
+        doc_id TEXT PRIMARY KEY, title TEXT NOT NULL, author TEXT, publish_date TEXT,
+        source_file TEXT NOT NULL, location TEXT, subjects TEXT, summary TEXT, url TEXT,
+        publisher TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS events (
+        event_id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, location TEXT,
+        address TEXT, event_date TEXT, event_time TEXT, end_date TEXT, end_time TEXT,
+        category TEXT, price REAL, url TEXT, raw_text TEXT, publisher TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS conversations (
+        conversation_id TEXT PRIMARY KEY, user_id TEXT, publisher TEXT,
+        started_at TEXT DEFAULT CURRENT_TIMESTAMP, ended_at TEXT, message_count INTEGER DEFAULT 0)""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS conversation_messages (
+        message_id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id TEXT, role TEXT,
+        content TEXT, timestamp TEXT DEFAULT CURRENT_TIMESTAMP, metadata TEXT,
+        FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id))""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS analytics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT, user_query TEXT,
+        response_text TEXT, sources_used TEXT, timestamp TEXT DEFAULT CURRENT_TIMESTAMP)""")
+    conn.commit()
+    conn.close()
+
+ensure_tables()
+
 from src.modules.advertisements import get_random_advertisements
 from src.modules.analytics import log_content_impression, log_url_click
 from src.modules.articles import get_recent_articles
