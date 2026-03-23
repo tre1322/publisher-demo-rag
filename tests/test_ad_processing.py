@@ -200,3 +200,109 @@ class TestRetrievalPreference:
         }
         result = _format_ad_result(ad)
         assert "cleaned content here" in result["text"]
+
+
+# ── Context formatting tests ───────────────────────────────────────────
+
+
+class TestAdContextFormatting:
+    """Tests that ad context sent to LLM includes business name explicitly."""
+
+    def test_ad_context_has_business_label(self):
+        from src.prompts import format_context
+
+        chunks = [{
+            "text": "Country Road Greenhouse advertisement. Opening April 1.",
+            "metadata": {
+                "advertiser": "Country Road Greenhouse",
+                "product_name": "Country Road Greenhouse",
+                "title": "Country Road Greenhouse",
+                "ad_category": "retail",
+                "location": "Windom, MN",
+                "url": "",
+                "content_type": "advertisement",
+            },
+            "score": 1.0,
+            "search_type": "advertisement",
+        }]
+        context = format_context(chunks)
+
+        assert "Business: Country Road Greenhouse" in context
+        assert "[SPONSORED Advertisement" in context
+
+    def test_ad_context_includes_category_and_location(self):
+        from src.prompts import format_context
+
+        chunks = [{
+            "text": "Nominate a nurse today",
+            "metadata": {
+                "advertiser": "Windom Area Health",
+                "title": "Windom Area Health",
+                "ad_category": "healthcare",
+                "location": "Windom, MN",
+                "url": "",
+                "content_type": "advertisement",
+            },
+            "score": 1.0,
+            "search_type": "advertisement",
+        }]
+        context = format_context(chunks)
+
+        assert "Business: Windom Area Health" in context
+        assert "Category: healthcare" in context
+        assert "Location: Windom, MN" in context
+
+    def test_ad_context_not_using_article_format(self):
+        """Ad context should NOT use Author/Title format like articles."""
+        from src.prompts import format_context
+
+        chunks = [{
+            "text": "Ad content",
+            "metadata": {
+                "advertiser": "Test Biz",
+                "title": "Test Biz",
+                "author": "Test Biz",
+                "content_type": "advertisement",
+            },
+            "score": 1.0,
+            "search_type": "advertisement",
+        }]
+        context = format_context(chunks)
+
+        assert "Author:" not in context
+        assert "Business: Test Biz" in context
+
+    def test_article_context_unchanged(self):
+        """Articles should still use the original format."""
+        from src.prompts import format_context
+
+        chunks = [{
+            "text": "Article content here",
+            "metadata": {
+                "title": "News Story",
+                "author": "Reporter",
+                "publish_date": "2026-01-01",
+            },
+            "score": 1.0,
+            "search_type": "article",
+        }]
+        context = format_context(chunks)
+
+        assert "Title: News Story" in context
+        assert "Author: Reporter" in context
+        assert "[Article 1]" in context
+
+    def test_advertiser_name_in_result_metadata(self):
+        """_format_ad_result should expose advertiser in metadata."""
+        from src.modules.advertisements.search import _format_ad_result
+
+        ad = {
+            "ad_id": "test",
+            "advertiser": "Country Road Greenhouse",
+            "product_name": "Country Road Greenhouse",
+            "embedding_text": "Opening April 1",
+        }
+        result = _format_ad_result(ad)
+
+        assert result["metadata"]["advertiser"] == "Country Road Greenhouse"
+        assert "Country Road Greenhouse" in result["text"]

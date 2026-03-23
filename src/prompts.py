@@ -42,6 +42,12 @@ Sponsored content disclosure (LEGAL REQUIREMENT):
 - Example: [Sponsored] <a href="url" target="_blank">Product Name</a> from Advertiser
 - This disclosure is legally required and must never be omitted
 
+When answering from advertisements:
+- ALWAYS name the business/advertiser explicitly (use the "Business:" field)
+- Say "Country Road Greenhouse is advertising..." not just "there's a greenhouse..."
+- Include the business name in every ad-based answer, even when summarizing
+- If a follow-up question asks "who is that?" or "what's the name?" refer to the Business field from the prior ad context
+
 When no results are found:
 - If the context is empty or marked as "No results found", respond conversationally
 - Vary your response naturally - don't always say the same thing
@@ -152,22 +158,43 @@ def format_context(
         else:
             url = ""
 
-        # Determine content label - ads must be marked as sponsored
+        # Format differently for ads vs articles/events
         if content_type == "advertisement":
-            content_label = f"[SPONSORED Content {i}]"
-        elif content_type == "event":
-            content_label = f"[Event {i}]"
-        else:
-            content_label = f"[Article {i}]"
+            advertiser = metadata.get("advertiser") or metadata.get("title") or "Unknown"
+            product = metadata.get("product_name", "")
+            ad_category = metadata.get("ad_category") or metadata.get("category") or ""
+            location = metadata.get("location", "")
 
-        context_parts.append(
-            f"{content_label}\n"
-            f"Title: {title}\n"
-            f"Date: {date}\n"
-            f"Author: {author}\n"
-            f"URL: {url}\n"
-            f"Content: {text}\n"
-        )
+            ad_parts = [f"[SPONSORED Advertisement {i}]"]
+            ad_parts.append(f"Business: {advertiser}")
+            if product and product != advertiser:
+                ad_parts.append(f"Product/Service: {product}")
+            if ad_category:
+                ad_parts.append(f"Category: {ad_category}")
+            if location:
+                ad_parts.append(f"Location: {location}")
+            if url:
+                ad_parts.append(f"URL: {url}")
+            ad_parts.append(f"Promotion: {text}")
+
+            context_parts.append("\n".join(ad_parts) + "\n")
+        elif content_type == "event":
+            context_parts.append(
+                f"[Event {i}]\n"
+                f"Title: {title}\n"
+                f"Date: {date}\n"
+                f"URL: {url}\n"
+                f"Content: {text}\n"
+            )
+        else:
+            context_parts.append(
+                f"[Article {i}]\n"
+                f"Title: {title}\n"
+                f"Date: {date}\n"
+                f"Author: {author}\n"
+                f"URL: {url}\n"
+                f"Content: {text}\n"
+            )
 
     return "\n---\n".join(context_parts)
 

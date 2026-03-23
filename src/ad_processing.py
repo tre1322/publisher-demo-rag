@@ -133,9 +133,10 @@ def ocr_pdf_bytes(data: bytes, filename: str = "ad.pdf") -> str:
             "type": "text",
             "text": (
                 "Extract ALL readable text from this advertisement image. "
-                "Include business names, phone numbers, addresses, dates, "
-                "prices, and all promotional text. Return only the extracted "
-                "text, no commentary."
+                "Start with the business/advertiser name (from logo, header, "
+                "or branding area). Then include phone numbers, addresses, "
+                "dates, prices, and all promotional text. Return only the "
+                "extracted text, no commentary."
             ),
         }]
 
