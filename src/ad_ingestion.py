@@ -95,7 +95,7 @@ class AdIngester:
         self.embedding_model = SentenceTransformer(EMBEDDING_MODEL)
         self.collection = get_ads_collection()
         logger.info(
-            f"AdIngester initialized: collection '{COLLECTION_NAME}' "
+            f"AdIngester initialized: ads collection "
             f"with {self.collection.count()} existing chunks"
         )
 
