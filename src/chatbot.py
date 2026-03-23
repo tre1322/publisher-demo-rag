@@ -12,7 +12,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import gradio as gr
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
 
 # Import config first to configure logging with timestamps
 import src.core.config  # noqa: F401
@@ -472,6 +473,16 @@ def create_app() -> FastAPI:
     static_dir = Path("static")
     if static_dir.exists():
         app.mount("/static", StaticFiles(directory="static"), name="static")
+
+    # Landing page templates
+    landing_templates = Jinja2Templates(
+        directory=str(Path(__file__).parent / "chat_frontend" / "templates")
+    )
+
+    @app.get("/", response_class=HTMLResponse)
+    async def landing_page(request: Request) -> HTMLResponse:
+        """Render the landing page with AI chat hero."""
+        return landing_templates.TemplateResponse("landing.html", {"request": request})
 
     @app.get("/health")
     def health_check():

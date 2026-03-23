@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pipestone Star — Your Local AI Assistant</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@700;800;900&display=swap" rel="stylesheet">
+
+    <!-- Marked for markdown rendering -->
+    <script src="https://unpkg.com/marked@15.0.4/marked.min.js"></script>
+
+    <style>
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f5f7;
+            color: #1a1a2e;
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ─── Navbar ─── */
+        .navbar {
+            background: #1a1f36;
+            color: white;
+            padding: 0 24px;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+
+        .navbar-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .navbar-logo {
+            background: #c53030;
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 16px;
+            font-family: 'Playfair Display', serif;
+            flex-shrink: 0;
+        }
+
+        .navbar-title {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.25rem;
+            font-weight: 800;
+            letter-spacing: -0.3px;
+        }
+
+        .navbar-network {
+            background: rgba(255,255,255,0.1);
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            opacity: 0.85;
+        }
+
+        .navbar-links {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .navbar-links a {
+            color: rgba(255,255,255,0.8);
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 500;
+            padding: 6px 12px;
+            border-radius: 6px;
+            transition: all 0.15s ease;
+        }
+
+        .navbar-links a:hover,
+        .navbar-links a:focus-visible {
+            color: white;
+            background: rgba(255,255,255,0.1);
+        }
+
+        .navbar-login {
+            background: rgba(255,255,255,0.12) !important;
+            border: 1px solid rgba(255,255,255,0.15);
+        }
+
+        /* ─── Hero ─── */
+        .hero {
+            background: linear-gradient(135deg, #2b3a67 0%, #4a3f8a 40%, #6b4fa2 70%, #8b5fbf 100%);
+            padding: 56px 24px 72px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                radial-gradient(ellipse at 20% 50%, rgba(99,102,241,0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(139,95,191,0.2) 0%, transparent 50%);
+            pointer-events: none;
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 1;
+            max-width: 720px;
+            margin: 0 auto;
+        }
+
+        .hero h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: 2.75rem;
+            font-weight: 900;
+            color: white;
+            margin-bottom: 12px;
+            letter-spacing: -0.5px;
+            line-height: 1.15;
+        }
+
+        .hero-subtitle {
+            font-size: 1.1rem;
+            color: rgba(255,255,255,0.85);
+            margin-bottom: 36px;
+            max-width: 540px;
+            margin-left: auto;
+            margin-right: auto;
+            line-height: 1.5;
+        }
+
+        /* ─── Chat Card ─── */
+        .chat-card {
+            background: white;
+            border-radius: 20px;
+            box-shadow:
+                0 20px 60px rgba(0,0,0,0.2),
+                0 1px 3px rgba(0,0,0,0.08);
+            max-width: 680px;
+            margin: 0 auto;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-messages {
+            padding: 24px 24px 16px;
+            min-height: 180px;
+            max-height: 400px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            scroll-behavior: smooth;
+        }
+
+        .chat-bubble {
+            padding: 12px 16px;
+            border-radius: 14px;
+            max-width: 85%;
+            font-size: 0.925rem;
+            line-height: 1.55;
+            animation: fadeInUp 0.25s ease-out;
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .chat-bubble.assistant {
+            background: #f0f2f5;
+            color: #1a1a2e;
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+        }
+
+        .chat-bubble.assistant a {
+            color: #4338ca;
+            text-decoration: none;
+        }
+
+        .chat-bubble.assistant a:hover {
+            text-decoration: underline;
+        }
+
+        .chat-bubble.assistant p { margin-bottom: 0.75em; }
+        .chat-bubble.assistant p:last-child { margin-bottom: 0; }
+        .chat-bubble.assistant ul,
+        .chat-bubble.assistant ol { margin-left: 1.4em; margin-bottom: 0.75em; }
+        .chat-bubble.assistant ul:last-child,
+        .chat-bubble.assistant ol:last-child { margin-bottom: 0; }
+        .chat-bubble.assistant ul { list-style-type: disc; }
+        .chat-bubble.assistant ol { list-style-type: decimal; }
+        .chat-bubble.assistant li { margin-bottom: 0.2em; }
+
+        .chat-bubble.user {
+            background: #1a1f36;
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+
+        .chat-bubble.status {
+            font-style: italic;
+            color: #6b7280;
+        }
+
+        /* Loading dots animation */
+        .loading-dots::after {
+            content: '...';
+            display: inline-block;
+            width: 1.5em;
+            text-align: left;
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60%, 100% { content: '...'; }
+        }
+
+        /* ─── Prompt Chips ─── */
+        .prompt-chips {
+            padding: 0 24px 16px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .prompt-chip {
+            background: #f5f3ff;
+            color: #4338ca;
+            border: 1px solid #e0d9ff;
+            padding: 7px 14px;
+            border-radius: 20px;
+            font-size: 0.82rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            font-family: inherit;
+            line-height: 1.3;
+        }
+
+        .prompt-chip:hover,
+        .prompt-chip:focus-visible {
+            background: #ede9fe;
+            border-color: #c4b5fd;
+            transform: translateY(-1px);
+        }
+
+        .prompt-chip:active {
+            transform: translateY(0);
+        }
+
+        /* ─── Chat Input ─── */
+        .chat-input-area {
+            padding: 16px 24px 20px;
+            border-top: 1px solid #eef0f3;
+            background: #fafbfc;
+        }
+
+        .chat-input-form {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1.5px solid #d1d5db;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+            background: white;
+        }
+
+        .chat-input:focus {
+            border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+        }
+
+        .chat-input::placeholder {
+            color: #9ca3af;
+        }
+
+        .chat-send-btn {
+            background: #c53030;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .chat-send-btn:hover:not(:disabled) {
+            background: #b91c1c;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(197,48,48,0.3);
+        }
+
+        .chat-send-btn:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .chat-send-btn:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
+        .chat-send-btn:focus-visible {
+            outline: 2px solid #c53030;
+            outline-offset: 2px;
+        }
+
+        /* ─── Error ─── */
+        .chat-error {
+            background: #fef2f2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+            border-radius: 10px;
+            padding: 10px 14px;
+            font-size: 0.875rem;
+            align-self: stretch;
+            text-align: center;
+        }
+
+        /* ─── Mobile ─── */
+        .mobile-menu-btn {
+            display: none;
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 4px;
+        }
+
+        @media (max-width: 768px) {
+            .navbar {
+                padding: 0 16px;
+            }
+
+            .navbar-links {
+                display: none;
+                position: absolute;
+                top: 56px;
+                left: 0;
+                right: 0;
+                background: #1a1f36;
+                flex-direction: column;
+                padding: 12px 16px;
+                border-top: 1px solid rgba(255,255,255,0.1);
+                box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            }
+
+            .navbar-links.open {
+                display: flex;
+            }
+
+            .navbar-links a {
+                padding: 10px 12px;
+                width: 100%;
+            }
+
+            .mobile-menu-btn {
+                display: block;
+            }
+
+            .navbar-network {
+                display: none;
+            }
+
+            .hero {
+                padding: 40px 16px 56px;
+            }
+
+            .hero h1 {
+                font-size: 2rem;
+            }
+
+            .hero-subtitle {
+                font-size: 0.95rem;
+            }
+
+            .chat-card {
+                border-radius: 16px;
+            }
+
+            .chat-messages {
+                padding: 16px 16px 12px;
+                min-height: 140px;
+            }
+
+            .chat-bubble {
+                max-width: 92%;
+                font-size: 0.875rem;
+            }
+
+            .prompt-chips {
+                padding: 0 16px 12px;
+            }
+
+            .chat-input-area {
+                padding: 12px 16px 16px;
+            }
+
+            .chat-send-btn {
+                padding: 12px 18px;
+            }
+        }
+
+        @media (max-width: 420px) {
+            .hero h1 {
+                font-size: 1.65rem;
+            }
+
+            .prompt-chip {
+                font-size: 0.78rem;
+                padding: 6px 11px;
+            }
+        }
+
+        /* ─── Focus / Accessibility ─── */
+        :focus-visible {
+            outline: 2px solid #6366f1;
+            outline-offset: 2px;
+        }
+
+        /* Screen reader only */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0,0,0,0);
+            white-space: nowrap;
+            border: 0;
+        }
+    </style>
+</head>
+<body>
+
+<!-- ─── Navbar ─── -->
+<nav class="navbar" role="navigation" aria-label="Main navigation">
+    <div class="navbar-brand">
+        <div class="navbar-logo" aria-hidden="true">P</div>
+        <span class="navbar-title">Pipestone Star</span>
+        <span class="navbar-network">Grand Network</span>
+    </div>
+
+    <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Toggle navigation menu" aria-expanded="false">
+        &#9776;
+    </button>
+
+    <div class="navbar-links" id="navbar-links" role="menubar">
+        <a href="#" role="menuitem">Nearby Papers</a>
+        <a href="#" role="menuitem">Business Directory</a>
+        <a href="#" role="menuitem">Events</a>
+        <a href="#" class="navbar-login" role="menuitem">Login</a>
+    </div>
+</nav>
+
+<!-- ─── Hero ─── -->
+<section class="hero">
+    <div class="hero-content">
+        <h1>Your Local AI Assistant</h1>
+        <p class="hero-subtitle">
+            Ask me anything about Pipestone County &mdash; news, events, businesses, jobs, weather, and more.
+        </p>
+
+        <!-- Chat Card -->
+        <div class="chat-card" role="region" aria-label="AI Chat Assistant">
+            <div class="chat-messages" id="chat-messages">
+                <div class="chat-bubble assistant">
+                    Welcome! I can help you find local news, events, businesses, and more. What would you like to know?
+                </div>
+            </div>
+
+            <div class="prompt-chips" id="prompt-chips" role="list" aria-label="Suggested questions">
+                <button class="prompt-chip" role="listitem" data-prompt="What's happening this weekend?">What's happening this weekend?</button>
+                <button class="prompt-chip" role="listitem" data-prompt="Find a good restaurant in Pipestone">Find a good restaurant</button>
+                <button class="prompt-chip" role="listitem" data-prompt="Show me local jobs">Show me local jobs</button>
+                <button class="prompt-chip" role="listitem" data-prompt="What are the top stories today?">Top stories today</button>
+                <button class="prompt-chip" role="listitem" data-prompt="Find homes for sale nearby">Homes for sale</button>
+            </div>
+
+            <div class="chat-input-area">
+                <form class="chat-input-form" id="chat-form" aria-label="Chat input">
+                    <label for="chat-input" class="sr-only">Ask about local news, events, businesses...</label>
+                    <input
+                        type="text"
+                        id="chat-input"
+                        class="chat-input"
+                        placeholder="Ask about local news, events, businesses..."
+                        autocomplete="off"
+                        required
+                    >
+                    <button type="submit" class="chat-send-btn" id="send-btn">Send</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</section>
+
+<script>
+    // ─── Session ───
+    const sessionId = localStorage.getItem('landing-chat-session') || crypto.randomUUID();
+    localStorage.setItem('landing-chat-session', sessionId);
+
+    // ─── Marked config ───
+    marked.setOptions({ breaks: true, gfm: true });
+    const renderer = new marked.Renderer();
+    renderer.link = function(href, title, text) {
+        if (typeof href === 'object') {
+            return '<a href="' + href.href + '" target="_blank" rel="noopener">' + href.text + '</a>';
+        }
+        return '<a href="' + href + '" target="_blank" rel="noopener">' + text + '</a>';
+    };
+    marked.setOptions({ renderer });
+
+    // ─── DOM ───
+    const form = document.getElementById('chat-form');
+    const input = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('send-btn');
+    const messagesEl = document.getElementById('chat-messages');
+    const chipsEl = document.getElementById('prompt-chips');
+    const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+    const navbarLinks = document.getElementById('navbar-links');
+
+    // ─── Mobile menu ───
+    mobileMenuBtn.addEventListener('click', () => {
+        const isOpen = navbarLinks.classList.toggle('open');
+        mobileMenuBtn.setAttribute('aria-expanded', isOpen);
+    });
+
+    // ─── Helpers ───
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function sanitizePartialHtml(text) {
+        const lastOpen = text.lastIndexOf('<');
+        if (lastOpen !== -1 && text.lastIndexOf('>') < lastOpen) {
+            return text.substring(0, lastOpen);
+        }
+        return text;
+    }
+
+    function addBubble(role, content, id) {
+        const div = document.createElement('div');
+        div.className = 'chat-bubble ' + role;
+        if (id) div.id = id;
+        div.innerHTML = content;
+        messagesEl.appendChild(div);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+        return div;
+    }
+
+    function hideChips() {
+        chipsEl.style.display = 'none';
+    }
+
+    // ─── Streaming ───
+    async function streamResponse(message) {
+        const responseEl = addBubble(
+            'assistant',
+            '<span class="status loading-dots">Searching</span>',
+            'current-response'
+        );
+        let accumulated = '';
+
+        try {
+            const url = '/chat/stream?message=' + encodeURIComponent(message) + '&session_id=' + encodeURIComponent(sessionId);
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                throw new Error('Server returned ' + response.status);
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const text = decoder.decode(value);
+                const lines = text.split('\n').filter(function(l) { return l.trim(); });
+
+                for (const line of lines) {
+                    try {
+                        const data = JSON.parse(line);
+
+                        if (data.type === 'status') {
+                            responseEl.innerHTML = '<span class="status loading-dots">' + escapeHtml(data.content.replace('...', '')) + '</span>';
+                        } else if (data.type === 'token') {
+                            accumulated += data.content;
+                            responseEl.innerHTML = marked.parse(sanitizePartialHtml(accumulated));
+                            messagesEl.scrollTop = messagesEl.scrollHeight;
+                        } else if (data.type === 'replace') {
+                            accumulated = data.content;
+                            responseEl.innerHTML = marked.parse(accumulated);
+                        } else if (data.type === 'done') {
+                            responseEl.innerHTML = marked.parse(accumulated);
+                        } else if (data.type === 'error') {
+                            responseEl.innerHTML = '';
+                            const errDiv = document.createElement('div');
+                            errDiv.className = 'chat-error';
+                            errDiv.textContent = 'Something went wrong: ' + data.content;
+                            messagesEl.appendChild(errDiv);
+                        }
+                    } catch (e) {
+                        // Skip invalid JSON
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Stream error:', error);
+            responseEl.innerHTML = '';
+            const errDiv = document.createElement('div');
+            errDiv.className = 'chat-error';
+            errDiv.textContent = 'Unable to connect. Please try again in a moment.';
+            messagesEl.appendChild(errDiv);
+        }
+
+        responseEl.removeAttribute('id');
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    // ─── Submit handler ───
+    async function sendMessage(message) {
+        if (!message.trim()) return;
+
+        hideChips();
+        input.disabled = true;
+        sendBtn.disabled = true;
+
+        addBubble('user', escapeHtml(message));
+        input.value = '';
+
+        await streamResponse(message);
+
+        input.disabled = false;
+        sendBtn.disabled = false;
+        input.focus();
+    }
+
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        sendMessage(input.value.trim());
+    });
+
+    // ─── Prompt chips ───
+    document.querySelectorAll('.prompt-chip').forEach(function(chip) {
+        chip.addEventListener('click', function() {
+            sendMessage(this.dataset.prompt);
+        });
+    });
+</script>
+
+</body>
+</html>
