@@ -64,6 +64,12 @@ def ensure_tables():
     cur.execute("""CREATE TABLE IF NOT EXISTS analytics (
         id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT, user_query TEXT,
         response_text TEXT, sources_used TEXT, timestamp TEXT DEFAULT CURRENT_TIMESTAMP)""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS editions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, publisher TEXT NOT NULL,
+        publication_name TEXT, edition_date TEXT, source_pdf_path TEXT NOT NULL,
+        page_count INTEGER, article_count INTEGER DEFAULT 0, ad_count INTEGER DEFAULT 0,
+        processing_status TEXT DEFAULT 'pending', processing_error TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
     conn.commit()
     conn.close()
 

@@ -32,6 +32,7 @@ def init_all_tables() -> None:
     from src.modules.analytics import database as analytics_db
     from src.modules.articles import database as articles_db
     from src.modules.conversations import database as conversations_db
+    from src.modules.editions import database as editions_db
     from src.modules.events import database as events_db
 
     articles_db.init_table()
@@ -39,6 +40,7 @@ def init_all_tables() -> None:
     events_db.init_table()
     conversations_db.init_table()
     analytics_db.init_table()
+    editions_db.init_table()
 
     logger.info(f"All database tables initialized at {DATABASE_PATH}")
 

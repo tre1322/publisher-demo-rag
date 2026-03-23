@@ -4,14 +4,17 @@ import json
 import logging
 import os
 import secrets
+import shutil
 from collections import Counter
 from datetime import datetime
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
+from src.core.config import DATA_DIR
 from src.core.database import get_connection
 from src.modules.analytics import get_click_stats, get_impression_stats
 from src.modules.conversations.database import (
@@ -19,6 +22,7 @@ from src.modules.conversations.database import (
     get_conversation_messages,
     get_conversation_stats,
 )
+from src.modules.editions import get_all_editions, get_edition_count
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +37,16 @@ BROWSABLE_TABLES = [
     "articles",
     "advertisements",
     "events",
+    "editions",
     "conversations",
     "conversation_messages",
     "content_impressions",
     "url_clicks",
 ]
+
+# Edition PDF upload directory
+EDITIONS_DIR = DATA_DIR / "editions"
+EDITIONS_DIR.mkdir(parents=True, exist_ok=True)
 TRUNCATE_COLUMNS = {"raw_text", "content", "summary", "description", "subjects"}
 TRUNCATE_LENGTH = 100
 
@@ -318,3 +327,74 @@ async def export_data(
 async def list_tables(_username: str = Depends(verify_credentials)) -> JSONResponse:
     """List available tables for browsing."""
     return JSONResponse(content={"tables": BROWSABLE_TABLES})
+
+
+# ── Edition upload endpoints ──
+
+
+@router.get("/api/editions")
+async def get_editions_list(
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Get all editions with their status."""
+    editions = get_all_editions(limit=50)
+    return JSONResponse(content={"editions": editions, "total": get_edition_count()})
+
+
+@router.post("/api/editions/upload")
+async def upload_editions(
+    files: list[UploadFile] = File(...),
+    publisher: str = Form(...),
+    publication_name: str = Form(""),
+    edition_date: str = Form(""),
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Upload and process newspaper edition PDFs.
+
+    Saves PDFs to data/editions/ then runs the ingestion pipeline.
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+
+    # Save uploaded files
+    saved_paths: list[Path] = []
+    for file in files:
+        if not file.filename or not file.filename.lower().endswith(".pdf"):
+            logger.warning(f"Skipping non-PDF upload: {file.filename}")
+            continue
+
+        dest = EDITIONS_DIR / file.filename
+        with open(dest, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+        saved_paths.append(dest)
+        logger.info(f"Saved upload: {dest}")
+
+    if not saved_paths:
+        raise HTTPException(status_code=400, detail="No valid PDF files in upload")
+
+    # Run ingestion in-process (blocking for now)
+    from src.edition_ingestion import EditionIngester
+
+    ingester = EditionIngester(
+        publisher=publisher,
+        publication_name=publication_name or None,
+    )
+
+    results = ingester.ingest_bulk(
+        saved_paths,
+        edition_date=edition_date or None,
+    )
+
+    # Summarize
+    total_articles = sum(r.get("articles", 0) for r in results)
+    total_ads = sum(r.get("ads", 0) for r in results)
+    failures = sum(1 for r in results if r.get("error"))
+
+    return JSONResponse(content={
+        "success": True,
+        "files_processed": len(saved_paths),
+        "total_articles": total_articles,
+        "total_ads": total_ads,
+        "failures": failures,
+        "details": results,
+    })

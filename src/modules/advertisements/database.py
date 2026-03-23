@@ -28,9 +28,18 @@ def init_table() -> None:
             url TEXT,
             raw_text TEXT,
             publisher TEXT,
+            edition_id INTEGER,
+            page INTEGER,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # Add edition columns if they don't exist (migration for existing DBs)
+    for col, coltype in [("edition_id", "INTEGER"), ("page", "INTEGER")]:
+        try:
+            cursor.execute(f"ALTER TABLE advertisements ADD COLUMN {col} {coltype}")
+        except Exception:
+            pass
 
     # Create indexes for ad queries
     cursor.execute(
@@ -38,6 +47,9 @@ def init_table() -> None:
     )
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_ad_valid_to ON advertisements(valid_to)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ads_edition ON advertisements(edition_id)"
     )
 
     conn.commit()
@@ -100,6 +112,51 @@ def insert_advertisement(
             valid_to,
             url,
             raw_text,
+            publisher,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def insert_edition_advertisement(
+    ad_id: str,
+    advertiser_name: str,
+    extracted_text: str,
+    edition_id: int,
+    page: int | None = None,
+    category: str | None = None,
+    publisher: str | None = None,
+) -> None:
+    """Insert an advertisement extracted from a newspaper edition.
+
+    Args:
+        ad_id: Unique ad identifier.
+        advertiser_name: Advertiser/business name.
+        extracted_text: Raw text from the ad.
+        edition_id: ID of the parent edition.
+        page: Page number where ad appears.
+        category: Ad category if detectable.
+        publisher: Publisher name.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        INSERT OR REPLACE INTO advertisements
+        (ad_id, product_name, advertiser, raw_text, edition_id, page, category, publisher)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            ad_id,
+            advertiser_name,
+            advertiser_name,
+            extracted_text,
+            edition_id,
+            page,
+            category,
             publisher,
         ),
     )

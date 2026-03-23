@@ -10,6 +10,7 @@ from src.modules.articles.database import (
     get_recent_articles,
     init_table,
     insert_article,
+    insert_edition_article,
     search_by_metadata,
 )
 from src.modules.articles.search import (
@@ -31,5 +32,6 @@ __all__ = [
     "get_recent_articles",
     "init_table",
     "insert_article",
+    "insert_edition_article",
     "search_by_metadata",
 ]

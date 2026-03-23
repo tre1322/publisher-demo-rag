@@ -8,6 +8,7 @@ from src.modules.advertisements.database import (
     get_random_advertisements,
     init_table,
     insert_advertisement,
+    insert_edition_advertisement,
     search_advertisements,
 )
 from src.modules.advertisements.search import (
@@ -27,5 +28,6 @@ __all__ = [
     "get_random_advertisements",
     "init_table",
     "insert_advertisement",
+    "insert_edition_advertisement",
     "search_advertisements",
 ]

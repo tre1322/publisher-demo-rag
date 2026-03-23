@@ -26,9 +26,27 @@ def init_table() -> None:
             summary TEXT,
             url TEXT,
             publisher TEXT,
+            edition_id INTEGER,
+            section TEXT,
+            start_page INTEGER,
+            continuation_pages TEXT,
+            full_text TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # Add edition columns if they don't exist (migration for existing DBs)
+    for col, coltype in [
+        ("edition_id", "INTEGER"),
+        ("section", "TEXT"),
+        ("start_page", "INTEGER"),
+        ("continuation_pages", "TEXT"),
+        ("full_text", "TEXT"),
+    ]:
+        try:
+            cursor.execute(f"ALTER TABLE articles ADD COLUMN {col} {coltype}")
+        except Exception:
+            pass  # Column already exists
 
     # Create indexes for common queries
     cursor.execute(
@@ -36,6 +54,9 @@ def init_table() -> None:
     )
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_author ON articles(author)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_location ON articles(location)")
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_articles_edition ON articles(edition_id)"
+    )
 
     conn.commit()
     conn.close()
@@ -90,6 +111,75 @@ def insert_article(
             summary,
             url,
             publisher,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def insert_edition_article(
+    doc_id: str,
+    title: str,
+    edition_id: int,
+    source_file: str,
+    full_text: str,
+    author: str | None = None,
+    publish_date: str | None = None,
+    section: str | None = None,
+    start_page: int | None = None,
+    continuation_pages: list[int] | None = None,
+    location: str | None = None,
+    subjects: list[str] | None = None,
+    summary: str | None = None,
+    publisher: str | None = None,
+) -> None:
+    """Insert an article extracted from a newspaper edition.
+
+    Args:
+        doc_id: Unique document identifier.
+        title: Article headline.
+        edition_id: ID of the parent edition.
+        source_file: Original PDF filename.
+        full_text: Full reconstructed article text.
+        author: Byline author.
+        publish_date: Publication date (YYYY-MM-DD).
+        section: Newspaper section (e.g., A, B, Sports).
+        start_page: Page where article starts.
+        continuation_pages: Pages where article continues.
+        location: Extracted location.
+        subjects: List of subjects/topics.
+        summary: Brief summary.
+        publisher: Publisher name.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    subjects_json = json.dumps(subjects) if subjects else None
+    cont_pages_json = json.dumps(continuation_pages) if continuation_pages else None
+
+    cursor.execute(
+        """
+        INSERT OR REPLACE INTO articles
+        (doc_id, title, author, publish_date, source_file, location, subjects,
+         summary, publisher, edition_id, section, start_page, continuation_pages, full_text)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            doc_id,
+            title,
+            author,
+            publish_date,
+            source_file,
+            location,
+            subjects_json,
+            summary,
+            publisher,
+            edition_id,
+            section,
+            start_page,
+            cont_pages_json,
+            full_text,
         ),
     )
 
