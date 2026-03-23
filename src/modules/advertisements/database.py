@@ -18,6 +18,10 @@ _REQUIRED_MIGRATIONS = [
     ("status", "TEXT DEFAULT 'active'"),
     ("checksum", "TEXT"),
     ("parse_metadata_json", "TEXT"),
+    ("ocr_text", "TEXT"),
+    ("embedding_text", "TEXT"),
+    ("ad_category", "TEXT"),
+    ("location", "TEXT"),
 ]
 
 
@@ -164,48 +168,39 @@ def insert_edition_advertisement(
     headline: str | None = None,
     checksum: str | None = None,
     source_filename: str | None = None,
+    ocr_text: str | None = None,
+    embedding_text: str | None = None,
+    ad_category: str | None = None,
+    location: str | None = None,
 ) -> None:
     """Insert an advertisement (from edition or standalone upload)."""
     conn = get_connection()
     cursor = conn.cursor()
 
+    sql = """
+        INSERT OR REPLACE INTO advertisements
+        (ad_id, product_name, advertiser, raw_text, edition_id, page, category,
+         publisher, organization_id, publication_id, headline, checksum,
+         cleaned_text, status, ocr_text, embedding_text, ad_category, location)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
+    """
+    params = (
+        ad_id, advertiser_name, advertiser_name, extracted_text,
+        edition_id, page, category, publisher, organization_id,
+        publication_id, headline, checksum, extracted_text,
+        ocr_text, embedding_text, ad_category, location,
+    )
+
     try:
-        cursor.execute(
-            """
-            INSERT OR REPLACE INTO advertisements
-            (ad_id, product_name, advertiser, raw_text, edition_id, page, category,
-             publisher, organization_id, publication_id, headline, checksum,
-             cleaned_text, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
-            """,
-            (
-                ad_id, advertiser_name, advertiser_name, extracted_text,
-                edition_id, page, category, publisher, organization_id,
-                publication_id, headline, checksum, extracted_text,
-            ),
-        )
+        cursor.execute(sql, params)
     except Exception as e:
         conn.close()
         if "no such column" in str(e):
             logger.error(f"Missing column during ad insert: {e}")
             _ensure_checksum_column()
-            # Retry with fresh connection
             conn = get_connection()
             cursor = conn.cursor()
-            cursor.execute(
-                """
-                INSERT OR REPLACE INTO advertisements
-                (ad_id, product_name, advertiser, raw_text, edition_id, page, category,
-                 publisher, organization_id, publication_id, headline, checksum,
-                 cleaned_text, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
-                """,
-                (
-                    ad_id, advertiser_name, advertiser_name, extracted_text,
-                    edition_id, page, category, publisher, organization_id,
-                    publication_id, headline, checksum, extracted_text,
-                ),
-            )
+            cursor.execute(sql, params)
         else:
             raise
 

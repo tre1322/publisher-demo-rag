@@ -20,6 +20,14 @@ from src.core.config import (
     COLLECTION_NAME,
     EMBEDDING_MODEL,
 )
+from src.ad_processing import (
+    MIN_TEXT_LENGTH,
+    categorize_ad,
+    enrich_ad_text,
+    extract_location,
+    ocr_pdf_bytes,
+    ocr_pdf_file,
+)
 from src.modules.advertisements import get_ad_by_checksum, insert_edition_advertisement
 
 logger = logging.getLogger(__name__)
@@ -148,17 +156,43 @@ class AdIngester:
             logger.info(f"Duplicate ad rejected: {pdf_path.name}")
             return result
 
-        # Extract text
+        # Extract text, with OCR fallback for image-based PDFs
         text = extract_text_from_pdf(pdf_path)
-        if not text.strip():
-            result["error"] = "No text extracted from PDF (may be image-based)"
+        ocr_text = ""
+        used_ocr = False
+
+        if len(text.strip()) < MIN_TEXT_LENGTH:
+            logger.info(
+                f"Text extraction short ({len(text.strip())} chars) for {pdf_path.name}, "
+                "attempting OCR fallback"
+            )
+            ocr_text = ocr_pdf_file(str(pdf_path))
+            used_ocr = bool(ocr_text)
+
+        best_text = ocr_text or text
+        if not best_text.strip():
+            result["error"] = "No text extracted from PDF (even after OCR)"
             logger.warning(f"No text from ad PDF: {pdf_path.name}")
             return result
 
-        # Infer advertiser
-        advertiser = infer_advertiser_name(text, pdf_path.name)
+        advertiser = infer_advertiser_name(best_text, pdf_path.name)
 
-        # Store in DB
+        # Categorize, locate, and enrich
+        ad_category = categorize_ad(best_text, advertiser)
+        location = extract_location(best_text)
+        embedding_text = enrich_ad_text(
+            advertiser=advertiser,
+            raw_text=text,
+            ocr_text=ocr_text,
+            category=ad_category,
+            location=location,
+        )
+
+        logger.info(
+            f"Ad processed: advertiser='{advertiser}', category={ad_category}, "
+            f"location='{location}', ocr={used_ocr}"
+        )
+
         ad_id = str(uuid.uuid4())
         insert_edition_advertisement(
             ad_id=ad_id,
@@ -169,12 +203,18 @@ class AdIngester:
             publisher=publisher,
             checksum=checksum,
             source_filename=pdf_path.name,
+            ocr_text=ocr_text or None,
+            embedding_text=embedding_text,
+            ad_category=ad_category,
+            location=location,
         )
 
-        # Index in ChromaDB — DB record is already saved, so indexing
-        # failure should warn but not lose the upload.
         result["ad_id"] = ad_id
-        chunks = self.chunk_text(text, advertiser=advertiser)
+        result["ocr_used"] = used_ocr
+        result["ad_category"] = ad_category
+
+        # Use enriched text for chunking/embedding
+        chunks = self.chunk_text(embedding_text, advertiser=advertiser)
         if chunks:
             try:
                 logger.info(
@@ -191,8 +231,8 @@ class AdIngester:
                         "author": advertiser,
                         "source_file": pdf_path.name,
                         "chunk_index": i,
-                        "location": "",
-                        "subjects": "",
+                        "location": location,
+                        "subjects": ad_category,
                         "content_type": "advertisement",
                     }
                     for i in range(len(chunks))
@@ -245,12 +285,45 @@ class AdIngester:
             result["ad_id"] = existing["ad_id"]
             return result
 
+        # Extract text, with OCR fallback for image-based PDFs
         text = extract_text_from_bytes(data, filename)
-        if not text.strip():
-            result["error"] = "No text extracted from PDF"
+        ocr_text = ""
+        used_ocr = False
+
+        if len(text.strip()) < MIN_TEXT_LENGTH:
+            logger.info(
+                f"Text extraction short ({len(text.strip())} chars) for {filename}, "
+                "attempting OCR fallback"
+            )
+            ocr_text = ocr_pdf_bytes(data, filename)
+            used_ocr = bool(ocr_text)
+            if used_ocr:
+                logger.info(f"OCR fallback produced {len(ocr_text)} chars for {filename}")
+
+        # Use best available text for advertiser inference
+        best_text = ocr_text or text
+        if not best_text.strip():
+            result["error"] = "No text extracted from PDF (even after OCR)"
             return result
 
-        advertiser = infer_advertiser_name(text, filename)
+        advertiser = infer_advertiser_name(best_text, filename)
+
+        # Categorize, locate, and enrich
+        ad_category = categorize_ad(best_text, advertiser)
+        location = extract_location(best_text)
+        embedding_text = enrich_ad_text(
+            advertiser=advertiser,
+            raw_text=text,
+            ocr_text=ocr_text,
+            category=ad_category,
+            location=location,
+        )
+
+        logger.info(
+            f"Ad processed: advertiser='{advertiser}', category={ad_category}, "
+            f"location='{location}', ocr={used_ocr}, "
+            f"embedding_text_len={len(embedding_text)}"
+        )
 
         ad_id = str(uuid.uuid4())
         insert_edition_advertisement(
@@ -262,10 +335,18 @@ class AdIngester:
             publisher=publisher,
             checksum=checksum,
             source_filename=filename,
+            ocr_text=ocr_text or None,
+            embedding_text=embedding_text,
+            ad_category=ad_category,
+            location=location,
         )
 
         result["ad_id"] = ad_id
-        chunks = self.chunk_text(text, advertiser=advertiser)
+        result["ocr_used"] = used_ocr
+        result["ad_category"] = ad_category
+
+        # Use enriched text for chunking/embedding
+        chunks = self.chunk_text(embedding_text, advertiser=advertiser)
         if chunks:
             try:
                 logger.info(
@@ -282,8 +363,8 @@ class AdIngester:
                         "author": advertiser,
                         "source_file": filename,
                         "chunk_index": i,
-                        "location": "",
-                        "subjects": "",
+                        "location": location,
+                        "subjects": ad_category,
                         "content_type": "advertisement",
                     }
                     for i in range(len(chunks))

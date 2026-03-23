@@ -136,6 +136,10 @@ def main() -> None:
         ("status", "TEXT DEFAULT 'active'"),
         ("checksum", "TEXT"),
         ("parse_metadata_json", "TEXT"),
+        ("ocr_text", "TEXT"),
+        ("embedding_text", "TEXT"),
+        ("ad_category", "TEXT"),
+        ("location", "TEXT"),
     ]:
         _add_column_if_missing(cur, "advertisements", col, coltype)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_ad_category ON advertisements(category)")
@@ -143,6 +147,7 @@ def main() -> None:
     cur.execute("CREATE INDEX IF NOT EXISTS idx_ads_edition ON advertisements(edition_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_ads_org ON advertisements(organization_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_ads_checksum ON advertisements(checksum)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_ads_ad_category ON advertisements(ad_category)")
     print("OK: advertisements")
 
     # ── Events ──
