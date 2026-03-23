@@ -401,6 +401,9 @@ def create_chatbot() -> gr.Blocks:
 
 
 def create_app() -> FastAPI:
+    import sys
+    print("DEBUG: create_app starting...", flush=True)
+    sys.stdout.flush()
     """Create FastAPI app with tracking endpoint and Gradio interface.
 
     Returns:
@@ -553,4 +556,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    import sys
+    print("DEBUG: Starting chatbot...", flush=True)
+    sys.stdout.flush()
     main()
