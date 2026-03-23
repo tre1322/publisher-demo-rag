@@ -2,16 +2,14 @@
 
 import logging
 
-import chromadb
 from sentence_transformers import SentenceTransformer
 
 from src.core.config import (
-    CHROMA_PERSIST_DIR,
-    COLLECTION_NAME,
     EMBEDDING_MODEL,
     RETRIEVAL_TOP_K,
     SIMILARITY_THRESHOLD,
 )
+from src.core.vector_store import get_articles_collection, get_legacy_collection
 from src.modules.articles.database import (
     get_all_locations,
     get_all_subjects,
@@ -28,20 +26,17 @@ class ArticleSearch:
     def __init__(self) -> None:
         """Initialize article search."""
         self.embedding_model = SentenceTransformer(EMBEDDING_MODEL)
-        self.chroma_client = chromadb.PersistentClient(path=str(CHROMA_PERSIST_DIR))
 
         try:
-            self.collection = self.chroma_client.get_or_create_collection(
-                name=COLLECTION_NAME,
-                metadata={"hnsw:space": "cosine"},
-            )
-            logger.info(
-                f"ArticleSearch: collection '{COLLECTION_NAME}' ready "
-                f"with {self.collection.count()} chunks"
-            )
+            self.collection = get_articles_collection()
+            # Also check legacy collection for backward compat
+            self.legacy_collection = get_legacy_collection()
+            if self.legacy_collection:
+                logger.info("ArticleSearch: legacy collection available as fallback")
         except Exception as e:
             logger.error(f"ArticleSearch: failed to init collection: {e}")
             self.collection = None
+            self.legacy_collection = None
 
     def semantic_search(
         self,
@@ -63,19 +58,40 @@ class ArticleSearch:
             logger.warning("No collection available for semantic search")
             return []
 
-        logger.info(f"Semantic search: '{query}' (top_k={top_k})")
+        logger.info(f"Article semantic search: '{query}' (top_k={top_k})")
 
-        # Generate query embedding
         query_embedding = self.embedding_model.encode(query).tolist()
 
-        # Query ChromaDB
-        results = self.collection.query(
+        # Search the articles collection
+        chunks = self._query_collection(
+            self.collection, "articles", query_embedding, top_k, min_score
+        )
+
+        # Fallback: also search legacy collection if articles collection is empty
+        if not chunks and self.legacy_collection:
+            logger.info("Articles collection empty, falling back to legacy collection")
+            chunks = self._query_collection(
+                self.legacy_collection, "legacy", query_embedding, top_k, min_score
+            )
+
+        logger.info(f"Article semantic search returned {len(chunks)} chunks")
+        return chunks
+
+    def _query_collection(
+        self,
+        collection: "chromadb.Collection",
+        label: str,
+        query_embedding: list[float],
+        top_k: int,
+        min_score: float,
+    ) -> list[dict]:
+        """Query a single Chroma collection and return formatted chunks."""
+        results = collection.query(
             query_embeddings=[query_embedding],
             n_results=top_k,
             include=["documents", "metadatas", "distances"],
         )
 
-        # Process results
         chunks = []
         if results and results["documents"]:
             for i, doc in enumerate(results["documents"][0]):
@@ -94,7 +110,7 @@ class ArticleSearch:
                 }
                 chunks.append(chunk)
 
-        logger.info(f"Semantic search returned {len(chunks)} chunks")
+        logger.info(f"  Collection '{label}': {len(chunks)} results")
         return chunks
 
     def metadata_search(

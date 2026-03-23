@@ -9,17 +9,15 @@ import logging
 import uuid
 from pathlib import Path
 
-import chromadb
 import fitz
 from sentence_transformers import SentenceTransformer
 
 from src.core.config import (
     CHUNK_OVERLAP,
     CHUNK_SIZE,
-    CHROMA_PERSIST_DIR,
-    COLLECTION_NAME,
     EMBEDDING_MODEL,
 )
+from src.core.vector_store import get_ads_collection
 from src.ad_processing import (
     MIN_TEXT_LENGTH,
     categorize_ad,
@@ -95,11 +93,7 @@ class AdIngester:
 
     def __init__(self) -> None:
         self.embedding_model = SentenceTransformer(EMBEDDING_MODEL)
-        self.chroma_client = chromadb.PersistentClient(path=str(CHROMA_PERSIST_DIR))
-        self.collection = self.chroma_client.get_or_create_collection(
-            name=COLLECTION_NAME,
-            metadata={"hnsw:space": "cosine"},
-        )
+        self.collection = get_ads_collection()
         logger.info(
             f"AdIngester initialized: collection '{COLLECTION_NAME}' "
             f"with {self.collection.count()} existing chunks"

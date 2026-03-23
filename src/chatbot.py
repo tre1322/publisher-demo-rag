@@ -82,12 +82,21 @@ def create_chatbot() -> gr.Blocks:
     Returns:
         Configured Gradio Blocks interface.
     """
-    # Initialize query engine
+    # Initialize query engine and content orchestrator
     try:
         engine = QueryEngine()
     except ValueError as e:
         logger.error(f"Failed to initialize query engine: {e}")
         raise
+
+    from src.content_orchestrator import ContentOrchestrator
+
+    try:
+        orchestrator = ContentOrchestrator()
+        logger.info("Content orchestrator initialized")
+    except Exception as e:
+        logger.error(f"Content orchestrator init failed: {e}")
+        orchestrator = None
 
     def respond(message: str, history: list) -> tuple[str, list]:
         """Non-streaming response wrapper."""
@@ -148,8 +157,10 @@ def create_chatbot() -> gr.Blocks:
                 yield "", history
                 return
 
-            # Perform search (blocking)
-            if engine.search_agent is not None:
+            # Perform search via content orchestrator (intent-based routing)
+            if orchestrator is not None:
+                chunks = orchestrator.search(message)
+            elif engine.search_agent is not None:
                 chunks = engine.search_agent.search(message)
             else:
                 chunks = engine.retrieve(message)

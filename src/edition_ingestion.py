@@ -10,16 +10,14 @@ import logging
 import uuid
 from pathlib import Path
 
-import chromadb
 from sentence_transformers import SentenceTransformer
 
 from src.core.config import (
     CHUNK_OVERLAP,
     CHUNK_SIZE,
-    CHROMA_PERSIST_DIR,
-    COLLECTION_NAME,
     EMBEDDING_MODEL,
 )
+from src.core.vector_store import get_articles_collection
 from src.modules.advertisements import insert_edition_advertisement
 from src.modules.articles import insert_edition_article
 from src.modules.editions import (
@@ -59,11 +57,7 @@ class EditionIngester:
         self.parser = NewspaperParser()
 
         self.embedding_model = SentenceTransformer(EMBEDDING_MODEL)
-        self.chroma_client = chromadb.PersistentClient(path=str(CHROMA_PERSIST_DIR))
-        self.collection = self.chroma_client.get_or_create_collection(
-            name=COLLECTION_NAME,
-            metadata={"hnsw:space": "cosine"},
-        )
+        self.collection = get_articles_collection()
 
     def chunk_text(self, text: str) -> list[str]:
         words = text.split()

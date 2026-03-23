@@ -6,7 +6,6 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-import chromadb
 import pdfplumber
 from sentence_transformers import SentenceTransformer
 from striprtf.striprtf import rtf_to_text
@@ -14,12 +13,11 @@ from striprtf.striprtf import rtf_to_text
 from src.core.config import (
     CHUNK_OVERLAP,
     CHUNK_SIZE,
-    CHROMA_PERSIST_DIR,
-    COLLECTION_NAME,
     DOCUMENTS_DIR,
     EMBEDDING_MODEL,
     INGESTED_FILES_PATH,
 )
+from src.core.vector_store import get_articles_collection
 from src.modules.articles import insert_article
 from src.metadata_extractor import MetadataExtractor
 
@@ -40,11 +38,7 @@ class DocumentIngester:
             publisher: Name of the publishing newspaper.
         """
         self.embedding_model = SentenceTransformer(EMBEDDING_MODEL)
-        self.chroma_client = chromadb.PersistentClient(path=str(CHROMA_PERSIST_DIR))
-        self.collection = self.chroma_client.get_or_create_collection(
-            name=COLLECTION_NAME,
-            metadata={"hnsw:space": "cosine"},
-        )
+        self.collection = get_articles_collection()
         self.ingested_files = self._load_ingested_files()
         self.publisher = publisher
 

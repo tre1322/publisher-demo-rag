@@ -55,7 +55,9 @@ SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.7"))
 MAX_CONTEXT_TOKENS = int(os.getenv("MAX_CONTEXT_TOKENS", "8000"))
 
 # ChromaDB Settings
-COLLECTION_NAME = "publisher_main"
+COLLECTION_NAME = "publisher_main"  # Legacy — kept for backward-compat reads
+ARTICLES_COLLECTION = "articles"
+ADS_COLLECTION = "advertisements"
 
 # Query Transformation Settings
 ENABLE_QUERY_TRANSFORMATION = (

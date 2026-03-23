@@ -4,14 +4,11 @@ import logging
 from collections.abc import Iterator
 
 import anthropic
-import chromadb
 from sentence_transformers import SentenceTransformer
 
 # Config import configures logging with timestamps
 from src.core.config import (
     ANTHROPIC_API_KEY,
-    CHROMA_PERSIST_DIR,
-    COLLECTION_NAME,
     EMBEDDING_MODEL,
     LLM_MODEL,
     LLM_TEMPERATURE,
@@ -40,25 +37,17 @@ class QueryEngine:
     def __init__(self) -> None:
         """Initialize the query engine."""
         self.embedding_model = SentenceTransformer(EMBEDDING_MODEL)
-        self.chroma_client = chromadb.PersistentClient(path=str(CHROMA_PERSIST_DIR))
+
+        # Use articles collection for direct retrieval fallback
+        from src.core.vector_store import get_articles_collection, get_legacy_collection
 
         try:
-            self.collection = self.chroma_client.get_or_create_collection(
-                name=COLLECTION_NAME,
-                metadata={"hnsw:space": "cosine"},
-            )
-            count = self.collection.count()
-            logger.info(
-                f"Collection '{COLLECTION_NAME}' ready with {count} chunks"
-            )
-            if count == 0:
-                logger.warning(
-                    f"Collection '{COLLECTION_NAME}' is empty. "
-                    "Queries will return no results until documents are ingested."
-                )
+            self.collection = get_articles_collection()
+            self.legacy_collection = get_legacy_collection()
         except Exception as e:
-            logger.error(f"Failed to initialize collection '{COLLECTION_NAME}': {e}")
+            logger.error(f"Failed to initialize collections: {e}")
             self.collection = None
+            self.legacy_collection = None
 
         if not ANTHROPIC_API_KEY:
             raise ValueError("ANTHROPIC_API_KEY not set. Please set it in .env file.")
