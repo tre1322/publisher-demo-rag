@@ -545,12 +545,14 @@ def create_app() -> FastAPI:
 def main() -> None:
     """Launch the chatbot interface with FastAPI."""
     import uvicorn
+    import os
 
     app = create_app()
+    port = int(os.environ.get("PORT", 7860))
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=7860,
+        port=port,
         log_level="info",
     )
 
