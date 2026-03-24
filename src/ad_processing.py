@@ -167,6 +167,158 @@ def ocr_pdf_bytes(data: bytes, filename: str = "ad.pdf") -> str:
         return ""
 
 
+_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".tif", ".webp"}
+_IMAGE_MEDIA_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".bmp": "image/bmp",
+    ".tiff": "image/tiff",
+    ".tif": "image/tiff",
+    ".webp": "image/webp",
+}
+
+
+def is_image_file(filename: str) -> bool:
+    """Check if a filename has an image extension."""
+    from pathlib import Path
+    return Path(filename).suffix.lower() in _IMAGE_EXTENSIONS
+
+
+def _get_media_type(filename: str) -> str:
+    """Get MIME type for an image filename."""
+    from pathlib import Path
+    return _IMAGE_MEDIA_TYPES.get(Path(filename).suffix.lower(), "image/png")
+
+
+def ocr_image_bytes(data: bytes, filename: str = "ad.png") -> str:
+    """Extract text from an image ad using Claude Vision API.
+
+    Args:
+        data: Raw image bytes (PNG, JPG, etc.).
+        filename: Original filename (for logging and media type detection).
+
+    Returns:
+        Extracted text, or empty string on failure.
+    """
+    if not ANTHROPIC_API_KEY:
+        logger.warning("OCR skipped: ANTHROPIC_API_KEY not set")
+        return ""
+
+    b64 = base64.b64encode(data).decode("utf-8")
+    media_type = _get_media_type(filename)
+
+    try:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1024,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": b64,
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": (
+                            "Extract ALL readable text from this advertisement image. "
+                            "Start with the business/advertiser name (from logo, header, "
+                            "or branding area). Then include phone numbers, addresses, "
+                            "dates, prices, and all promotional text. Return only the "
+                            "extracted text, no commentary."
+                        ),
+                    },
+                ],
+            }],
+        )
+
+        ocr_text = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                ocr_text += block.text
+
+        ocr_text = ocr_text.strip()
+        if ocr_text:
+            logger.info(f"Image OCR extracted {len(ocr_text)} chars from {filename}")
+        else:
+            logger.warning(f"Image OCR returned empty text for {filename}")
+
+        return ocr_text
+
+    except Exception as e:
+        logger.error(f"Image OCR API call failed for {filename}: {e}")
+        return ""
+
+
+def extract_business_name_from_image_bytes(
+    data: bytes, filename: str = "ad.png"
+) -> str:
+    """Use Claude Vision to identify business name from an image ad.
+
+    Args:
+        data: Raw image bytes.
+        filename: Original filename.
+
+    Returns:
+        Business name string, or empty string on failure.
+    """
+    if not ANTHROPIC_API_KEY:
+        return ""
+
+    b64 = base64.b64encode(data).decode("utf-8")
+    media_type = _get_media_type(filename)
+
+    try:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=100,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": b64,
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": (
+                            "What is the business or advertiser name in this ad? "
+                            "Look at logos, headers, and branding. Return ONLY the "
+                            "business name, nothing else. If you cannot determine "
+                            "the business name, return exactly: UNKNOWN"
+                        ),
+                    },
+                ],
+            }],
+        )
+
+        name = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                name = block.text.strip()
+
+        if name and name.upper() != "UNKNOWN" and len(name) < 200:
+            logger.info(f"Business name from image for {filename}: '{name}'")
+            return name
+        return ""
+
+    except Exception as e:
+        logger.error(f"Business name image extraction failed for {filename}: {e}")
+        return ""
+
+
 def ocr_pdf_file(file_path: str) -> str:
     """OCR a PDF file on disk. Convenience wrapper around ocr_pdf_bytes."""
     try:

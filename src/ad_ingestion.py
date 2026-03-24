@@ -23,7 +23,10 @@ from src.ad_processing import (
     categorize_ad,
     enrich_ad_text,
     extract_business_name_from_image,
+    extract_business_name_from_image_bytes,
     extract_location,
+    is_image_file,
+    ocr_image_bytes,
     ocr_pdf_bytes,
     ocr_pdf_file,
 )
@@ -478,4 +481,133 @@ class AdIngester:
                 result["warning"] = f"Ad saved but vector indexing failed: {e}"
 
         logger.info(f"Ad ingested from upload: {advertiser} ({filename})")
+        return result
+
+    def ingest_ad_image_bytes(
+        self,
+        data: bytes,
+        filename: str,
+        organization_id: int | None = None,
+        publication_id: int | None = None,
+        publisher: str | None = None,
+    ) -> dict:
+        """Ingest an ad from a raw image file (PNG, JPG, etc.) via Vision API.
+
+        Uses Claude Vision to extract all text from the ad image,
+        then follows the same enrichment and indexing pipeline as PDFs.
+
+        Returns:
+            Dict with result info.
+        """
+        result = {
+            "filename": filename,
+            "ad_id": None,
+            "error": None,
+            "duplicate": False,
+        }
+
+        checksum = compute_bytes_checksum(data)
+
+        existing = get_ad_by_checksum(checksum)
+        if existing:
+            result["error"] = "Duplicate ad (checksum match)"
+            result["duplicate"] = True
+            result["ad_id"] = existing["ad_id"]
+            return result
+
+        # Extract text via Claude Vision (images have no extractable text layer)
+        logger.info(f"Extracting text from image ad: {filename}")
+        ocr_text = ocr_image_bytes(data, filename)
+
+        if not ocr_text.strip():
+            result["error"] = "No text extracted from image ad"
+            return result
+
+        # Infer advertiser name — try filename first, then Vision name extraction
+        advertiser = infer_advertiser_name(ocr_text, filename)
+        # If filename was generic and text scan didn't find a good name,
+        # try dedicated Vision name extraction
+        if advertiser in ("Unknown", "") or advertiser == _clean_filename_as_name(filename):
+            vision_name = extract_business_name_from_image_bytes(data, filename)
+            if vision_name:
+                advertiser = vision_name
+
+        # Categorize, locate, and enrich
+        ad_category = categorize_ad(ocr_text, advertiser)
+        location = extract_location(ocr_text)
+        embedding_text = enrich_ad_text(
+            advertiser=advertiser,
+            raw_text="",
+            ocr_text=ocr_text,
+            category=ad_category,
+            location=location,
+        )
+
+        logger.info(
+            f"Image ad processed: advertiser='{advertiser}', "
+            f"category={ad_category}, location='{location}', "
+            f"ocr_text_len={len(ocr_text)}"
+        )
+
+        ad_id = str(uuid.uuid4())
+        insert_edition_advertisement(
+            ad_id=ad_id,
+            advertiser_name=advertiser,
+            extracted_text="",
+            organization_id=organization_id,
+            publication_id=publication_id,
+            publisher=publisher,
+            checksum=checksum,
+            source_filename=filename,
+            ocr_text=ocr_text,
+            embedding_text=embedding_text,
+            ad_category=ad_category,
+            location=location,
+        )
+
+        result["ad_id"] = ad_id
+        result["ocr_used"] = True
+        result["ad_category"] = ad_category
+
+        # Index enriched text into Chroma
+        chunks = self.chunk_text(embedding_text, advertiser=advertiser)
+        if chunks:
+            try:
+                logger.info(
+                    f"Indexing image ad '{advertiser}' ({filename}): "
+                    f"{len(chunks)} chunks"
+                )
+                embeddings = self.embedding_model.encode(chunks).tolist()
+                ids = [f"{ad_id}_{i}" for i in range(len(chunks))]
+                metadatas = [
+                    {
+                        "doc_id": ad_id,
+                        "title": advertiser[:200],
+                        "publish_date": "",
+                        "author": advertiser,
+                        "source_file": filename,
+                        "chunk_index": i,
+                        "location": location,
+                        "subjects": ad_category,
+                        "content_type": "advertisement",
+                    }
+                    for i in range(len(chunks))
+                ]
+                self.collection.add(
+                    ids=ids,
+                    embeddings=embeddings,
+                    documents=chunks,
+                    metadatas=metadatas,
+                )
+                logger.info(
+                    f"Indexing complete for image ad '{advertiser}' ({filename})"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Vector indexing failed for image ad '{advertiser}' "
+                    f"({filename}): {e}. DB record was saved."
+                )
+                result["warning"] = f"Ad saved but vector indexing failed: {e}"
+
+        logger.info(f"Image ad ingested: {advertiser} ({filename})")
         return result

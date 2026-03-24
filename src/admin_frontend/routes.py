@@ -476,19 +476,38 @@ async def upload_ads(
         )
     results = []
 
+    from src.ad_processing import is_image_file
+
+    SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".tif", ".webp"}
+
     for file in files:
-        if not file.filename or not file.filename.lower().endswith(".pdf"):
-            results.append({"filename": file.filename, "error": "Not a PDF"})
+        if not file.filename:
+            results.append({"filename": file.filename, "error": "No filename"})
+            continue
+
+        ext = file.filename.lower().rsplit(".", 1)[-1] if "." in file.filename else ""
+        if f".{ext}" not in SUPPORTED_EXTENSIONS:
+            results.append({"filename": file.filename, "error": f"Unsupported file type: .{ext}"})
             continue
 
         data = await file.read()
-        result = ingester.ingest_ad_bytes(
-            data=data,
-            filename=file.filename,
-            organization_id=organization_id,
-            publication_id=publication_id,
-            publisher=publisher,
-        )
+
+        if is_image_file(file.filename):
+            result = ingester.ingest_ad_image_bytes(
+                data=data,
+                filename=file.filename,
+                organization_id=organization_id,
+                publication_id=publication_id,
+                publisher=publisher,
+            )
+        else:
+            result = ingester.ingest_ad_bytes(
+                data=data,
+                filename=file.filename,
+                organization_id=organization_id,
+                publication_id=publication_id,
+                publisher=publisher,
+            )
         results.append(result)
 
     ingested = sum(1 for r in results if r.get("ad_id") and not r.get("error"))
