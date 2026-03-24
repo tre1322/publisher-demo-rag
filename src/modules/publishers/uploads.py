@@ -6,7 +6,6 @@ from pathlib import Path
 
 from src.core.config import DATA_DIR
 from src.modules.editions import get_edition_by_checksum, insert_edition
-from src.modules.editions.database import update_edition_status
 from src.modules.publishers.database import get_publisher
 
 logger = logging.getLogger(__name__)
@@ -126,19 +125,22 @@ def upload_edition(
         edition_id = insert_edition(
             source_filename=filename,
             publication_id=None,  # Will be linked in later phases
+            publisher_id=publisher_id,
             edition_date=edition_date,
             issue_label=issue_label,
             checksum=checksum,
+            pdf_path=str(dest_path),
+            upload_status="uploaded",
+            extraction_status="not_started",
+            homepage_batch_status="not_started",
         )
         result["edition_id"] = edition_id
         result["upload_status"] = "uploaded"
         logger.info(
             f"Edition record created: id={edition_id}, "
-            f"publisher='{publisher['name']}', file='{filename}'"
+            f"publisher='{publisher['name']}', file='{filename}', "
+            f"pdf_path='{dest_path}'"
         )
-
-        # Set initial processing status
-        update_edition_status(edition_id, "uploaded")
 
     except Exception as e:
         result["error"] = f"Failed to create edition record: {e}"

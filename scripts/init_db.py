@@ -198,9 +198,15 @@ def main() -> None:
         ("checksum", "TEXT"),
         ("processing_notes", "TEXT"),
         ("source_filename", "TEXT DEFAULT ''"),
+        ("publisher_id", "INTEGER"),
+        ("pdf_path", "TEXT"),
+        ("upload_status", "TEXT DEFAULT 'pending'"),
+        ("extraction_status", "TEXT DEFAULT 'not_started'"),
+        ("homepage_batch_status", "TEXT DEFAULT 'not_started'"),
     ]:
         _add_column_if_missing(cur, "editions", col, coltype)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_editions_pub ON editions(publication_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_editions_publisher ON editions(publisher_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_editions_date ON editions(edition_date)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_editions_status ON editions(processing_status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_editions_checksum ON editions(checksum)")

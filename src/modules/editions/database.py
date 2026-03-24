@@ -39,6 +39,11 @@ def init_table() -> None:
         ("checksum", "TEXT"),
         ("processing_notes", "TEXT"),
         ("source_filename", "TEXT"),
+        ("publisher_id", "INTEGER"),
+        ("pdf_path", "TEXT"),
+        ("upload_status", "TEXT DEFAULT 'pending'"),
+        ("extraction_status", "TEXT DEFAULT 'not_started'"),
+        ("homepage_batch_status", "TEXT DEFAULT 'not_started'"),
     ]:
         try:
             cursor.execute(f"ALTER TABLE editions ADD COLUMN {col} {coltype}")
@@ -106,6 +111,9 @@ def init_table() -> None:
         "CREATE INDEX IF NOT EXISTS idx_editions_pub ON editions(publication_id)"
     )
     cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_editions_publisher ON editions(publisher_id)"
+    )
+    cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_editions_date ON editions(edition_date)"
     )
     cursor.execute(
@@ -136,6 +144,11 @@ def insert_edition(
     issue_label: str | None = None,
     checksum: str | None = None,
     page_count: int | None = None,
+    publisher_id: int | None = None,
+    pdf_path: str | None = None,
+    upload_status: str = "pending",
+    extraction_status: str = "not_started",
+    homepage_batch_status: str = "not_started",
     # Legacy compat
     publisher: str | None = None,
     source_pdf_path: str | None = None,
@@ -150,9 +163,13 @@ def insert_edition(
 
     cursor.execute(
         """INSERT INTO editions
-        (publication_id, edition_date, issue_label, source_filename, checksum, page_count)
-        VALUES (?, ?, ?, ?, ?, ?)""",
-        (publication_id, edition_date, issue_label, filename, checksum, page_count),
+        (publication_id, edition_date, issue_label, source_filename, checksum,
+         page_count, publisher_id, pdf_path, upload_status, extraction_status,
+         homepage_batch_status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (publication_id, edition_date, issue_label, filename, checksum,
+         page_count, publisher_id, pdf_path, upload_status, extraction_status,
+         homepage_batch_status),
     )
 
     edition_id = cursor.lastrowid
