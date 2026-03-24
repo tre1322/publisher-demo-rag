@@ -91,19 +91,23 @@ else
 fi
 
 echo ""
-echo "[3/4] Loading sample advertisements..."
-if python scripts/load_sample_ads.py; then
-    echo "✓ Sample ads loaded"
+echo "[3/4] Sample data loading..."
+# Sample ads/events are opt-in — only load if LOAD_SAMPLE_DATA=true
+# These are Pipestone demo businesses, not real production data
+if [ "${LOAD_SAMPLE_DATA}" = "true" ]; then
+    echo "[INIT] Loading sample data (LOAD_SAMPLE_DATA=true)"
+    if python scripts/load_sample_ads.py; then
+        echo "✓ Sample ads loaded"
+    else
+        echo "⚠ Warning: Failed to load sample ads (continuing anyway)"
+    fi
+    if python scripts/load_sample_events.py; then
+        echo "✓ Sample events loaded"
+    else
+        echo "⚠ Warning: Failed to load sample events (continuing anyway)"
+    fi
 else
-    echo "⚠ Warning: Failed to load sample ads (continuing anyway)"
-fi
-
-echo ""
-echo "[4/4] Loading sample events..."
-if python scripts/load_sample_events.py; then
-    echo "✓ Sample events loaded"
-else
-    echo "⚠ Warning: Failed to load sample events (continuing anyway)"
+    echo "[INIT] Sample data skipped (set LOAD_SAMPLE_DATA=true to enable)"
 fi
 
 echo ""

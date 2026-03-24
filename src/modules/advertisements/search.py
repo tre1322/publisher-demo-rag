@@ -2,29 +2,23 @@
 
 import logging
 
+from sentence_transformers import SentenceTransformer
+
+from src.core.config import EMBEDDING_MODEL, RETRIEVAL_TOP_K, SIMILARITY_THRESHOLD
+from src.core.database import get_connection
+from src.core.vector_store import get_ads_collection
 from src.modules.advertisements.database import (
     get_all_ad_categories,
     search_advertisements,
 )
-from src.core.database import get_connection
 
 logger = logging.getLogger(__name__)
 
 
 def _search_by_advertiser_name(query: str, limit: int = 10) -> list[dict]:
-    """Search ads by advertiser name match (case-insensitive LIKE).
-
-    Args:
-        query: User query that may contain an advertiser name.
-        limit: Max results.
-
-    Returns:
-        List of matching ad rows as dicts.
-    """
+    """Search ads by advertiser name match (case-insensitive LIKE)."""
     conn = get_connection()
     cursor = conn.cursor()
-    # Split query into words and try matching advertiser against each
-    # significant word pair or the full query
     cursor.execute(
         """
         SELECT * FROM advertisements
@@ -45,6 +39,16 @@ def _search_by_advertiser_name(query: str, limit: int = 10) -> list[dict]:
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+
+def _get_ad_by_id(ad_id: str) -> dict | None:
+    """Fetch a single ad row from SQLite by ID."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM advertisements WHERE ad_id = ?", (ad_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 
 def _format_ad_result(ad: dict, score: float = 1.0) -> dict:
@@ -107,6 +111,14 @@ def _format_ad_result(ad: dict, score: float = 1.0) -> dict:
 class AdvertisementSearch:
     """Search functionality for advertisements."""
 
+    def __init__(self) -> None:
+        self.embedding_model = SentenceTransformer(EMBEDDING_MODEL)
+        try:
+            self.collection = get_ads_collection()
+        except Exception as e:
+            logger.error(f"Failed to init ads collection: {e}")
+            self.collection = None
+
     def search(
         self,
         query: str | None = None,
@@ -114,14 +126,15 @@ class AdvertisementSearch:
         max_price: float | None = None,
         on_sale_only: bool = False,
     ) -> list[dict]:
-        """Search for advertisements with advertiser-name boost.
+        """Search for advertisements with semantic + name + filter search.
 
-        Combines:
-        1. Advertiser-name matching (boosted, if query provided)
-        2. DB filter search (category, price, on_sale_only)
+        Combines (in priority order):
+        1. Semantic vector search against ads Chroma collection
+        2. Advertiser-name matching (boosted)
+        3. DB filter search (category, price, on_sale_only)
 
         Args:
-            query: Optional search query — used for advertiser-name matching.
+            query: Search query — used for semantic and name matching.
             category: Product category filter.
             max_price: Maximum price filter.
             on_sale_only: Only return items on sale.
@@ -137,21 +150,36 @@ class AdvertisementSearch:
         results = []
         seen_ids: set[str] = set()
 
-        # 1. Advertiser-name boost: if query provided, try direct name match
+        # 1. Semantic vector search (highest quality matches)
+        if query and self.collection is not None:
+            try:
+                semantic_results = self._semantic_search(query)
+                logger.info(
+                    f"  Ad semantic search: {len(semantic_results)} results "
+                    f"from ads collection"
+                )
+                for r in semantic_results:
+                    ad_id = r.get("metadata", {}).get("doc_id", "")
+                    if ad_id and ad_id not in seen_ids:
+                        seen_ids.add(ad_id)
+                        results.append(r)
+            except Exception as e:
+                logger.error(f"Ad semantic search failed: {e}")
+
+        # 2. Advertiser-name boost
         if query:
             name_matches = _search_by_advertiser_name(query)
             if name_matches:
                 logger.info(
-                    f"Advertiser-name boost: {len(name_matches)} matches "
-                    f"for '{query}'"
+                    f"  Advertiser-name boost: {len(name_matches)} matches"
                 )
             for ad in name_matches:
                 ad_id = ad.get("ad_id", "")
                 if ad_id not in seen_ids:
                     seen_ids.add(ad_id)
-                    results.append(_format_ad_result(ad, score=1.5))  # Boosted
+                    results.append(_format_ad_result(ad, score=1.5))
 
-        # 2. Standard DB filter search
+        # 3. Standard DB filter search
         ads = search_advertisements(
             category=category,
             max_price=max_price,
@@ -164,7 +192,7 @@ class AdvertisementSearch:
                 seen_ids.add(ad_id)
                 results.append(_format_ad_result(ad, score=1.0))
 
-        # Sort by score descending (boosted matches first)
+        # Sort by score descending
         results.sort(key=lambda x: x.get("score", 0), reverse=True)
 
         logger.info(
@@ -173,13 +201,58 @@ class AdvertisementSearch:
         )
         return results
 
+    def _semantic_search(
+        self,
+        query: str,
+        top_k: int = RETRIEVAL_TOP_K,
+        min_score: float = SIMILARITY_THRESHOLD,
+    ) -> list[dict]:
+        """Search the ads Chroma collection by semantic similarity."""
+        if self.collection is None:
+            return []
+
+        query_embedding = self.embedding_model.encode(query).tolist()
+        results = self.collection.query(
+            query_embeddings=[query_embedding],
+            n_results=top_k,
+            include=["documents", "metadatas", "distances"],
+        )
+
+        chunks = []
+        if results and results["documents"]:
+            for i, doc in enumerate(results["documents"][0]):
+                distance = results["distances"][0][i] if results["distances"] else 0
+                score = 1 - distance
+
+                if score < min_score:
+                    continue
+
+                metadata = results["metadatas"][0][i] if results["metadatas"] else {}
+                ad_id = metadata.get("doc_id", "")
+
+                # Enrich with full DB record if available
+                db_ad = _get_ad_by_id(ad_id) if ad_id else None
+                if db_ad:
+                    result = _format_ad_result(db_ad, score=score + 0.5)  # Boost semantic matches
+                else:
+                    result = {
+                        "text": doc,
+                        "metadata": metadata,
+                        "score": score + 0.5,
+                        "search_type": "advertisement",
+                    }
+
+                advertiser = metadata.get("title", "Unknown")[:50]
+                logger.info(
+                    f"    Ad vector hit: '{advertiser}' score={score:.3f}"
+                )
+                chunks.append(result)
+
+        return chunks
+
 
 def get_ad_tools_schema() -> list[dict]:
-    """Get the advertisement tools schema with dynamic categories.
-
-    Returns:
-        List of tool definitions with actual category values from database.
-    """
+    """Get the advertisement tools schema with dynamic categories."""
     categories = get_all_ad_categories()
     if categories:
         category_desc = f"Product category. Available: {', '.join(categories)}"
@@ -193,7 +266,7 @@ def get_ad_tools_schema() -> list[dict]:
                 "Search for product advertisements and deals. Use when user "
                 "asks about products, sales, deals, discounts, shopping, or "
                 "what a specific business/advertiser is promoting. The query "
-                "parameter supports advertiser name matching."
+                "parameter supports advertiser name matching and semantic search."
             ),
             "parameters": {
                 "type": "object",
@@ -223,5 +296,5 @@ def get_ad_tools_schema() -> list[dict]:
     ]
 
 
-# Keep static schema for backward compatibility (will have generic description)
+# Keep static schema for backward compatibility
 AD_TOOLS_SCHEMA = get_ad_tools_schema()
