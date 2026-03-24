@@ -63,6 +63,17 @@ conn.close()
 "
 
 echo ""
+# Optional: wipe all ads for a fresh start (set RESET_ADS_ON_STARTUP=true)
+echo "[INIT] RESET_ADS_ON_STARTUP='${RESET_ADS_ON_STARTUP:-<not set>}'"
+if [ "${RESET_ADS_ON_STARTUP}" = "true" ]; then
+    echo "[INIT] Resetting all ads (SQLite + Chroma)"
+    python scripts/reset_ads.py && RESET_RC=$? || RESET_RC=$?
+    echo "[INIT] reset_ads.py exited with code ${RESET_RC}"
+else
+    echo "[INIT] Ad reset skipped"
+fi
+
+echo ""
 echo "[INIT] About to evaluate reindex flag"
 echo "[INIT] RUN_AD_REINDEX_ON_STARTUP='${RUN_AD_REINDEX_ON_STARTUP}'"
 # Reindex ads into the advertisements Chroma collection (guarded by env var)
