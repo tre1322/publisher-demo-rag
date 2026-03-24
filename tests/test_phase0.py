@@ -288,3 +288,49 @@ class TestDuplicateHandling:
         assert result1["error"] is None
         assert result2["error"] is None
         assert result1["edition_id"] != result2["edition_id"]
+
+    def test_legacy_incomplete_row_repaired_on_duplicate(self):
+        """A duplicate matching an incomplete legacy row should repair it."""
+        from src.core.database import get_connection
+        from src.modules.publishers import insert_publisher
+        from src.modules.publishers.uploads import upload_edition, compute_checksum
+
+        pub_id = insert_publisher("Repair Publisher", market="Test, MN")
+        fake_pdf = _unique_pdf("legacy-repair")
+        checksum = compute_checksum(fake_pdf)
+
+        # Simulate a legacy incomplete row (no publisher_id, no pdf_path)
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """INSERT INTO editions
+            (source_filename, checksum, upload_status)
+            VALUES (?, ?, 'pending')""",
+            ("legacy_file.pdf", checksum),
+        )
+        legacy_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+
+        # Upload the same file — should repair the legacy row
+        result = upload_edition(
+            publisher_id=pub_id,
+            data=fake_pdf,
+            filename="legacy_file.pdf",
+        )
+
+        assert result["duplicate"] is True
+        assert result["edition_id"] == legacy_id
+        assert result["upload_status"] == "uploaded"
+        assert result.get("error") is None  # No error — repaired, not rejected
+
+        # Verify the DB row is now complete
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM editions WHERE id = ?", (legacy_id,))
+        row = dict(cursor.fetchone())
+        conn.close()
+
+        assert row["publisher_id"] == pub_id
+        assert row["pdf_path"] is not None
+        assert row["upload_status"] == "uploaded"

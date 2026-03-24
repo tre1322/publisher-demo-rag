@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 
 from src.core.config import DATA_DIR
+from src.core.database import get_connection
 from src.modules.editions import get_edition_by_checksum, insert_edition
 from src.modules.publishers.database import get_publisher
 
@@ -12,6 +13,37 @@ logger = logging.getLogger(__name__)
 
 # Base directory for all publisher edition uploads
 UPLOADS_BASE = DATA_DIR / "publisher_editions"
+
+
+def _repair_edition(
+    edition_id: int,
+    publisher_id: int | None = None,
+    pdf_path: str | None = None,
+    upload_status: str | None = None,
+) -> None:
+    """Backfill missing fields on a legacy edition row."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    updates = []
+    params: list = []
+
+    if publisher_id is not None:
+        updates.append("publisher_id = ?")
+        params.append(publisher_id)
+    if pdf_path is not None:
+        updates.append("pdf_path = ?")
+        params.append(pdf_path)
+    if upload_status is not None:
+        updates.append("upload_status = ?")
+        params.append(upload_status)
+
+    if updates:
+        params.append(edition_id)
+        sql = f"UPDATE editions SET {', '.join(updates)} WHERE id = ?"
+        cursor.execute(sql, params)
+        conn.commit()
+        logger.info(f"Edition {edition_id} repaired: {', '.join(updates)}")
+    conn.close()
 
 
 def get_publisher_upload_dir(publisher_slug: str) -> Path:
@@ -88,12 +120,53 @@ def upload_edition(
     # Check for duplicate
     existing = get_edition_by_checksum(checksum)
     if existing:
+        edition_id = existing["id"]
+        is_incomplete = (
+            not existing.get("publisher_id")
+            or not existing.get("pdf_path")
+            or existing.get("upload_status") == "pending"
+        )
+
+        if is_incomplete:
+            # Repair the legacy row: store file and backfill missing fields
+            logger.info(
+                f"Repairing incomplete legacy edition {edition_id} "
+                f"for publisher '{publisher['name']}'"
+            )
+            upload_dir = get_publisher_upload_dir(publisher_slug)
+            dest_path = upload_dir / filename
+            if dest_path.exists():
+                stem, suffix = dest_path.stem, dest_path.suffix
+                counter = 1
+                while dest_path.exists():
+                    dest_path = upload_dir / f"{stem}_{counter}{suffix}"
+                    counter += 1
+            try:
+                dest_path.write_bytes(data)
+            except Exception as e:
+                logger.error(f"Failed to store file during repair: {e}")
+                dest_path = None
+
+            _repair_edition(
+                edition_id=edition_id,
+                publisher_id=publisher_id,
+                pdf_path=str(dest_path) if dest_path else None,
+                upload_status="uploaded",
+            )
+            result["edition_id"] = edition_id
+            result["duplicate"] = True
+            result["upload_status"] = "uploaded"
+            result["file_path"] = str(dest_path) if dest_path else None
+            logger.info(f"Legacy edition {edition_id} repaired")
+            return result
+
+        # Already complete duplicate — just return it
         result["error"] = "Duplicate edition (checksum match)"
         result["duplicate"] = True
-        result["edition_id"] = existing["id"]
+        result["edition_id"] = edition_id
         logger.info(
             f"Edition upload duplicate: '{filename}' matches "
-            f"edition {existing['id']}"
+            f"edition {edition_id}"
         )
         return result
 
