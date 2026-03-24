@@ -568,9 +568,16 @@ def create_app() -> FastAPI:
         # Redirect to the actual URL
         return RedirectResponse(url=target_url, status_code=302)
 
-    # Create and mount Gradio app at /chat
-    demo = create_chatbot()
-    app = gr.mount_gradio_app(app, demo, path="/chat")
+    # Create and mount Gradio chatbot at /chat (requires ANTHROPIC_API_KEY)
+    try:
+        demo = create_chatbot()
+        app = gr.mount_gradio_app(app, demo, path="/chat")
+        logger.info("Chatbot mounted at /chat")
+    except (ValueError, Exception) as e:
+        logger.warning(
+            f"Chatbot disabled: {e}. "
+            "Admin routes still available. Set ANTHROPIC_API_KEY to enable chat."
+        )
 
     return app
 
