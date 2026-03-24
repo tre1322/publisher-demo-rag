@@ -77,15 +77,64 @@ def extract_text_from_bytes(data: bytes, filename: str = "upload.pdf") -> str:
         return ""
 
 
+def _looks_like_business_name(line: str) -> bool:
+    """Check if a line looks like a business name (not a date, price, phone, etc.)."""
+    import re
+
+    line_lower = line.lower().strip()
+    # Skip dates, times, phone numbers, prices, short fragments
+    if re.match(r"^(monday|tuesday|wednesday|thursday|friday|saturday|sunday)", line_lower):
+        return False
+    if re.match(r"^(january|february|march|april|may|june|july|august|september|october|november|december)", line_lower):
+        return False
+    if re.match(r"^\d{1,2}[/\-\.]\d{1,2}", line_lower):  # Date patterns
+        return False
+    if re.match(r"^\$?\d+[\.,]", line_lower):  # Prices
+        return False
+    if re.match(r"^\(?\d{3}\)?[\s\-\.]?\d{3}", line_lower):  # Phone numbers
+        return False
+    if len(line) < 3:  # Too short
+        return False
+    if not any(c.isalpha() for c in line):  # Must contain letters
+        return False
+    return True
+
+
+def _clean_filename_as_name(filename: str) -> str:
+    """Extract a business name from a filename by removing dimensions/noise."""
+    import re
+
+    stem = Path(filename).stem
+    # Remove dimension patterns like "3x6", "4x5", "half page", trailing "ad", etc.
+    stem = re.sub(r"\s*\d+x\d+\s*", " ", stem, flags=re.IGNORECASE)
+    stem = re.sub(r"\s*(half|quarter|full)\s*page\s*", " ", stem, flags=re.IGNORECASE)
+    stem = re.sub(r"\s+ad$", "", stem, flags=re.IGNORECASE)
+    stem = stem.replace("_", " ").replace("-", " ").strip()
+    # Collapse multiple spaces
+    stem = re.sub(r"\s+", " ", stem)
+    return stem.title() if stem else "Unknown"
+
+
 def infer_advertiser_name(text: str, filename: str) -> str:
-    """Try to infer the advertiser name from text or filename."""
-    # First non-empty line is often the business name
+    """Infer the advertiser/business name from text or filename.
+
+    Strategy:
+    1. If filename contains a clear business name (3+ alpha chars), prefer it
+    2. Otherwise, find the first line in text that looks like a business name
+    3. Fall back to cleaned filename
+    """
+    # Try filename first — uploaders often name files after the business
+    cleaned_filename = _clean_filename_as_name(filename)
+    if len(cleaned_filename) >= 3 and cleaned_filename != "Unknown":
+        return cleaned_filename
+
+    # Scan text for a line that looks like a business name
     for line in text.split("\n"):
         line = line.strip()
-        if line and len(line) < 100:
+        if line and len(line) < 100 and _looks_like_business_name(line):
             return line
-    # Fall back to filename
-    return Path(filename).stem.replace("_", " ").replace("-", " ").title()
+
+    return cleaned_filename
 
 
 class AdIngester:
