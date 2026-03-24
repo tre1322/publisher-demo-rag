@@ -41,9 +41,10 @@ COPY scripts/ scripts/
 COPY static/ static/
 COPY .env.example .env.example
 
-# Create data directories
+# Create data directories and fix line endings for shell scripts
 RUN mkdir -p data/chroma_db data/documents data/ads data/events data/editions && \
     touch data/ingested_files.json && \
+    sed -i 's/\r$//' scripts/*.sh && \
     chmod +x scripts/init.sh scripts/*.sh && \
     find /root/.local -type f -name "*.pyc" -delete && \
     find /root/.local -type d -name "__pycache__" -delete

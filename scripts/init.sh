@@ -4,13 +4,15 @@ set -e  # Exit on any error
 # Change to script directory
 cd "$(dirname "$0")/.."
 
+echo "[INIT] init.sh started"
 echo "======================================"
 echo "Publisher RAG Demo - Initialization"
 echo "======================================"
 
 # Show working directory for debugging
-echo "Working directory: $(pwd)"
-echo "Data directory: $(pwd)/data"
+echo "[INIT] Working directory: $(pwd)"
+echo "[INIT] Data directory: $(pwd)/data"
+echo "[INIT] RUN_AD_REINDEX_ON_STARTUP=${RUN_AD_REINDEX_ON_STARTUP:-<not set>}"
 
 # Check for required environment variable
 if [ -z "$ANTHROPIC_API_KEY" ]; then
@@ -80,15 +82,16 @@ echo ""
 
 # Optional: reindex ads into the new advertisements Chroma collection
 # Set RUN_AD_REINDEX_ON_STARTUP=true in Railway env vars to trigger
-if [ "$RUN_AD_REINDEX_ON_STARTUP" = "true" ]; then
-    echo "[+] Ad reindex requested (RUN_AD_REINDEX_ON_STARTUP=true)..."
+echo "[INIT] Checking RUN_AD_REINDEX_ON_STARTUP='${RUN_AD_REINDEX_ON_STARTUP}'"
+if [ "${RUN_AD_REINDEX_ON_STARTUP}" = "true" ]; then
+    echo "[INIT] Ad reindex requested"
     if python scripts/reindex_ads.py; then
-        echo "✓ Ad reindex complete"
+        echo "[INIT] Ad reindex complete"
     else
-        echo "⚠ Warning: Ad reindex failed (continuing anyway)"
+        echo "[INIT] WARNING: Ad reindex failed (continuing anyway)"
     fi
 else
-    echo "[+] Ad reindex skipped (set RUN_AD_REINDEX_ON_STARTUP=true to enable)"
+    echo "[INIT] Ad reindex skipped (RUN_AD_REINDEX_ON_STARTUP != true)"
 fi
 
 echo ""
