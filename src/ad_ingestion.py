@@ -22,6 +22,7 @@ from src.ad_processing import (
     MIN_TEXT_LENGTH,
     categorize_ad,
     enrich_ad_text,
+    extract_business_name_from_image,
     extract_location,
     ocr_pdf_bytes,
     ocr_pdf_file,
@@ -100,6 +101,12 @@ def _looks_like_business_name(line: str) -> bool:
     return True
 
 
+_GENERIC_FILENAMES = {
+    "upload", "ad", "ads", "scan", "image", "document", "doc", "file",
+    "untitled", "unknown", "new", "temp", "tmp",
+}
+
+
 def _clean_filename_as_name(filename: str) -> str:
     """Extract a business name from a filename by removing dimensions/noise."""
     import re
@@ -115,25 +122,62 @@ def _clean_filename_as_name(filename: str) -> str:
     return stem.title() if stem else "Unknown"
 
 
-def infer_advertiser_name(text: str, filename: str) -> str:
-    """Infer the advertiser/business name from text or filename.
+def _is_generic_filename(filename: str) -> bool:
+    """Check if a filename is generic/uninformative (not a business name)."""
+    import re
+
+    stem = Path(filename).stem.lower()
+    # Remove dimensions and noise first
+    stem = re.sub(r"\d+x\d+", "", stem)
+    stem = re.sub(r"[_\-\.\s]+", " ", stem).strip()
+
+    # Check against known generic names
+    if stem in _GENERIC_FILENAMES:
+        return True
+    # Purely numeric filenames
+    if re.match(r"^\d+$", stem):
+        return True
+    # Very short (1-2 chars) or looks like "ad_001", "page5"
+    if len(stem) <= 2:
+        return True
+    if re.match(r"^(ad|page|img|scan|doc)\s*\d+$", stem):
+        return True
+    return False
+
+
+def infer_advertiser_name(
+    text: str, filename: str, pdf_bytes: bytes | None = None
+) -> str:
+    """Infer the advertiser/business name from filename, text, or ad image.
 
     Strategy:
-    1. If filename contains a clear business name (3+ alpha chars), prefer it
-    2. Otherwise, find the first line in text that looks like a business name
-    3. Fall back to cleaned filename
+    1. If filename contains a clear business name → use it (free, instant)
+    2. If filename is generic → use Claude Vision to read the business name
+       from the ad image (logos, headers, branding)
+    3. Scan extracted text for a line that looks like a business name
+    4. Fall back to cleaned filename
     """
     # Try filename first — uploaders often name files after the business
     cleaned_filename = _clean_filename_as_name(filename)
-    if len(cleaned_filename) >= 3 and cleaned_filename != "Unknown":
+    if not _is_generic_filename(filename) and len(cleaned_filename) >= 3:
+        logger.info(f"Advertiser name from filename: '{cleaned_filename}'")
         return cleaned_filename
+
+    # Filename is generic — try Claude Vision to read the business name
+    if pdf_bytes:
+        vision_name = extract_business_name_from_image(pdf_bytes, filename)
+        if vision_name:
+            logger.info(f"Advertiser name from Vision API: '{vision_name}'")
+            return vision_name
 
     # Scan text for a line that looks like a business name
     for line in text.split("\n"):
         line = line.strip()
         if line and len(line) < 100 and _looks_like_business_name(line):
+            logger.info(f"Advertiser name from text scan: '{line}'")
             return line
 
+    logger.info(f"Advertiser name fallback to filename: '{cleaned_filename}'")
     return cleaned_filename
 
 
@@ -218,7 +262,12 @@ class AdIngester:
             logger.warning(f"No text from ad PDF: {pdf_path.name}")
             return result
 
-        advertiser = infer_advertiser_name(best_text, pdf_path.name)
+        # Read PDF bytes for potential Vision-based name extraction
+        try:
+            _pdf_bytes = pdf_path.read_bytes()
+        except Exception:
+            _pdf_bytes = None
+        advertiser = infer_advertiser_name(best_text, pdf_path.name, pdf_bytes=_pdf_bytes)
 
         # Categorize, locate, and enrich
         ad_category = categorize_ad(best_text, advertiser)
@@ -349,7 +398,7 @@ class AdIngester:
             result["error"] = "No text extracted from PDF (even after OCR)"
             return result
 
-        advertiser = infer_advertiser_name(best_text, filename)
+        advertiser = infer_advertiser_name(best_text, filename, pdf_bytes=data)
 
         # Categorize, locate, and enrich
         ad_category = categorize_ad(best_text, advertiser)

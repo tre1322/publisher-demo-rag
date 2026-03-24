@@ -178,6 +178,79 @@ def ocr_pdf_file(file_path: str) -> str:
         return ""
 
 
+def extract_business_name_from_image(data: bytes, filename: str = "ad.pdf") -> str:
+    """Use Claude Vision to identify the business/advertiser name from an ad PDF.
+
+    Renders the first page to an image and asks Claude to identify the
+    business name from logos, headers, and branding.
+
+    Args:
+        data: Raw PDF bytes.
+        filename: Original filename (for logging).
+
+    Returns:
+        Business name string, or empty string on failure.
+    """
+    if not ANTHROPIC_API_KEY:
+        return ""
+
+    try:
+        doc = fitz.open(stream=data, filetype="pdf")
+        page = doc[0]
+        pix = page.get_pixmap(dpi=150)  # Lower DPI is fine for name extraction
+        png_bytes = pix.tobytes("png")
+        doc.close()
+        b64 = base64.b64encode(png_bytes).decode("utf-8")
+    except Exception as e:
+        logger.error(f"Business name extraction: failed to render {filename}: {e}")
+        return ""
+
+    try:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=100,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": b64,
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": (
+                            "What is the business or advertiser name in this ad? "
+                            "Look at logos, headers, and branding. Return ONLY the "
+                            "business name, nothing else. If you cannot determine "
+                            "the business name, return exactly: UNKNOWN"
+                        ),
+                    },
+                ],
+            }],
+        )
+
+        name = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                name = block.text.strip()
+
+        if name and name.upper() != "UNKNOWN" and len(name) < 200:
+            logger.info(f"Business name extracted via Vision for {filename}: '{name}'")
+            return name
+        else:
+            logger.info(f"Business name extraction returned no result for {filename}")
+            return ""
+
+    except Exception as e:
+        logger.error(f"Business name Vision API call failed for {filename}: {e}")
+        return ""
+
+
 # ── Ad categorization ───────────────────────────────────────────────────
 
 def categorize_ad(text: str, advertiser: str = "") -> str:
