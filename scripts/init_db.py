@@ -308,6 +308,49 @@ def main() -> None:
     cur.execute("CREATE INDEX IF NOT EXISTS idx_review_actions_article ON review_actions(article_id)")
     print("OK: review_actions")
 
+    # ── Publishers ──
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS publishers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            slug TEXT UNIQUE NOT NULL,
+            market TEXT,
+            state TEXT,
+            active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_publishers_slug ON publishers(slug)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_publishers_active ON publishers(active)")
+    print("OK: publishers")
+
+    # ── Content Items (skeleton) ──
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS content_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            edition_id INTEGER,
+            publisher_id INTEGER,
+            content_type TEXT NOT NULL DEFAULT 'article',
+            title TEXT,
+            raw_text TEXT,
+            cleaned_text TEXT,
+            page_number INTEGER,
+            status TEXT DEFAULT 'pending',
+            extraction_method TEXT,
+            source_region_json TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (edition_id) REFERENCES editions(id),
+            FOREIGN KEY (publisher_id) REFERENCES publishers(id)
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_content_items_edition ON content_items(edition_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_content_items_publisher ON content_items(publisher_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_content_items_type ON content_items(content_type)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_content_items_status ON content_items(status)")
+    print("OK: content_items")
+
     conn.commit()
     conn.close()
     print("OK: All tables initialized and migrated")

@@ -36,18 +36,25 @@ def init_all_tables() -> None:
     from src.modules.advertisements import database as ads_db
     from src.modules.analytics import database as analytics_db
     from src.modules.articles import database as articles_db
+    from src.modules.content_items import database as content_items_db
     from src.modules.conversations import database as conversations_db
     from src.modules.editions import database as editions_db
     from src.modules.events import database as events_db
     from src.modules.organizations import database as orgs_db
+    from src.modules.publishers import database as publishers_db
 
     orgs_db.init_table()
+    publishers_db.init_table()
     articles_db.init_table()
     ads_db.init_table()
     events_db.init_table()
     conversations_db.init_table()
     analytics_db.init_table()
     editions_db.init_table()
+    content_items_db.init_table()
+
+    # Seed default publishers (idempotent)
+    publishers_db.seed_publishers()
 
     # Verify critical migration columns exist
     conn = get_connection()

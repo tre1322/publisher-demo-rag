@@ -543,6 +543,69 @@ async def list_publications(
     return JSONResponse(content={"publications": get_all_publications()})
 
 
+# ── Publisher endpoints ──
+
+
+@router.get("/api/publishers")
+async def list_publishers(
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """List all publishers."""
+    from src.modules.publishers import get_all_publishers_db
+
+    try:
+        publishers = get_all_publishers_db()
+        return JSONResponse(content={"publishers": publishers})
+    except Exception as e:
+        logger.error(f"Failed to list publishers: {e}")
+        return JSONResponse(content={"publishers": [], "error": str(e)})
+
+
+@router.post("/api/publishers/{publisher_id}/editions/upload")
+async def upload_publisher_edition(
+    publisher_id: int,
+    files: list[UploadFile] = File(...),
+    edition_date: str = Form(""),
+    issue_label: str = Form(""),
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Upload edition PDFs for a specific publisher (tenant-aware)."""
+    from src.modules.publishers.uploads import upload_edition
+
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+
+    results = []
+    for file in files:
+        if not file.filename or not file.filename.lower().endswith(".pdf"):
+            results.append({"filename": file.filename, "error": "Not a PDF"})
+            continue
+
+        data = await file.read()
+        result = upload_edition(
+            publisher_id=publisher_id,
+            data=data,
+            filename=file.filename,
+            edition_date=edition_date or None,
+            issue_label=issue_label or None,
+        )
+        results.append(result)
+
+    uploaded = sum(1 for r in results if r.get("edition_id") and not r.get("error"))
+    duplicates = sum(1 for r in results if r.get("duplicate"))
+    failures = sum(1 for r in results if r.get("error") and not r.get("duplicate"))
+
+    return JSONResponse(content={
+        "success": True,
+        "publisher_id": publisher_id,
+        "files_received": len(files),
+        "uploaded": uploaded,
+        "duplicates_rejected": duplicates,
+        "failures": failures,
+        "details": results,
+    })
+
+
 # ── Article review/edit endpoints ──
 
 
