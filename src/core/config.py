@@ -23,7 +23,8 @@ logging.basicConfig(
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 DOCUMENTS_DIR = DATA_DIR / "documents"
-CHROMA_PERSIST_DIR = Path(os.getenv("CHROMA_PERSIST_DIR", str(DATA_DIR / "chroma_db")))
+# Resolve to absolute path so reindex scripts and runtime always agree
+CHROMA_PERSIST_DIR = Path(os.getenv("CHROMA_PERSIST_DIR", str(DATA_DIR / "chroma_db"))).resolve()
 INGESTED_FILES_PATH = DATA_DIR / "ingested_files.json"
 
 # Ensure directories exist

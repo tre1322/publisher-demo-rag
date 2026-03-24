@@ -386,11 +386,30 @@ class QueryEngine:
         """Check if the query engine is ready.
 
         Returns:
-            True if collection exists and has documents.
+            True if any content collection has documents, or if DB has ads.
         """
-        if self.collection is None:
-            return False
-        return self.collection.count() > 0
+        # Check articles collection
+        if self.collection is not None and self.collection.count() > 0:
+            return True
+        # Check legacy collection
+        if self.legacy_collection is not None and self.legacy_collection.count() > 0:
+            return True
+        # Check ads collection
+        try:
+            from src.core.vector_store import get_ads_collection
+            ads_col = get_ads_collection()
+            if ads_col.count() > 0:
+                return True
+        except Exception:
+            pass
+        # Check if DB has any ads (even without vector index, SQLite search works)
+        try:
+            from src.modules.advertisements import get_advertisement_count
+            if get_advertisement_count() > 0:
+                return True
+        except Exception:
+            pass
+        return False
 
 
 def main() -> None:

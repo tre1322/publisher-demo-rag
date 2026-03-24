@@ -105,8 +105,9 @@ async def stream_response(
             conversation_id = None
 
     def generate() -> Iterator[bytes]:
-        # Check if engine is ready
+        # Check if engine is ready (articles, ads, or legacy content)
         if not engine.is_ready():
+            logger.warning("No content available — articles and ads collections empty")
             yield b'{"type": "error", "content": "No documents indexed."}\n'
             return
 
