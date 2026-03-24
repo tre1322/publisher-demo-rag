@@ -63,6 +63,23 @@ conn.close()
 "
 
 echo ""
+echo "[INIT] About to evaluate reindex flag"
+echo "[INIT] RUN_AD_REINDEX_ON_STARTUP='${RUN_AD_REINDEX_ON_STARTUP}'"
+# Reindex ads into the advertisements Chroma collection (guarded by env var)
+if [ "${RUN_AD_REINDEX_ON_STARTUP}" = "true" ]; then
+    echo "[INIT] Reindex condition matched, running scripts/reindex_ads.py"
+    python scripts/reindex_ads.py && REINDEX_RC=$? || REINDEX_RC=$?
+    echo "[INIT] reindex_ads.py exited with code ${REINDEX_RC}"
+    if [ "${REINDEX_RC}" -ne 0 ]; then
+        echo "[INIT] WARNING: Ad reindex failed (exit ${REINDEX_RC}), continuing anyway"
+    else
+        echo "[INIT] Ad reindex complete"
+    fi
+else
+    echo "[INIT] Reindex condition not matched, skipping"
+fi
+
+echo ""
 echo "[3/4] Loading sample advertisements..."
 if python scripts/load_sample_ads.py; then
     echo "✓ Sample ads loaded"
@@ -76,22 +93,6 @@ if python scripts/load_sample_events.py; then
     echo "✓ Sample events loaded"
 else
     echo "⚠ Warning: Failed to load sample events (continuing anyway)"
-fi
-
-echo ""
-
-# Optional: reindex ads into the new advertisements Chroma collection
-# Set RUN_AD_REINDEX_ON_STARTUP=true in Railway env vars to trigger
-echo "[INIT] Checking RUN_AD_REINDEX_ON_STARTUP='${RUN_AD_REINDEX_ON_STARTUP}'"
-if [ "${RUN_AD_REINDEX_ON_STARTUP}" = "true" ]; then
-    echo "[INIT] Ad reindex requested"
-    if python scripts/reindex_ads.py; then
-        echo "[INIT] Ad reindex complete"
-    else
-        echo "[INIT] WARNING: Ad reindex failed (continuing anyway)"
-    fi
-else
-    echo "[INIT] Ad reindex skipped (RUN_AD_REINDEX_ON_STARTUP != true)"
 fi
 
 echo ""
