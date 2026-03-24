@@ -77,6 +77,21 @@ else
 fi
 
 echo ""
+
+# Optional: reindex ads into the new advertisements Chroma collection
+# Set RUN_AD_REINDEX_ON_STARTUP=true in Railway env vars to trigger
+if [ "$RUN_AD_REINDEX_ON_STARTUP" = "true" ]; then
+    echo "[+] Ad reindex requested (RUN_AD_REINDEX_ON_STARTUP=true)..."
+    if python scripts/reindex_ads.py; then
+        echo "✓ Ad reindex complete"
+    else
+        echo "⚠ Warning: Ad reindex failed (continuing anyway)"
+    fi
+else
+    echo "[+] Ad reindex skipped (set RUN_AD_REINDEX_ON_STARTUP=true to enable)"
+fi
+
+echo ""
 echo "======================================"
 echo "Initialization complete!"
 echo "======================================"
