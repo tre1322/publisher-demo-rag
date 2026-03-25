@@ -24,11 +24,14 @@ fi
 mkdir -p data/chroma_db data/documents data/ads data/events data/editions
 touch data/ingested_files.json
 
-# Copy staged quadd DB into the mounted volume (Railway volume hides baked files)
-if [ -f "/app/staged/quadd_articles.db" ] && [ ! -f "data/quadd_articles.db" ]; then
-    echo "[INIT] Copying staged quadd_articles.db into data volume..."
-    cp /app/staged/quadd_articles.db data/quadd_articles.db
+# ALWAYS copy staged quadd DB into the mounted volume — overwrites old versions
+# (Railway volume persists old files; we need the latest baked version every deploy)
+if [ -f "/app/staged/quadd_articles.db" ]; then
+    echo "[INIT] Copying staged quadd_articles.db into data volume (overwriting any old version)..."
+    cp -f /app/staged/quadd_articles.db data/quadd_articles.db
     echo "[INIT] ✓ quadd_articles.db copied ($(ls -la data/quadd_articles.db))"
+else
+    echo "[INIT] WARNING: No staged quadd_articles.db found at /app/staged/"
 fi
 
 # Check for pre-ingested databases (baked into Docker image)
