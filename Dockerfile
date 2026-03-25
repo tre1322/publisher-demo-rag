@@ -41,11 +41,13 @@ COPY scripts/ scripts/
 COPY static/ static/
 COPY .env.example .env.example
 
-# Copy pre-extracted article database from quadd pipeline
+# Copy pre-ingested databases (articles already in SQLite + ChromaDB)
+COPY data/articles.db data/articles.db
+COPY data/chroma_db/ data/chroma_db/
 COPY data/quadd_articles.db data/quadd_articles.db
 
 # Create data directories and fix line endings for shell scripts
-RUN mkdir -p data/chroma_db data/documents data/ads data/events data/editions && \
+RUN mkdir -p data/documents data/ads data/events data/editions && \
     touch data/ingested_files.json && \
     sed -i 's/\r$//' scripts/*.sh && \
     chmod +x scripts/init.sh scripts/*.sh && \
