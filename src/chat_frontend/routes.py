@@ -116,8 +116,19 @@ async def stream_response(
             # Send searching status
             yield b'{"type": "status", "content": "Searching..."}\n'
 
-            # Perform search
-            chunks = engine.search_agent.search(message)
+            # Perform search — direct ChromaDB retrieval is fast and reliable.
+            # Also search ads and events alongside articles.
+            chunks = engine.retrieve(message)
+            # Supplement with ads and events
+            try:
+                from src.modules.advertisements.search import AdvertisementSearch
+                from src.modules.events.search import EventSearch
+                ad_results = AdvertisementSearch().search(message)
+                chunks.extend(ad_results)
+                event_results = EventSearch().search(message)
+                chunks.extend(event_results)
+            except Exception as sup_err:
+                logger.warning(f"Supplemental search error: {sup_err}")
 
             # Send thinking status
             yield b'{"type": "status", "content": "Thinking..."}\n'
