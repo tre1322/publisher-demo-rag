@@ -115,6 +115,21 @@ else
     echo "[INIT] No quadd DB found at $QUADD_DB, skipping article ingestion"
 fi
 
+# Reindex articles into Chroma (guarded by env var, same pattern as ads)
+echo ""
+echo "[INIT] RUN_ARTICLE_REINDEX_ON_STARTUP='${RUN_ARTICLE_REINDEX_ON_STARTUP}'"
+if [ "${RUN_ARTICLE_REINDEX_ON_STARTUP}" = "true" ]; then
+    echo "[INIT] Reindexing articles into ChromaDB..."
+    python scripts/reindex_articles.py && ART_RC=$? || ART_RC=$?
+    if [ "${ART_RC}" -ne 0 ]; then
+        echo "[INIT] WARNING: Article reindex failed (exit ${ART_RC}), continuing"
+    else
+        echo "✓ Article reindex complete"
+    fi
+else
+    echo "[INIT] Article reindex skipped (set RUN_ARTICLE_REINDEX_ON_STARTUP=true to enable)"
+fi
+
 echo ""
 echo "[3/4] Sample data loading..."
 # Sample ads/events are opt-in — only load if LOAD_SAMPLE_DATA=true
