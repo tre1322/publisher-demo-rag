@@ -514,6 +514,43 @@ def create_app() -> FastAPI:
         """Health check endpoint for Railway."""
         return {"status": "ok"}
 
+    @app.get("/debug/seed-status")
+    def seed_status():
+        """Debug: check if articles were seeded and quadd DB exists."""
+        import sqlite3 as sq
+        result = {}
+        # Check quadd DB
+        qdb = Path(__file__).parent.parent / "data" / "quadd_articles.db"
+        result["quadd_db_exists"] = qdb.exists()
+        if qdb.exists():
+            result["quadd_db_size"] = qdb.stat().st_size
+            try:
+                c = sq.connect(str(qdb))
+                tables = [t[0] for t in c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+                result["quadd_tables"] = tables
+                if "content_items" in tables:
+                    result["quadd_content_items"] = c.execute("SELECT COUNT(*) FROM content_items").fetchone()[0]
+                    result["quadd_edition_31"] = c.execute("SELECT COUNT(*) FROM content_items WHERE edition_id=31").fetchone()[0]
+                c.close()
+            except Exception as e:
+                result["quadd_error"] = str(e)
+        # Check main DB
+        mdb = Path(__file__).parent.parent / "data" / "articles.db"
+        result["main_db_exists"] = mdb.exists()
+        if mdb.exists():
+            try:
+                c = sq.connect(str(mdb))
+                result["main_articles"] = c.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
+                c.close()
+            except Exception as e:
+                result["main_error"] = str(e)
+        # Check chroma
+        cdb = Path(__file__).parent.parent / "data" / "chroma_db"
+        result["chroma_dir_exists"] = cdb.exists()
+        if cdb.exists():
+            result["chroma_files"] = [str(p.name) for p in cdb.iterdir()]
+        return result
+
     @app.get("/mock-content")
     def mock_content(
         type: str,
