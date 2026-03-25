@@ -91,6 +91,22 @@ else
 fi
 
 echo ""
+echo "[2.5/4] Ingesting quadd extraction articles..."
+# Ingest articles extracted by the quadd pipeline (if quadd DB is available)
+QUADD_DB="${QUADD_DB_PATH:-/app/data/quadd_articles.db}"
+if [ -f "$QUADD_DB" ]; then
+    echo "[INIT] Found quadd DB at $QUADD_DB, ingesting articles..."
+    python scripts/ingest_quadd_articles.py --quadd-db "$QUADD_DB" --edition-id "${QUADD_EDITION_ID:-31}" && QUADD_RC=$? || QUADD_RC=$?
+    if [ "${QUADD_RC}" -ne 0 ]; then
+        echo "[INIT] WARNING: Quadd ingestion failed (exit ${QUADD_RC}), continuing"
+    else
+        echo "✓ Quadd articles ingested"
+    fi
+else
+    echo "[INIT] No quadd DB found at $QUADD_DB, skipping article ingestion"
+fi
+
+echo ""
 echo "[3/4] Sample data loading..."
 # Sample ads/events are opt-in — only load if LOAD_SAMPLE_DATA=true
 # These are Pipestone demo businesses, not real production data

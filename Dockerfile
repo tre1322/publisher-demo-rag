@@ -41,6 +41,9 @@ COPY scripts/ scripts/
 COPY static/ static/
 COPY .env.example .env.example
 
+# Copy pre-extracted article database from quadd pipeline
+COPY data/quadd_articles.db data/quadd_articles.db
+
 # Create data directories and fix line endings for shell scripts
 RUN mkdir -p data/chroma_db data/documents data/ads data/events data/editions && \
     touch data/ingested_files.json && \
