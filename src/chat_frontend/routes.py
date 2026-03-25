@@ -117,8 +117,23 @@ async def stream_response(
             yield b'{"type": "status", "content": "Searching..."}\n'
 
             # Perform search — direct ChromaDB retrieval is fast and reliable.
-            # Also search ads and events alongside articles.
-            chunks = engine.retrieve(message, publisher=publisher)
+            # Grand Network: default to this publisher's content, but if the user
+            # explicitly asks about another city/paper, search across ALL publishers.
+            effective_publisher = publisher
+            if publisher:
+                cross_ref_keywords = [
+                    "windom", "pipestone", "mountain lake", "mt. lake", "mt lake",
+                    "butterfield", "cottonwood", "jackson", "murray",
+                    "observer", "advocate", "pipestone star", "county star",
+                    "other papers", "other newspapers", "regional", "network",
+                    "across", "all papers", "all publications",
+                ]
+                msg_lower = message.lower()
+                if any(kw in msg_lower for kw in cross_ref_keywords):
+                    effective_publisher = None  # Search all publishers
+                    logger.info(f"Cross-network search triggered: '{message}' (was: {publisher})")
+
+            chunks = engine.retrieve(message, publisher=effective_publisher)
             # Supplement with ads and events
             try:
                 from src.modules.advertisements.search import AdvertisementSearch
