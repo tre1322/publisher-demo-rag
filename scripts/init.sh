@@ -176,3 +176,4 @@ echo ""
 
 # Start the main chatbot (foreground)
 exec python src/chatbot.py
+# Force rebuild 1774461920
