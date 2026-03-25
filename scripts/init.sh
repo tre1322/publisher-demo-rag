@@ -122,9 +122,10 @@ else
     echo "[INIT] No quadd DB found at $QUADD_DB, skipping article ingestion"
 fi
 
-# Reindex articles into Chroma (guarded by env var, same pattern as ads)
+# Reindex articles into Chroma AFTER all ingestion is done
 echo ""
 echo "[INIT] RUN_ARTICLE_REINDEX_ON_STARTUP='${RUN_ARTICLE_REINDEX_ON_STARTUP}'"
+echo "[DEBUG] Article count before reindex: $(python3 -c "import sqlite3; c=sqlite3.connect('data/articles.db'); c.row_factory=sqlite3.Row; print(c.execute('SELECT COUNT(*) FROM articles WHERE (cleaned_text IS NOT NULL AND length(cleaned_text) > 50) OR (full_text IS NOT NULL AND length(full_text) > 50)').fetchone()[0])" 2>&1)"
 if [ "${RUN_ARTICLE_REINDEX_ON_STARTUP}" = "true" ]; then
     echo "[INIT] Reindexing articles into ChromaDB..."
     python scripts/reindex_articles.py && ART_RC=$? || ART_RC=$?
