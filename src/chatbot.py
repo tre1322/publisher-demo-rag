@@ -525,6 +525,62 @@ def create_app() -> FastAPI:
         """Render the Pipestone County Star landing page (green theme)."""
         return landing_templates.TemplateResponse("landing_pipestone.html", {"request": request})
 
+    # ── Article Detail Pages ──
+
+    @app.get("/api/articles/{doc_id}")
+    async def get_article_api(doc_id: str):
+        """API: fetch a single article by doc_id."""
+        import sqlite3
+        db_path = Path(__file__).parent.parent / "data" / "articles.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM articles WHERE doc_id = ?", (doc_id,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=404, content={"error": "Article not found"})
+        return dict(row)
+
+    @app.get("/article/{doc_id}", response_class=HTMLResponse)
+    async def article_detail_page(request: Request, doc_id: str):
+        """Render the article detail page."""
+        import sqlite3
+        db_path = Path(__file__).parent.parent / "data" / "articles.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM articles WHERE doc_id = ?", (doc_id,)
+        ).fetchone()
+
+        # Get related articles (same publisher, different article)
+        related = []
+        if row:
+            related = conn.execute(
+                """SELECT doc_id, title, author, publish_date, publisher, section,
+                          substr(COALESCE(cleaned_text, full_text, ''), 1, 150) as excerpt
+                   FROM articles
+                   WHERE publisher = ? AND doc_id != ?
+                     AND (cleaned_text IS NOT NULL AND length(cleaned_text) > 50)
+                   ORDER BY RANDOM() LIMIT 4""",
+                (row["publisher"], doc_id)
+            ).fetchall()
+
+        conn.close()
+
+        if not row:
+            return HTMLResponse("<h1>Article not found</h1>", status_code=404)
+
+        article = dict(row)
+        related_list = [dict(r) for r in related]
+
+        return landing_templates.TemplateResponse("article_detail.html", {
+            "request": request,
+            "article": article,
+            "related": related_list,
+        })
+
     @app.get("/health")
     def health_check():
         """Health check endpoint for Railway."""
