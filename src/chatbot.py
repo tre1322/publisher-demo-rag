@@ -24,17 +24,52 @@ from src.core.database import init_all_tables
 
 init_all_tables()
 
-# Seed quadd articles into the database if available
-try:
-    import importlib.util, types
-    _spec = importlib.util.spec_from_file_location("seed_articles", Path(__file__).parent.parent / "scripts" / "seed_articles.py")
-    _mod = importlib.util.module_from_spec(_spec)
-    _spec.loader.exec_module(_mod)
-    _count = _mod.seed()
-    if _count:
-        logging.getLogger(__name__).info(f"Seeded {_count} quadd articles into database")
-except Exception as e:
-    logging.getLogger(__name__).warning(f"Quadd article seeding skipped: {e}")
+# Seed quadd articles into the main database if available
+_quadd_db = Path(__file__).parent.parent / "data" / "quadd_articles.db"
+if _quadd_db.exists():
+    try:
+        import sqlite3 as _sq3
+        import uuid as _uuid
+        _qconn = _sq3.connect(str(_quadd_db))
+        _qconn.row_factory = _sq3.Row
+        _rows = _qconn.execute("""
+            SELECT headline, byline, cleaned_web_text, start_page, jump_pages_json, section, edition_id
+            FROM content_items
+            WHERE cleaned_web_text IS NOT NULL AND length(cleaned_web_text) >= 100
+              AND headline IS NOT NULL AND headline != '?' AND edition_id = 31
+        """).fetchall()
+        _qconn.close()
+
+        _main_db = Path(__file__).parent.parent / "data" / "articles.db"
+        _mconn = _sq3.connect(str(_main_db))
+        _mc = _mconn.cursor()
+        _seeded = 0
+        for _r in _rows:
+            _r = dict(_r)
+            _hl = (_r.get("headline") or "").strip()
+            _body = (_r.get("cleaned_web_text") or "").strip()
+            if not _hl or len(_body) < 50:
+                continue
+            _eid = _r.get("edition_id", 0)
+            _did = f"quadd_{_eid}_{_uuid.uuid5(_uuid.NAMESPACE_DNS, f'{_eid}_{_hl}')}"
+            _loc = "Cottonwood County, MN"
+            if "butterfield" in _hl.lower(): _loc = "Butterfield, MN"
+            elif "bingham" in _hl.lower(): _loc = "Bingham Lake, MN"
+            elif "larson" in _hl.lower() or "mt. lake" in _hl.lower(): _loc = "Mountain Lake, MN"
+            _mc.execute("""INSERT OR REPLACE INTO articles
+                (doc_id,title,author,publish_date,source_file,location,publisher,edition_id,section,start_page,continuation_pages,full_text,cleaned_text,needs_review,status,updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,0,'parsed',CURRENT_TIMESTAMP)""",
+                (_did, _hl, _r.get("byline"), "2026-01-28", "quadd_extraction", _loc,
+                 "Observer/Advocate", _eid, _r.get("section"), _r.get("start_page"),
+                 _r.get("jump_pages_json"), _body, _body))
+            _seeded += 1
+        _mconn.commit()
+        _mconn.close()
+        logging.getLogger(__name__).info(f"SEED: Inserted {_seeded} quadd articles into articles table")
+    except Exception as e:
+        logging.getLogger(__name__).error(f"SEED FAILED: {e}", exc_info=True)
+else:
+    logging.getLogger(__name__).info(f"SEED: No quadd DB at {_quadd_db}, skipping")
 
 from src.modules.advertisements import get_random_advertisements
 from src.modules.analytics import log_content_impression, log_url_click
