@@ -506,8 +506,13 @@ def create_app() -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     async def landing_page(request: Request) -> HTMLResponse:
-        """Render the landing page with AI chat hero."""
+        """Render the Observer/Advocate landing page with AI chat hero."""
         return landing_templates.TemplateResponse("landing.html", {"request": request})
+
+    @app.get("/pipestone", response_class=HTMLResponse)
+    async def pipestone_landing(request: Request) -> HTMLResponse:
+        """Render the Pipestone County Star landing page (green theme)."""
+        return landing_templates.TemplateResponse("landing_pipestone.html", {"request": request})
 
     @app.get("/health")
     def health_check():
