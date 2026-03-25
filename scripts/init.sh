@@ -37,8 +37,12 @@ fi
 
 echo ""
 echo "[2/4] Initializing database tables..."
+echo "[DEBUG] articles.db exists before init_db: $(ls -la data/articles.db 2>&1)"
+echo "[DEBUG] Article count before init_db: $(python3 -c "import sqlite3; c=sqlite3.connect('data/articles.db'); print(c.execute('SELECT COUNT(*) FROM articles').fetchone()[0])" 2>&1)"
+echo "[DEBUG] chroma_db contents: $(ls -la data/chroma_db/ 2>&1)"
 python3 scripts/init_db.py
 echo "✓ Database tables initialized"
+echo "[DEBUG] Article count after init_db: $(python3 -c "import sqlite3; c=sqlite3.connect('data/articles.db'); print(c.execute('SELECT COUNT(*) FROM articles').fetchone()[0])" 2>&1)"
 
 # Verify tables exist
 echo ""
