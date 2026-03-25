@@ -33,10 +33,11 @@ if _quadd_db.exists():
         _qconn = _sq3.connect(str(_quadd_db))
         _qconn.row_factory = _sq3.Row
         _rows = _qconn.execute("""
-            SELECT headline, byline, cleaned_web_text, start_page, jump_pages_json, section, edition_id
+            SELECT headline, byline, cleaned_web_text, start_page, jump_pages_json, section, edition_id, publisher_id
             FROM content_items
             WHERE cleaned_web_text IS NOT NULL AND length(cleaned_web_text) >= 100
-              AND headline IS NOT NULL AND headline != '?' AND edition_id = 31
+              AND headline IS NOT NULL AND headline != '?'
+              AND edition_id IN (31, 1312)
         """).fetchall()
         _qconn.close()
 
@@ -51,16 +52,26 @@ if _quadd_db.exists():
             if not _hl or len(_body) < 50:
                 continue
             _eid = _r.get("edition_id", 0)
+            _pid = _r.get("publisher_id", 1)
             _did = f"quadd_{_eid}_{_uuid.uuid5(_uuid.NAMESPACE_DNS, f'{_eid}_{_hl}')}"
-            _loc = "Cottonwood County, MN"
-            if "butterfield" in _hl.lower(): _loc = "Butterfield, MN"
-            elif "bingham" in _hl.lower(): _loc = "Bingham Lake, MN"
-            elif "larson" in _hl.lower() or "mt. lake" in _hl.lower(): _loc = "Mountain Lake, MN"
+            # Determine publisher, location, and date based on publisher_id
+            if _pid == 2:
+                _pub = "Pipestone County Star"
+                _loc = "Pipestone, MN"
+                _pdate = "2026-01-08"
+            else:
+                _pub = "Observer/Advocate"
+                _pdate = "2026-01-28"
+                _loc = "Cottonwood County, MN"
+                if "butterfield" in _hl.lower(): _loc = "Butterfield, MN"
+                elif "bingham" in _hl.lower(): _loc = "Bingham Lake, MN"
+                elif "larson" in _hl.lower() or "mt. lake" in _hl.lower(): _loc = "Mountain Lake, MN"
+                elif "pipestone" in _hl.lower(): _loc = "Pipestone, MN"
             _mc.execute("""INSERT OR REPLACE INTO articles
                 (doc_id,title,author,publish_date,source_file,location,publisher,edition_id,section,start_page,continuation_pages,full_text,cleaned_text,needs_review,status,updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,0,'parsed',CURRENT_TIMESTAMP)""",
-                (_did, _hl, _r.get("byline"), "2026-01-28", "quadd_extraction", _loc,
-                 "Observer/Advocate", _eid, _r.get("section"), _r.get("start_page"),
+                (_did, _hl, _r.get("byline"), _pdate, "quadd_extraction", _loc,
+                 _pub, _eid, _r.get("section"), _r.get("start_page"),
                  _r.get("jump_pages_json"), _body, _body))
             _seeded += 1
         _mconn.commit()
