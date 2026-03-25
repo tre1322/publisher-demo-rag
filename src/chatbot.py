@@ -549,6 +549,30 @@ def create_app() -> FastAPI:
         result["chroma_dir_exists"] = cdb.exists()
         if cdb.exists():
             result["chroma_files"] = [str(p.name) for p in cdb.iterdir()]
+        # Check ChromaDB collection counts
+        try:
+            from src.core.vector_store import get_articles_collection, get_ads_collection
+            art_coll = get_articles_collection()
+            result["chroma_articles_count"] = art_coll.count()
+            # Do a test query for "wolverines"
+            from sentence_transformers import SentenceTransformer
+            from src.core.config import EMBEDDING_MODEL
+            model = SentenceTransformer(EMBEDDING_MODEL)
+            emb = model.encode(["Did the wolverines win?"]).tolist()
+            test_results = art_coll.query(query_embeddings=emb, n_results=3, include=["documents", "metadatas", "distances"])
+            result["test_wolverines_query"] = []
+            if test_results and test_results["documents"]:
+                for i, doc in enumerate(test_results["documents"][0]):
+                    dist = test_results["distances"][0][i]
+                    title = test_results["metadatas"][0][i].get("title", "?")
+                    doc_id = test_results["metadatas"][0][i].get("doc_id", "?")
+                    result["test_wolverines_query"].append({
+                        "rank": i+1, "score": round(1-dist, 3),
+                        "title": title[:60], "doc_id": doc_id[:40],
+                        "text_preview": doc[:80]
+                    })
+        except Exception as e:
+            result["chroma_error"] = str(e)
         return result
 
     @app.get("/mock-content")
