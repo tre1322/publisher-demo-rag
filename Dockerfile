@@ -41,12 +41,11 @@ COPY scripts/ scripts/
 COPY static/ static/
 COPY .env.example .env.example
 
-# Copy pre-extracted quadd database (source for article seeding at startup)
-# NOTE: articles.db gets created fresh by init_db.py, so we only bake the source
-COPY data/quadd_articles.db data/quadd_articles.db
-
-# Verify the file made it in (build-time check)
-RUN ls -la data/quadd_articles.db && echo "quadd DB baked OK"
+# Copy pre-extracted quadd database to a STAGING location
+# NOTE: Railway mounts a persistent volume at data/ which hides baked files.
+# We stage it here, then init.sh copies it into data/ at runtime.
+COPY data/quadd_articles.db /app/staged/quadd_articles.db
+RUN ls -la /app/staged/quadd_articles.db && echo "quadd DB staged OK"
 
 # Create data directories and fix line endings for shell scripts
 RUN mkdir -p data/documents data/ads data/events data/editions && \
