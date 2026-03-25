@@ -118,10 +118,13 @@ class SearchAgent:
         """
         logger.info(f"Executing tool: {tool_name} with {tool_input}")
 
+        pub = getattr(self, "_current_publisher", None)
+
         if tool_name == "semantic_search":
             return self.search_tools.semantic_search(
                 query=tool_input.get("query", ""),
                 top_k=tool_input.get("top_k", 5),
+                publisher=pub,
             )
         elif tool_name == "metadata_search":
             return self.search_tools.metadata_search(
@@ -130,6 +133,7 @@ class SearchAgent:
                 author=tool_input.get("author"),
                 location=tool_input.get("location"),
                 subject=tool_input.get("subject"),
+                publisher=pub,
             )
         elif tool_name == "hybrid_search":
             return self.search_tools.hybrid_search(
@@ -138,6 +142,7 @@ class SearchAgent:
                 date_to=tool_input.get("date_to"),
                 location=tool_input.get("location"),
                 subject=tool_input.get("subject"),
+                publisher=pub,
             )
         elif tool_name == "search_advertisements":
             return self.search_tools.search_advertisements(
@@ -174,16 +179,19 @@ class SearchAgent:
             logger.warning(f"Unknown tool: {tool_name}")
             return []
 
-    def search(self, query: str) -> list[dict]:
+    def search(self, query: str, publisher: str | None = None) -> list[dict]:
         """Search for articles using the agent.
 
         Args:
             query: User's search query.
+            publisher: Optional publisher name to restrict results to.
 
         Returns:
             List of relevant chunks/articles.
         """
-        logger.info(f"Search agent processing: '{query}'")
+        # Store publisher filter for use in _execute_tool
+        self._current_publisher = publisher
+        logger.info(f"Search agent processing: '{query}'" + (f" [publisher={publisher}]" if publisher else ""))
 
         messages: list[anthropic.types.MessageParam] = [
             {"role": "user", "content": query}

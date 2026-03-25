@@ -66,11 +66,13 @@ class QueryEngine:
         self._consecutive_empty_results = 0
         self._empty_results_threshold = 3
 
-    def retrieve(self, query: str) -> list[dict]:
+    def retrieve(self, query: str, publisher: str | None = None) -> list[dict]:
         """Retrieve relevant chunks for a query.
 
         Args:
             query: The user's query.
+            publisher: Optional publisher name to filter results (e.g. "Pipestone County Star").
+                       When set, only articles from this publisher are returned.
 
         Returns:
             List of relevant chunks with metadata and scores.
@@ -79,19 +81,24 @@ class QueryEngine:
             logger.warning("Collection is None - no documents indexed")
             return []
 
-        logger.info(f"Query: '{query}'")
+        logger.info(f"Query: '{query}'" + (f" [publisher={publisher}]" if publisher else ""))
         logger.info(f"Collection has {self.collection.count()} chunks")
 
         # Generate query embedding
         query_embedding = self.embedding_model.encode(query).tolist()
         logger.info("Generated query embedding")
 
-        # Query ChromaDB
-        results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=RETRIEVAL_TOP_K,
-            include=["documents", "metadatas", "distances"],
-        )
+        # Query ChromaDB — optionally filter by publisher
+        query_kwargs = {
+            "query_embeddings": [query_embedding],
+            "n_results": RETRIEVAL_TOP_K,
+            "include": ["documents", "metadatas", "distances"],
+        }
+        if publisher:
+            query_kwargs["where"] = {"publisher": publisher}
+            logger.info(f"Filtering to publisher: {publisher}")
+
+        results = self.collection.query(**query_kwargs)
 
         # Process results
         chunks = []
@@ -327,12 +334,13 @@ class QueryEngine:
         ]
         return any(pattern in query_lower for pattern in help_patterns)
 
-    def query(self, query: str, history: list[dict] | None = None) -> dict:
+    def query(self, query: str, history: list[dict] | None = None, publisher: str | None = None) -> dict:
         """Process a query and return response with sources.
 
         Args:
             query: The user's query.
             history: Conversation history for context.
+            publisher: Optional publisher filter for multi-tenant sites.
 
         Returns:
             Dictionary with response and sources.
@@ -349,11 +357,11 @@ class QueryEngine:
 
         # Use search agent for intelligent retrieval, fall back to direct retrieval
         if self.search_agent is not None:
-            logger.info(f"Processing query with search agent: '{query}'")
-            chunks = self.search_agent.search(query)
+            logger.info(f"Processing query with search agent: '{query}'" + (f" [publisher={publisher}]" if publisher else ""))
+            chunks = self.search_agent.search(query, publisher=publisher)
         else:
             logger.info(f"Search agent unavailable, using direct retrieval: '{query}'")
-            chunks = self.retrieve(query)
+            chunks = self.retrieve(query, publisher=publisher)
 
         # Generate response with conversation history
         response = self.generate_response(query, chunks, history)

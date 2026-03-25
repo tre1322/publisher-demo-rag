@@ -268,6 +268,7 @@ def search_by_metadata(
     location: str | None = None,
     subject: str | None = None,
     limit: int = 20,
+    publisher: str | None = None,
 ) -> list[dict]:
     """Search articles by metadata filters.
 
@@ -278,6 +279,7 @@ def search_by_metadata(
         location: Location (partial match).
         subject: Subject/topic (partial match in JSON).
         limit: Maximum results.
+        publisher: Optional publisher name filter.
 
     Returns:
         List of matching articles.
@@ -287,6 +289,10 @@ def search_by_metadata(
 
     query = "SELECT * FROM articles WHERE 1=1"
     params: list = []
+
+    if publisher:
+        query += " AND publisher = ?"
+        params.append(publisher)
 
     if date_from:
         query += " AND publish_date >= ?"

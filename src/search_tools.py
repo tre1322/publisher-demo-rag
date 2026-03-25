@@ -30,9 +30,10 @@ class SearchTools:
         self,
         query: str,
         top_k: int = 5,
+        publisher: str | None = None,
     ) -> list[dict]:
         """Search for articles using semantic similarity."""
-        return self.articles.semantic_search(query, top_k)
+        return self.articles.semantic_search(query, top_k, publisher=publisher)
 
     def metadata_search(
         self,
@@ -41,6 +42,7 @@ class SearchTools:
         author: str | None = None,
         location: str | None = None,
         subject: str | None = None,
+        publisher: str | None = None,
     ) -> list[dict]:
         """Search for articles by metadata filters."""
         return self.articles.metadata_search(
@@ -49,6 +51,7 @@ class SearchTools:
             author=author,
             location=location,
             subject=subject,
+            publisher=publisher,
         )
 
     def hybrid_search(
@@ -58,6 +61,7 @@ class SearchTools:
         date_to: str | None = None,
         location: str | None = None,
         subject: str | None = None,
+        publisher: str | None = None,
     ) -> list[dict]:
         """Combine semantic search with metadata filtering."""
         return self.articles.hybrid_search(
@@ -66,6 +70,7 @@ class SearchTools:
             date_to=date_to,
             location=location,
             subject=subject,
+            publisher=publisher,
         )
 
     def get_chunks_for_article(self, doc_id: str) -> list[dict]:

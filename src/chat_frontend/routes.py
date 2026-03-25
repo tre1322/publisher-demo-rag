@@ -74,7 +74,7 @@ async def get_history(session_id: str) -> dict:
 
 @router.get("/stream")
 async def stream_response(
-    message: str, session_id: str | None = None
+    message: str, session_id: str | None = None, publisher: str | None = None
 ) -> StreamingResponse:
     """Stream the assistant response.
 
@@ -118,7 +118,7 @@ async def stream_response(
 
             # Perform search — direct ChromaDB retrieval is fast and reliable.
             # Also search ads and events alongside articles.
-            chunks = engine.retrieve(message)
+            chunks = engine.retrieve(message, publisher=publisher)
             # Supplement with ads and events
             try:
                 from src.modules.advertisements.search import AdvertisementSearch

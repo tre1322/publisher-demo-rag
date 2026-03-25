@@ -43,6 +43,7 @@ class ArticleSearch:
         query: str,
         top_k: int = RETRIEVAL_TOP_K,
         min_score: float = SIMILARITY_THRESHOLD,
+        publisher: str | None = None,
     ) -> list[dict]:
         """Search for documents using semantic similarity.
 
@@ -50,6 +51,7 @@ class ArticleSearch:
             query: Search query text.
             top_k: Number of results to return.
             min_score: Minimum similarity score.
+            publisher: Optional publisher name to filter results.
 
         Returns:
             List of matching chunks with metadata and scores.
@@ -58,20 +60,23 @@ class ArticleSearch:
             logger.warning("No collection available for semantic search")
             return []
 
-        logger.info(f"Article semantic search: '{query}' (top_k={top_k})")
+        logger.info(f"Article semantic search: '{query}' (top_k={top_k})" +
+                     (f" [publisher={publisher}]" if publisher else ""))
 
         query_embedding = self.embedding_model.encode(query).tolist()
 
         # Search the articles collection
         chunks = self._query_collection(
-            self.collection, "articles", query_embedding, top_k, min_score
+            self.collection, "articles", query_embedding, top_k, min_score,
+            publisher=publisher,
         )
 
         # Fallback: also search legacy collection if articles collection is empty
         if not chunks and self.legacy_collection:
             logger.info("Articles collection empty, falling back to legacy collection")
             chunks = self._query_collection(
-                self.legacy_collection, "legacy", query_embedding, top_k, min_score
+                self.legacy_collection, "legacy", query_embedding, top_k, min_score,
+                publisher=publisher,
             )
 
         logger.info(f"Article semantic search returned {len(chunks)} chunks")
@@ -84,13 +89,19 @@ class ArticleSearch:
         query_embedding: list[float],
         top_k: int,
         min_score: float,
+        publisher: str | None = None,
     ) -> list[dict]:
         """Query a single Chroma collection and return formatted chunks."""
-        results = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-            include=["documents", "metadatas", "distances"],
-        )
+        query_kwargs = {
+            "query_embeddings": [query_embedding],
+            "n_results": top_k,
+            "include": ["documents", "metadatas", "distances"],
+        }
+        if publisher:
+            query_kwargs["where"] = {"publisher": publisher}
+            logger.info(f"  Filtering {label} collection to publisher: {publisher}")
+
+        results = collection.query(**query_kwargs)
 
         chunks = []
         if results and results["documents"]:
@@ -121,6 +132,7 @@ class ArticleSearch:
         location: str | None = None,
         subject: str | None = None,
         limit: int = 20,
+        publisher: str | None = None,
     ) -> list[dict]:
         """Search for articles by metadata filters.
 
@@ -131,6 +143,7 @@ class ArticleSearch:
             location: Location (partial match).
             subject: Subject/topic (partial match).
             limit: Maximum results.
+            publisher: Optional publisher filter.
 
         Returns:
             List of matching articles with metadata.
@@ -138,6 +151,7 @@ class ArticleSearch:
         logger.info(
             f"Metadata search: date={date_from} to {date_to}, "
             f"author={author}, location={location}, subject={subject}"
+            + (f", publisher={publisher}" if publisher else "")
         )
 
         articles = search_by_metadata(
@@ -147,6 +161,7 @@ class ArticleSearch:
             location=location,
             subject=subject,
             limit=limit,
+            publisher=publisher,
         )
 
         logger.info(f"Metadata search returned {len(articles)} articles")
@@ -160,6 +175,7 @@ class ArticleSearch:
         location: str | None = None,
         subject: str | None = None,
         top_k: int = RETRIEVAL_TOP_K,
+        publisher: str | None = None,
     ) -> list[dict]:
         """Combine semantic search with metadata filtering.
 
@@ -185,7 +201,8 @@ class ArticleSearch:
             date_to=date_to,
             location=location,
             subject=subject,
-            limit=50,  # Get more for filtering
+            limit=50,
+            publisher=publisher,
         )
 
         if not articles:
@@ -196,8 +213,8 @@ class ArticleSearch:
         doc_ids = {article["doc_id"] for article in articles}
         logger.info(f"Filtering semantic search to {len(doc_ids)} articles")
 
-        # Perform semantic search
-        all_chunks = self.semantic_search(query, top_k=top_k * 2, min_score=0.0)
+        # Perform semantic search (with publisher filter)
+        all_chunks = self.semantic_search(query, top_k=top_k * 2, min_score=0.0, publisher=publisher)
 
         # Filter to only chunks from matching articles
         filtered_chunks = [
