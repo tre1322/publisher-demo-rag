@@ -44,6 +44,11 @@ python3 scripts/init_db.py
 echo "✓ Database tables initialized"
 echo "[DEBUG] Article count after init_db: $(python3 -c "import sqlite3; c=sqlite3.connect('data/articles.db'); print(c.execute('SELECT COUNT(*) FROM articles').fetchone()[0])" 2>&1)"
 
+echo ""
+echo "[2.5/4] Seeding articles from quadd extraction..."
+python3 scripts/seed_articles.py || echo "⚠ Warning: Article seeding failed (continuing)"
+echo "[DEBUG] Article count after seed: $(python3 -c "import sqlite3; c=sqlite3.connect('data/articles.db'); print(c.execute('SELECT COUNT(*) FROM articles').fetchone()[0])" 2>&1)"
+
 # Verify tables exist
 echo ""
 echo "Verifying database..."
