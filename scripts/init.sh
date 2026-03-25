@@ -112,7 +112,7 @@ echo "[2.5/4] Ingesting quadd extraction articles..."
 QUADD_DB="${QUADD_DB_PATH:-/app/data/quadd_articles.db}"
 if [ -f "$QUADD_DB" ]; then
     echo "[INIT] Found quadd DB at $QUADD_DB, ingesting articles..."
-    python scripts/ingest_quadd_articles.py --quadd-db "$QUADD_DB" --edition-id "${QUADD_EDITION_ID:-31}" && QUADD_RC=$? || QUADD_RC=$?
+    python scripts/ingest_quadd_articles.py --quadd-db "$QUADD_DB" && QUADD_RC=$? || QUADD_RC=$?
     if [ "${QUADD_RC}" -ne 0 ]; then
         echo "[INIT] WARNING: Quadd ingestion failed (exit ${QUADD_RC}), continuing"
     else

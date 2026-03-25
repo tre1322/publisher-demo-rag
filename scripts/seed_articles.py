@@ -26,15 +26,15 @@ def seed():
     qconn = sqlite3.connect(str(QUADD_DB))
     qconn.row_factory = sqlite3.Row
     rows = qconn.execute("""
-        SELECT id, edition_id, headline, byline, cleaned_web_text as body_text,
+        SELECT id, edition_id, publisher_id, headline, byline, cleaned_web_text as body_text,
                start_page, jump_pages_json, section, content_type
         FROM content_items
         WHERE cleaned_web_text IS NOT NULL
           AND length(cleaned_web_text) >= 100
           AND headline IS NOT NULL
           AND headline != '?'
-          AND edition_id = 31
-        ORDER BY start_page, id
+          AND edition_id IN (31, 1312)
+        ORDER BY edition_id, start_page, id
     """).fetchall()
     qconn.close()
 
@@ -62,15 +62,23 @@ def seed():
         start_page = r.get("start_page")
         jump_pages = r.get("jump_pages_json")
 
-        # Determine location
-        location = "Cottonwood County, MN"
-        hl = headline.lower()
-        if "butterfield" in hl:
-            location = "Butterfield, MN"
-        elif "bingham lake" in hl or "sokolofsky" in hl:
-            location = "Bingham Lake, MN"
-        elif "mt. lake" in hl or "mt lake" in hl or "larson" in hl:
-            location = "Mountain Lake, MN"
+        # Determine publisher and location from publisher_id
+        publisher_id = r.get("publisher_id")
+        if publisher_id == 2:
+            publisher = "Pipestone County Star"
+            location = "Pipestone, MN"
+            publish_date = "2026-01-08"
+        else:
+            publisher = "Observer/Advocate"
+            publish_date = "2026-01-28"
+            location = "Cottonwood County, MN"
+            hl = headline.lower()
+            if "butterfield" in hl:
+                location = "Butterfield, MN"
+            elif "bingham lake" in hl or "sokolofsky" in hl:
+                location = "Bingham Lake, MN"
+            elif "mt. lake" in hl or "mt lake" in hl:
+                location = "Mountain Lake, MN"
 
         cur.execute("""
             INSERT OR REPLACE INTO articles
@@ -79,8 +87,8 @@ def seed():
              full_text, cleaned_text, needs_review, status, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'parsed', CURRENT_TIMESTAMP)
         """, (
-            doc_id, headline, byline, "2026-01-28", "quadd_extraction",
-            location, "Observer/Advocate", edition_id, section, start_page,
+            doc_id, headline, byline, publish_date, "quadd_extraction",
+            location, publisher, edition_id, section, start_page,
             jump_pages, body, body,
         ))
         count += 1

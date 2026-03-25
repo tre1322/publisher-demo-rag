@@ -93,7 +93,7 @@ def get_quadd_articles(db_path: Path, edition_id: int | None = None, min_body_le
     conn.row_factory = sqlite3.Row
 
     query = """
-        SELECT id, edition_id, headline, byline, cleaned_web_text as body_text,
+        SELECT id, edition_id, publisher_id, headline, byline, cleaned_web_text as body_text,
                start_page, jump_pages_json as jump_pages, section, content_type,
                is_stitched, publish_status
         FROM content_items
@@ -211,17 +211,26 @@ def ingest_articles(
             section = article.get("section", None)
             publish_date = article.get("publish_date", "2026-01-28")
 
-            # Determine location from article content
-            location = None
-            headline_lower = headline.lower()
-            if "butterfield" in headline_lower:
-                location = "Butterfield, MN"
-            elif "bingham lake" in headline_lower or "sokolofsky" in headline_lower:
-                location = "Bingham Lake, MN"
-            elif "mt. lake" in headline_lower or "mt lake" in headline_lower or "larson" in headline_lower:
-                location = "Mountain Lake, MN"
+            # Determine publisher and location from edition
+            publisher_id = article.get("publisher_id", None)
+            if publisher_id == 2:
+                publisher = "Pipestone County Star"
+                location = "Pipestone, MN"
+                publish_date = "2026-01-08"
             else:
-                location = "Cottonwood County, MN"
+                publisher = "Observer/Advocate"
+                publish_date = "2026-01-28"
+                headline_lower = headline.lower()
+                if "butterfield" in headline_lower:
+                    location = "Butterfield, MN"
+                elif "bingham lake" in headline_lower or "sokolofsky" in headline_lower:
+                    location = "Bingham Lake, MN"
+                elif "mt. lake" in headline_lower or "mt lake" in headline_lower:
+                    location = "Mountain Lake, MN"
+                elif "pipestone" in headline_lower:
+                    location = "Pipestone, MN"
+                else:
+                    location = "Cottonwood County, MN"
 
             # Insert into SQLite
             insert_edition_article(
