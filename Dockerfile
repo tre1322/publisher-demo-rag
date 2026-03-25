@@ -41,10 +41,12 @@ COPY scripts/ scripts/
 COPY static/ static/
 COPY .env.example .env.example
 
-# Copy pre-ingested databases (articles already in SQLite + ChromaDB)
-COPY data/articles.db data/articles.db
-COPY data/chroma_db/ data/chroma_db/
+# Copy pre-extracted quadd database (source for article seeding at startup)
+# NOTE: articles.db gets created fresh by init_db.py, so we only bake the source
 COPY data/quadd_articles.db data/quadd_articles.db
+
+# Verify the file made it in (build-time check)
+RUN ls -la data/quadd_articles.db && echo "quadd DB baked OK"
 
 # Create data directories and fix line endings for shell scripts
 RUN mkdir -p data/documents data/ads data/events data/editions && \
