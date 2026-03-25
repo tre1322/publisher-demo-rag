@@ -24,6 +24,18 @@ from src.core.database import init_all_tables
 
 init_all_tables()
 
+# Seed quadd articles into the database if available
+try:
+    import importlib.util, types
+    _spec = importlib.util.spec_from_file_location("seed_articles", Path(__file__).parent.parent / "scripts" / "seed_articles.py")
+    _mod = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_mod)
+    _count = _mod.seed()
+    if _count:
+        logging.getLogger(__name__).info(f"Seeded {_count} quadd articles into database")
+except Exception as e:
+    logging.getLogger(__name__).warning(f"Quadd article seeding skipped: {e}")
+
 from src.modules.advertisements import get_random_advertisements
 from src.modules.analytics import log_content_impression, log_url_click
 from src.modules.articles import get_recent_articles
