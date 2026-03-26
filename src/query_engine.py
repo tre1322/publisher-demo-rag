@@ -1,4 +1,9 @@
-"""Query engine for the Publisher RAG Demo."""
+"""Query engine for the Publisher RAG Demo.
+
+Supports two LLM providers:
+- "anthropic": Claude via Anthropic API (default)
+- "gradient": Qwen/Llama via DigitalOcean Gradient Serverless Inference
+"""
 
 import logging
 from collections.abc import Iterator
@@ -10,7 +15,11 @@ from sentence_transformers import SentenceTransformer
 from src.core.config import (
     ANTHROPIC_API_KEY,
     EMBEDDING_MODEL,
+    GRADIENT_BASE_URL,
+    GRADIENT_MODEL,
+    GRADIENT_MODEL_ACCESS_KEY,
     LLM_MODEL,
+    LLM_PROVIDER,
     LLM_TEMPERATURE,
     MAX_CONTEXT_TOKENS,
     RETRIEVAL_TOP_K,
@@ -49,10 +58,26 @@ class QueryEngine:
             self.collection = None
             self.legacy_collection = None
 
-        if not ANTHROPIC_API_KEY:
-            raise ValueError("ANTHROPIC_API_KEY not set. Please set it in .env file.")
+        self.llm_provider = LLM_PROVIDER.lower()
+        logger.info(f"LLM provider: {self.llm_provider}")
 
-        self.anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        if self.llm_provider == "gradient":
+            if not GRADIENT_MODEL_ACCESS_KEY:
+                raise ValueError("GRADIENT_MODEL_ACCESS_KEY not set. Required for gradient provider.")
+            # Use OpenAI SDK with Gradient's OpenAI-compatible endpoint
+            from openai import OpenAI
+            self.openai_client = OpenAI(
+                api_key=GRADIENT_MODEL_ACCESS_KEY,
+                base_url=GRADIENT_BASE_URL,
+            )
+            self.anthropic_client = None
+            logger.info(f"Gradient LLM initialized: model={GRADIENT_MODEL}, base_url={GRADIENT_BASE_URL}")
+        else:
+            if not ANTHROPIC_API_KEY:
+                raise ValueError("ANTHROPIC_API_KEY not set. Please set it in .env file.")
+            self.anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            self.openai_client = None
+            logger.info(f"Anthropic LLM initialized: model={LLM_MODEL}")
 
         # Initialize search agent for intelligent search
         try:
@@ -219,22 +244,33 @@ class QueryEngine:
         # Add current query with context
         messages.append({"role": "user", "content": user_message})
 
-        # Call Claude API
-        logger.info(f"Calling Claude API ({LLM_MODEL})...")
-        response = self.anthropic_client.messages.create(
-            model=LLM_MODEL,
-            max_tokens=1024,
-            temperature=LLM_TEMPERATURE,
-            system=SYSTEM_PROMPT,
-            messages=messages,  # type: ignore[arg-type]
-        )
-        logger.info("Received response from Claude")
-
-        # Extract text from response
-        content_block = response.content[0]
-        if hasattr(content_block, "text"):
-            return content_block.text  # type: ignore[union-attr]
-        return str(content_block)
+        # Call LLM API
+        if self.llm_provider == "gradient":
+            logger.info(f"Calling Gradient API ({GRADIENT_MODEL})...")
+            # OpenAI-compatible format — system prompt goes as first message
+            oai_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
+            response = self.openai_client.chat.completions.create(
+                model=GRADIENT_MODEL,
+                max_tokens=1024,
+                temperature=LLM_TEMPERATURE,
+                messages=oai_messages,
+            )
+            logger.info("Received response from Gradient")
+            return response.choices[0].message.content or ""
+        else:
+            logger.info(f"Calling Claude API ({LLM_MODEL})...")
+            response = self.anthropic_client.messages.create(
+                model=LLM_MODEL,
+                max_tokens=1024,
+                temperature=LLM_TEMPERATURE,
+                system=SYSTEM_PROMPT,
+                messages=messages,  # type: ignore[arg-type]
+            )
+            logger.info("Received response from Claude")
+            content_block = response.content[0]
+            if hasattr(content_block, "text"):
+                return content_block.text  # type: ignore[union-attr]
+            return str(content_block)
 
     def generate_response_streaming(
         self,
@@ -299,19 +335,33 @@ class QueryEngine:
         # Add current query with context
         messages.append({"role": "user", "content": user_message})
 
-        # Call Claude API with streaming
-        logger.info(f"Calling Claude API with streaming ({LLM_MODEL})...")
-        with self.anthropic_client.messages.stream(
-            model=LLM_MODEL,
-            max_tokens=1024,
-            temperature=LLM_TEMPERATURE,
-            system=SYSTEM_PROMPT,
-            messages=messages,  # type: ignore[arg-type]
-        ) as stream:
-            for text in stream.text_stream:
-                yield text
-
-        logger.info("Streaming response complete")
+        # Call LLM API with streaming
+        if self.llm_provider == "gradient":
+            logger.info(f"Calling Gradient API with streaming ({GRADIENT_MODEL})...")
+            oai_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
+            stream = self.openai_client.chat.completions.create(
+                model=GRADIENT_MODEL,
+                max_tokens=1024,
+                temperature=LLM_TEMPERATURE,
+                messages=oai_messages,
+                stream=True,
+            )
+            for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+            logger.info("Streaming response complete")
+        else:
+            logger.info(f"Calling Claude API with streaming ({LLM_MODEL})...")
+            with self.anthropic_client.messages.stream(
+                model=LLM_MODEL,
+                max_tokens=1024,
+                temperature=LLM_TEMPERATURE,
+                system=SYSTEM_PROMPT,
+                messages=messages,  # type: ignore[arg-type]
+            ) as stream:
+                for text in stream.text_stream:
+                    yield text
+            logger.info("Streaming response complete")
 
     def _is_help_request(self, query: str) -> bool:
         """Check if the query is asking for help.

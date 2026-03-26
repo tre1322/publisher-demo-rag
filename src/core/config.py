@@ -38,10 +38,18 @@ _config_logger.info(f"CHROMA_PERSIST_DIR: {CHROMA_PERSIST_DIR}")
 
 # API Keys
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+GRADIENT_MODEL_ACCESS_KEY = os.getenv("GRADIENT_MODEL_ACCESS_KEY", "")
+
+# LLM Provider: "anthropic" (Claude) or "gradient" (Qwen/Llama via DigitalOcean)
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic")
 
 # LLM Settings
 LLM_MODEL = os.getenv("LLM_MODEL", "claude-sonnet-4-20250514")
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.3"))
+
+# Gradient/DigitalOcean Serverless Inference Settings
+GRADIENT_BASE_URL = os.getenv("GRADIENT_BASE_URL", "https://inference.do-ai.run/v1")
+GRADIENT_MODEL = os.getenv("GRADIENT_MODEL", "qwen3-32b")
 
 # Embedding Settings
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
