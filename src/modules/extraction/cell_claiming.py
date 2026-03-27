@@ -545,7 +545,7 @@ def build_fragments(
                 for bi in sorted_bis:
                     role = blocks[bi].get("role", "body")
                     # Skip non-body blocks (headlines, furniture, jump refs, cont headers)
-                    if role in ("headline", "furniture", "jump_ref", "continuation_header", "caption"):
+                    if role in ("headline", "furniture", "jump_ref", "continuation_header", "caption", "kicker"):
                         continue
                     text = blocks[bi]["text"].strip()
                     if text:

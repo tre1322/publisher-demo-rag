@@ -308,6 +308,17 @@ def classify_block(block: dict, font_stats: dict) -> str:
     if is_bold and font_size >= font_stats["median"] * 1.1 and char_count <= 40:
         return "section_header"
 
+    # Short bold text that looks like a photo label (e.g. "Michelle Larson")
+    # These are names/captions under photos, not body text.
+    if is_bold and char_count <= 30 and not text.startswith("\uf06e"):
+        # Looks like a proper name (1-3 capitalized words, no punctuation)
+        flat = text.replace("\n", " ").strip()
+        words = flat.split()
+        if 1 <= len(words) <= 4 and all(w[0].isupper() for w in words if w):
+            # No sentence-ending punctuation → likely a label
+            if not any(flat.endswith(c) for c in (".", "!", "?", ":")):
+                return "caption"
+
     # Default body
     return "body"
 
