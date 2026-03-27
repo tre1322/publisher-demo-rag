@@ -196,6 +196,7 @@ def update_article(
     title: str | None = None,
     author: str | None = None,
     cleaned_text: str | None = None,
+    full_text: str | None = None,
     subheadline: str | None = None,
     status: str | None = None,
     needs_review: bool | None = None,
@@ -216,6 +217,9 @@ def update_article(
     if cleaned_text is not None:
         updates.append("cleaned_text = ?")
         params.append(cleaned_text)
+    if full_text is not None:
+        updates.append("full_text = ?")
+        params.append(full_text)
     if subheadline is not None:
         updates.append("subheadline = ?")
         params.append(subheadline)

@@ -672,6 +672,7 @@ async def edit_article(
         title=body.get("title"),
         author=body.get("author"),
         cleaned_text=body.get("cleaned_text"),
+        full_text=body.get("full_text"),
         subheadline=body.get("subheadline"),
         status=body.get("status"),
         needs_review=body.get("needs_review"),
@@ -1155,6 +1156,58 @@ async def trigger_full_pipeline_v2(
         })
     except Exception as e:
         logger.error(f"V2 full pipeline failed: {e}", exc_info=True)
+        return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
+
+
+@router.post("/api/editions/{edition_id}/v2-sync-articles")
+async def v2_sync_articles_to_legacy(
+    edition_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Run V2 pipeline and sync results into the legacy articles table.
+
+    This bridges V2 extraction into the existing articles table so the
+    chatbot, landing page, and article detail page all show V2-quality text.
+    Matches by headline (case-insensitive) and updates cleaned_text + full_text.
+    """
+    from src.modules.extraction.pipeline_v2 import run_v2_pipeline
+    try:
+        # Run V2 pipeline
+        result = run_v2_pipeline(edition_id)
+        if not result["success"]:
+            return JSONResponse(content=result, status_code=400)
+
+        # Build V2 headline → body map
+        v2_map = {}
+        for art in result["articles"]:
+            hl = (art.get("headline") or "").strip().lower()
+            if hl:
+                v2_map[hl] = art.get("body_text", "")
+
+        # Update legacy articles table
+        from src.modules.articles.database import get_articles_for_edition, update_article
+        legacy = get_articles_for_edition(edition_id)
+        updated = 0
+        for art in legacy:
+            title_key = (art.get("title") or "").strip().lower()
+            if title_key in v2_map and v2_map[title_key]:
+                update_article(
+                    doc_id=art["doc_id"],
+                    cleaned_text=v2_map[title_key],
+                    full_text=v2_map[title_key],
+                )
+                updated += 1
+
+        return JSONResponse(content={
+            "success": True,
+            "edition_id": edition_id,
+            "v2_articles": result["article_count"],
+            "v2_stitched": result["stitched_count"],
+            "legacy_matched": updated,
+            "legacy_total": len(legacy),
+        })
+    except Exception as e:
+        logger.error(f"V2 sync failed: {e}", exc_info=True)
         return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
 
 
