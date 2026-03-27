@@ -501,6 +501,14 @@ def create_app() -> FastAPI:
     # Include admin dashboard routes
     app.include_router(admin_router)
 
+    # Include public news routes
+    try:
+        from src.public_frontend import router as news_router
+        app.include_router(news_router)
+        logger.info("Public news routes mounted at /news/")
+    except Exception as e:
+        logger.warning(f"Could not mount public news routes: {e}")
+
     # Serve static files (chat widget) if directory exists
     from pathlib import Path
 

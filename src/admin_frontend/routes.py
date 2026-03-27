@@ -737,3 +737,426 @@ async def review_page(
 ) -> HTMLResponse:
     """Render the article review page."""
     return templates.TemplateResponse("review.html", {"request": request})
+
+
+# ── Phase 1: Extraction endpoints ──
+
+
+@router.post("/api/editions/{edition_id}/extract")
+async def trigger_extraction(
+    edition_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Trigger Phase 1 raw block extraction on an edition.
+
+    Extracts text blocks and drawings from each page of the edition's PDF
+    and saves per-page JSON artifacts.
+    """
+    from src.modules.extraction import extract_edition
+
+    try:
+        result = extract_edition(edition_id)
+        status_code = 200 if result["success"] else 400
+        return JSONResponse(content=result, status_code=status_code)
+    except Exception as e:
+        logger.error(f"Extraction trigger failed for edition {edition_id}: {e}", exc_info=True)
+        return JSONResponse(
+            content={"success": False, "edition_id": edition_id, "error": str(e)},
+            status_code=500,
+        )
+
+
+@router.get("/api/editions/{edition_id}/extraction")
+async def get_extraction_status(
+    edition_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Get extraction status and summary for an edition."""
+    from src.modules.editions.database import get_edition
+    from src.modules.extraction.extract_pages import get_extraction_summary
+
+    edition = get_edition(edition_id)
+    if not edition:
+        raise HTTPException(status_code=404, detail=f"Edition {edition_id} not found")
+
+    publisher_id = edition.get("publisher_id")
+    summary = get_extraction_summary(publisher_id, edition_id) if publisher_id else None
+
+    return JSONResponse(content={
+        "edition_id": edition_id,
+        "extraction_status": edition.get("extraction_status"),
+        "processing_notes": edition.get("processing_notes"),
+        "page_count": edition.get("page_count"),
+        "has_artifacts": summary is not None,
+        "summary": summary,
+    })
+
+
+@router.get("/api/editions/{edition_id}/pages/{page_number}")
+async def get_page_extraction(
+    edition_id: int,
+    page_number: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Get the raw extraction artifact for a single page.
+
+    Returns all text blocks and drawings extracted from the specified page.
+    """
+    from src.modules.editions.database import get_edition
+    from src.modules.extraction.extract_pages import get_page_artifact
+
+    edition = get_edition(edition_id)
+    if not edition:
+        raise HTTPException(status_code=404, detail=f"Edition {edition_id} not found")
+
+    publisher_id = edition.get("publisher_id")
+    if not publisher_id:
+        raise HTTPException(status_code=400, detail=f"Edition {edition_id} has no publisher_id")
+
+    artifact = get_page_artifact(publisher_id, edition_id, page_number)
+    if not artifact:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No extraction artifact for edition {edition_id}, page {page_number}",
+        )
+
+    return JSONResponse(content=artifact)
+
+
+# ── Phase 2: Column detection & block classification endpoints ──
+
+
+@router.post("/api/editions/{edition_id}/enrich")
+async def trigger_enrichment(
+    edition_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Trigger Phase 2 column detection and block classification.
+
+    Requires Phase 1 extraction to be completed first.
+    """
+    from src.modules.extraction.classify_blocks import enrich_edition
+
+    try:
+        result = enrich_edition(edition_id)
+        status_code = 200 if result["success"] else 400
+        return JSONResponse(content=result, status_code=status_code)
+    except Exception as e:
+        logger.error(f"Enrichment failed for edition {edition_id}: {e}", exc_info=True)
+        return JSONResponse(
+            content={"success": False, "edition_id": edition_id, "error": str(e)},
+            status_code=500,
+        )
+
+
+@router.get("/api/editions/{edition_id}/enrichment")
+async def get_enrichment_status(
+    edition_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Get Phase 2 enrichment summary for an edition."""
+    from src.modules.editions.database import get_edition
+    from src.modules.extraction.classify_blocks import get_enrichment_summary
+
+    edition = get_edition(edition_id)
+    if not edition:
+        raise HTTPException(status_code=404, detail=f"Edition {edition_id} not found")
+
+    publisher_id = edition.get("publisher_id")
+    summary = get_enrichment_summary(publisher_id, edition_id) if publisher_id else None
+
+    return JSONResponse(content={
+        "edition_id": edition_id,
+        "has_enrichment": summary is not None,
+        "summary": summary,
+    })
+
+
+@router.get("/api/editions/{edition_id}/pages/{page_number}/enriched")
+async def get_enriched_page_endpoint(
+    edition_id: int,
+    page_number: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Get enriched page artifact with column IDs and block roles."""
+    from src.modules.editions.database import get_edition
+    from src.modules.extraction.classify_blocks import get_enriched_page
+
+    edition = get_edition(edition_id)
+    if not edition:
+        raise HTTPException(status_code=404, detail=f"Edition {edition_id} not found")
+
+    publisher_id = edition.get("publisher_id")
+    if not publisher_id:
+        raise HTTPException(status_code=400, detail=f"Edition {edition_id} has no publisher_id")
+
+    enriched = get_enriched_page(publisher_id, edition_id, page_number)
+    if not enriched:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No enriched artifact for edition {edition_id}, page {page_number}. Run Phase 2 enrichment first.",
+        )
+
+    return JSONResponse(content=enriched)
+
+
+# ── Phase 3: Article assembly endpoints ──
+
+
+@router.post("/api/editions/{edition_id}/assemble")
+async def trigger_assembly(
+    edition_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Trigger Phase 3 single-page article assembly.
+
+    Requires Phase 2 enrichment to be completed first.
+    """
+    from src.modules.extraction.assemble_articles import assemble_edition
+
+    try:
+        result = assemble_edition(edition_id)
+        status_code = 200 if result["success"] else 400
+        return JSONResponse(content=result, status_code=status_code)
+    except Exception as e:
+        logger.error(f"Assembly failed for edition {edition_id}: {e}", exc_info=True)
+        return JSONResponse(
+            content={"success": False, "edition_id": edition_id, "error": str(e)},
+            status_code=500,
+        )
+
+
+@router.get("/api/editions/{edition_id}/assembly")
+async def get_assembly_status(
+    edition_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Get Phase 3 assembly results for an edition."""
+    from src.modules.editions.database import get_edition
+    from src.modules.extraction.assemble_articles import get_assembly
+
+    edition = get_edition(edition_id)
+    if not edition:
+        raise HTTPException(status_code=404, detail=f"Edition {edition_id} not found")
+
+    publisher_id = edition.get("publisher_id")
+    assembly = get_assembly(publisher_id, edition_id) if publisher_id else None
+
+    if not assembly:
+        return JSONResponse(content={
+            "edition_id": edition_id,
+            "has_assembly": False,
+            "summary": None,
+        })
+
+    # Return summary without full article bodies (those can be large)
+    summary = {
+        "edition_id": assembly["edition_id"],
+        "page_count": assembly["page_count"],
+        "total_articles": assembly["total_articles"],
+        "assembly_time_seconds": assembly.get("assembly_time_seconds"),
+        "pages": assembly["pages"],
+    }
+
+    return JSONResponse(content={
+        "edition_id": edition_id,
+        "has_assembly": True,
+        "summary": summary,
+    })
+
+
+@router.get("/api/editions/{edition_id}/articles")
+async def get_edition_articles(
+    edition_id: int,
+    page: int = None,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Get assembled articles, optionally filtered by page number."""
+    from src.modules.editions.database import get_edition
+    from src.modules.extraction.assemble_articles import get_assembly
+
+    edition = get_edition(edition_id)
+    if not edition:
+        raise HTTPException(status_code=404, detail=f"Edition {edition_id} not found")
+
+    publisher_id = edition.get("publisher_id")
+    assembly = get_assembly(publisher_id, edition_id) if publisher_id else None
+
+    if not assembly:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No assembly for edition {edition_id}. Run Phase 3 assembly first.",
+        )
+
+    articles = assembly.get("articles", [])
+    if page is not None:
+        articles = [a for a in articles if a.get("page_number") == page]
+
+    return JSONResponse(content={
+        "edition_id": edition_id,
+        "total": len(articles),
+        "articles": articles,
+    })
+
+
+# ── Phase 4: Jump detection and stitching endpoints ──
+
+
+@router.post("/api/editions/{edition_id}/stitch")
+async def trigger_stitching(
+    edition_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Trigger Phase 4 jump detection and cross-page stitching.
+
+    Requires Phase 3 assembly to be completed first.
+    """
+    from src.modules.extraction.stitch_jumps import stitch_edition
+
+    try:
+        result = stitch_edition(edition_id)
+        status_code = 200 if result["success"] else 400
+        return JSONResponse(content=result, status_code=status_code)
+    except Exception as e:
+        logger.error(f"Stitching failed for edition {edition_id}: {e}", exc_info=True)
+        return JSONResponse(
+            content={"success": False, "edition_id": edition_id, "error": str(e)},
+            status_code=500,
+        )
+
+
+@router.get("/api/editions/{edition_id}/stitched")
+async def get_stitched_articles(
+    edition_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Get stitched articles for an edition."""
+    from src.modules.editions.database import get_edition
+    from src.modules.extraction.stitch_jumps import get_stitched
+
+    edition = get_edition(edition_id)
+    if not edition:
+        raise HTTPException(status_code=404, detail=f"Edition {edition_id} not found")
+
+    publisher_id = edition.get("publisher_id")
+    stitched = get_stitched(publisher_id, edition_id) if publisher_id else None
+
+    if not stitched:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No stitched data for edition {edition_id}. Run Phase 4 stitching first.",
+        )
+
+    return JSONResponse(content={
+        "edition_id": edition_id,
+        "total_articles_before": stitched["total_articles_before"],
+        "total_articles_after": stitched["total_articles_after"],
+        "stitches": stitched["stitches"],
+        "articles": stitched["articles"],
+    })
+
+
+# ── Phase 5-7: Normalize, DB write, Homepage endpoints ──
+
+
+@router.post("/api/editions/{edition_id}/normalize")
+async def trigger_normalization(
+    edition_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Trigger Phase 5 text cleanup and normalization."""
+    from src.modules.extraction.normalize import normalize_edition
+    try:
+        result = normalize_edition(edition_id)
+        return JSONResponse(content=result, status_code=200 if result["success"] else 400)
+    except Exception as e:
+        logger.error(f"Normalization failed: {e}", exc_info=True)
+        return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
+
+
+@router.post("/api/editions/{edition_id}/write-db")
+async def trigger_db_write(
+    edition_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Trigger Phase 6 DB write of normalized content items."""
+    from src.modules.extraction.publish import write_edition_to_db
+    try:
+        result = write_edition_to_db(edition_id)
+        return JSONResponse(content=result, status_code=200 if result["success"] else 400)
+    except Exception as e:
+        logger.error(f"DB write failed: {e}", exc_info=True)
+        return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
+
+
+@router.post("/api/editions/{edition_id}/homepage-batch")
+async def trigger_homepage_batch(
+    edition_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Trigger Phase 7 homepage batch generation."""
+    from src.modules.extraction.publish import generate_homepage_batch
+    try:
+        result = generate_homepage_batch(edition_id)
+        return JSONResponse(content=result, status_code=200 if result["success"] else 400)
+    except Exception as e:
+        logger.error(f"Homepage batch failed: {e}", exc_info=True)
+        return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
+
+
+@router.post("/api/editions/{edition_id}/full-pipeline")
+async def trigger_full_pipeline(
+    edition_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Run the complete Phases 1-7 pipeline in one call."""
+    from src.modules.extraction.publish import run_full_pipeline
+    try:
+        result = run_full_pipeline(edition_id)
+        return JSONResponse(content=result, status_code=200 if result["success"] else 400)
+    except Exception as e:
+        logger.error(f"Full pipeline failed: {e}", exc_info=True)
+        return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
+
+
+@router.get("/api/editions/{edition_id}/content-items")
+async def get_edition_content_items(
+    edition_id: int,
+    content_type: str = None,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Get content items for an edition from the database."""
+    from src.modules.content_items.database import get_content_items_for_edition
+    items = get_content_items_for_edition(edition_id)
+    if content_type:
+        items = [i for i in items if i.get("content_type") == content_type]
+    return JSONResponse(content={"edition_id": edition_id, "total": len(items), "items": items})
+
+
+@router.get("/api/content-items/{item_id}")
+async def get_single_content_item(
+    item_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Get a single content item by ID."""
+    from src.modules.content_items.database import get_content_item
+    item = get_content_item(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail=f"Content item {item_id} not found")
+    return JSONResponse(content=item)
+
+
+@router.get("/api/publishers/{publisher_id}/homepage")
+async def get_publisher_homepage(
+    publisher_id: int,
+    limit: int = 20,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Get homepage content for a publisher."""
+    from src.modules.content_items.database import get_homepage_content
+    items = get_homepage_content(publisher_id, limit=limit)
+    return JSONResponse(content={
+        "publisher_id": publisher_id,
+        "total": len(items),
+        "stories": items,
+    })
