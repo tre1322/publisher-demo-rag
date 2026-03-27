@@ -230,6 +230,8 @@ FURNITURE_PATTERNS = [
     re.compile(r"^Page \d+", re.IGNORECASE),
     re.compile(r"^Observer/Advocate", re.IGNORECASE),
     re.compile(r"^Wednesday,|^Thursday,|^Friday,", re.IGNORECASE),
+    # Page index bar: "Briefly 2 | Classifieds 7 | Sports 5-6"
+    re.compile(r"Briefly\s+\d|Classifieds\s+\d", re.IGNORECASE),
 ]
 CAPTION_PATTERNS = [
     re.compile(r"^(Photo|PHOTO)\s*(by|BY|courtesy|COURTESY)", re.IGNORECASE),
