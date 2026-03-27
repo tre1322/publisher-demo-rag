@@ -1119,6 +1119,45 @@ async def trigger_full_pipeline(
         return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
 
 
+@router.post("/api/editions/{edition_id}/full-pipeline-v2")
+async def trigger_full_pipeline_v2(
+    edition_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Run the V2 pipeline (Phases 1-5) + DB write (Phase 6) + Homepage (Phase 7).
+
+    Uses the new cell-claiming + bipartite jump matching architecture with
+    multi-column continuation merging.
+    """
+    from src.modules.extraction.pipeline_v2 import run_v2_pipeline
+    from src.modules.extraction.publish import write_edition_to_db, generate_homepage_batch
+    try:
+        # Run V2 pipeline (writes normalized.json)
+        result = run_v2_pipeline(edition_id)
+        if not result["success"]:
+            return JSONResponse(content=result, status_code=400)
+
+        # DB write (reads from normalized.json)
+        db_result = write_edition_to_db(edition_id)
+        if not db_result["success"]:
+            return JSONResponse(content={"success": False, "error": db_result.get("error")}, status_code=400)
+
+        # Homepage batch
+        hp_result = generate_homepage_batch(edition_id)
+
+        return JSONResponse(content={
+            "success": True,
+            "edition_id": edition_id,
+            "article_count": result["article_count"],
+            "stitched_count": result["stitched_count"],
+            "items_written": db_result["items_written"],
+            "homepage_published": hp_result.get("published", 0),
+        })
+    except Exception as e:
+        logger.error(f"V2 full pipeline failed: {e}", exc_info=True)
+        return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
+
+
 @router.get("/api/editions/{edition_id}/content-items")
 async def get_edition_content_items(
     edition_id: int,

@@ -152,4 +152,56 @@ def run_v2_pipeline(edition_id: int) -> dict:
         json.dump(articles, f, indent=2, ensure_ascii=False)
     logger.info(f"  Articles saved to {output_path}")
 
+    # Also write normalized.json in the format expected by Phase 6 DB write.
+    # This bridges V2 output → legacy DB write path.
+    normalized_articles = []
+    for i, art in enumerate(articles):
+        body = art.get("body_text", "")
+        headline = art.get("headline", "")
+        kind = art.get("kind", "")
+
+        # Infer content type from kind and headline
+        content_type = "news"
+        hl_lower = headline.lower()
+        if kind == "continuation_header":
+            content_type = "news"
+        elif any(w in hl_lower for w in ("wrestling", "basketball", "hockey", "football", "athlete", "tourney", "snap skid")):
+            content_type = "sports"
+        elif any(w in hl_lower for w in ("sheriff", "police", "court")):
+            content_type = "police"
+        elif any(w in hl_lower for w in ("obituar", "death")):
+            content_type = "obituary"
+
+        # Prominence: front page articles get higher scores
+        start_page = art.get("start_page", 1)
+        prominence = max(0, 1.0 - (start_page - 1) * 0.1) if start_page else 0.5
+
+        normalized_articles.append({
+            "article_index": i,
+            "page_number": start_page,
+            "headline": headline,
+            "subheadline": "",
+            "kicker": "",
+            "byline": art.get("byline", ""),
+            "raw_text": body,
+            "cleaned_web_text": body,
+            "content_type": content_type,
+            "print_prominence_score": round(prominence, 2),
+            "extraction_confidence": 0.9,
+            "homepage_eligible": bool(headline) and len(body) >= 100 and content_type in ("news", "sports"),
+            "is_stitched": art.get("has_jumps", False),
+            "jump_pages": art.get("jump_pages", []),
+            "start_page": start_page,
+            "end_page": max(art.get("jump_pages", [start_page]) + [start_page]),
+            "block_count": body.count("\n\n") + 1,
+            "column_id": None,
+            "span_columns": 1,
+            "bbox": None,
+        })
+
+    normalized_path = artifacts_dir / "normalized.json"
+    with open(normalized_path, "w", encoding="utf-8") as f:
+        json.dump({"articles": normalized_articles}, f, indent=2, ensure_ascii=False)
+    logger.info(f"  Normalized articles saved to {normalized_path}")
+
     return result
