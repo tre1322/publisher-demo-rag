@@ -676,7 +676,8 @@
                 let data;
                 if (dbView === 'articles') {
                     const resp = await authFetch(`/admin/api/articles/${encodeURIComponent(id)}`);
-                    data = await resp.json();
+                    const json = await resp.json();
+                    data = json.article || json;
                     dbCurrentItem = data;
                     renderArticleEditor(data);
                 } else {
