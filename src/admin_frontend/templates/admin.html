@@ -431,6 +431,15 @@
             container.innerHTML = html;
         }
 
+        // Helper: authenticated fetch (works even when page URL has credentials)
+        function authFetch(url, options = {}) {
+            // Strip credentials from page URL to build clean base
+            const loc = window.location;
+            const cleanOrigin = loc.protocol + '//' + loc.hostname + (loc.port ? ':' + loc.port : '');
+            const fullUrl = url.startsWith('/') ? cleanOrigin + url : url;
+            return fetch(fullUrl, { credentials: 'include', ...options });
+        }
+
         // Helper: escape HTML
         function escapeHtml(text) {
             const div = document.createElement('div');
@@ -441,7 +450,7 @@
         // Load stats
         async function loadStats() {
             try {
-                const response = await fetch('/admin/api/stats');
+                const response = await authFetch('/admin/api/stats');
                 const data = await response.json();
 
                 document.getElementById('stat-conversations').textContent = data.total_conversations || 0;
@@ -461,7 +470,7 @@
             document.getElementById('queries-table').innerHTML = '<div class="text-muted">Loading...</div>';
 
             try {
-                const response = await fetch(`/admin/api/queries?limit=${limit}&top_n=${topN}`);
+                const response = await authFetch(`/admin/api/queries?limit=${limit}&top_n=${topN}`);
                 const data = await response.json();
                 renderTable('queries-table', ['Query', 'Count'], data);
             } catch (error) {
@@ -477,7 +486,7 @@
             document.getElementById('words-table').innerHTML = '<div class="text-muted">Loading...</div>';
 
             try {
-                const response = await fetch(`/admin/api/words?limit=${limit}&top_n=${topN}`);
+                const response = await authFetch(`/admin/api/words?limit=${limit}&top_n=${topN}`);
                 const data = await response.json();
                 renderTable('words-table', ['Word', 'Count'], data);
             } catch (error) {
@@ -492,7 +501,7 @@
             document.getElementById('conversations-table').innerHTML = '<div class="text-muted">Loading...</div>';
 
             try {
-                const response = await fetch(`/admin/api/conversations?limit=${limit}`);
+                const response = await authFetch(`/admin/api/conversations?limit=${limit}`);
                 const data = await response.json();
                 renderTable('conversations-table',
                     ['Session ID', 'Started At', 'Messages', 'Duration', 'Preview'],
@@ -517,7 +526,7 @@
             document.getElementById('export-status').innerHTML = '<div class="text-muted">Exporting...</div>';
 
             try {
-                const response = await fetch(`/admin/api/export?limit=${limit}`);
+                const response = await authFetch(`/admin/api/export?limit=${limit}`);
                 const data = await response.json();
 
                 if (data.success) {
@@ -535,7 +544,7 @@
         // Load engagement
         async function loadEngagement() {
             try {
-                const response = await fetch('/admin/api/engagement');
+                const response = await authFetch('/admin/api/engagement');
                 const data = await response.json();
 
                 document.getElementById('eng-impressions').textContent = data.total_impressions;
@@ -578,7 +587,7 @@
 
             try {
                 if (dbView === 'articles') {
-                    const resp = await fetch('/admin/api/articles?edition_id=31');
+                    const resp = await authFetch('/admin/api/articles?edition_id=31');
                     const data = await resp.json();
                     dbAllItems = (data.articles || []).map(a => ({
                         id: a.doc_id,
@@ -589,7 +598,7 @@
                         status: a.status || 'parsed',
                     }));
                 } else {
-                    const resp = await fetch('/admin/api/table/advertisements?page=1&page_size=500');
+                    const resp = await authFetch('/admin/api/table/advertisements?page=1&page_size=500');
                     const data = await resp.json();
                     dbAllItems = (data.rows || []).map(a => ({
                         id: a.ad_id,
@@ -666,12 +675,12 @@
             try {
                 let data;
                 if (dbView === 'articles') {
-                    const resp = await fetch(`/admin/api/articles/${encodeURIComponent(id)}`);
+                    const resp = await authFetch(`/admin/api/articles/${encodeURIComponent(id)}`);
                     data = await resp.json();
                     dbCurrentItem = data;
                     renderArticleEditor(data);
                 } else {
-                    const resp = await fetch(`/admin/api/advertisements/${encodeURIComponent(id)}`);
+                    const resp = await authFetch(`/admin/api/advertisements/${encodeURIComponent(id)}`);
                     data = await resp.json();
                     dbCurrentItem = data;
                     renderAdEditor(data);
@@ -822,7 +831,7 @@
                     };
                 }
 
-                const resp = await fetch(url, {
+                const resp = await authFetch(url, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
