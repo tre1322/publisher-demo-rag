@@ -275,38 +275,62 @@
 
                     <!-- Tab: Database -->
                     <div class="tab-content" id="tab-database" style="display: none;">
-                        <div class="card">
-                            <div class="card-header">
-                                <h3 class="card-title">Browse Database Tables</h3>
-                            </div>
-                            <div class="card-body">
-                                <div class="row g-3 mb-3">
+                        <!-- View toggle & filters -->
+                        <div class="card mb-3">
+                            <div class="card-body py-2">
+                                <div class="row g-2 align-items-center">
                                     <div class="col-auto">
-                                        <label class="form-label">Select Table</label>
-                                        <select class="form-select" id="table-select" style="width: 200px;">
-                                            <option value="articles">articles</option>
-                                            <option value="advertisements">advertisements</option>
-                                            <option value="events">events</option>
-                                            <option value="conversations">conversations</option>
-                                            <option value="conversation_messages">conversation_messages</option>
-                                            <option value="content_impressions">content_impressions</option>
-                                            <option value="url_clicks">url_clicks</option>
+                                        <div class="btn-group">
+                                            <button class="btn btn-primary active" id="btn-view-articles" onclick="switchView('articles')">Articles</button>
+                                            <button class="btn btn-outline-primary" id="btn-view-ads" onclick="switchView('ads')">Ads</button>
+                                        </div>
+                                    </div>
+                                    <div class="col">
+                                        <input type="text" class="form-control" id="db-search" placeholder="Search by title..." oninput="filterList()">
+                                    </div>
+                                    <div class="col-auto">
+                                        <select class="form-select" id="db-filter-type" onchange="filterList()" style="width: 140px;">
+                                            <option value="">All types</option>
+                                            <option value="news">News</option>
+                                            <option value="sports">Sports</option>
+                                            <option value="police">Police</option>
+                                            <option value="obituary">Obituary</option>
+                                            <option value="community">Community</option>
                                         </select>
                                     </div>
                                     <div class="col-auto">
-                                        <label class="form-label">Rows Per Page</label>
-                                        <input type="number" class="form-control" id="page-size" value="25" min="10" max="100" step="5" style="width: 100px;">
-                                    </div>
-                                    <div class="col-auto d-flex align-items-end">
-                                        <button class="btn btn-primary" onclick="loadTable(1)">Load Table</button>
+                                        <span class="text-muted" id="db-count"></span>
                                     </div>
                                 </div>
-                                <div id="database-table" class="table-responsive"></div>
-                                <div class="d-flex align-items-center mt-3" id="pagination" style="display: none !important;">
-                                    <button class="btn btn-outline-secondary me-2" onclick="prevPage()">← Previous</button>
-                                    <span class="text-muted" id="page-info">Page 1</span>
-                                    <button class="btn btn-outline-secondary ms-2" onclick="nextPage()">Next →</button>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <!-- Left panel: content list -->
+                            <div class="col-md-5 col-lg-4">
+                                <div id="db-list" style="max-height: calc(100vh - 280px); overflow-y: auto;"></div>
+                                <div class="d-flex align-items-center mt-2" id="db-pagination">
+                                    <button class="btn btn-sm btn-outline-secondary me-2" onclick="dbPrevPage()">&larr;</button>
+                                    <span class="text-muted small" id="db-page-info"></span>
+                                    <button class="btn btn-sm btn-outline-secondary ms-2" onclick="dbNextPage()">&rarr;</button>
                                 </div>
+                            </div>
+
+                            <!-- Right panel: editor -->
+                            <div class="col-md-7 col-lg-8">
+                                <div class="card" id="db-editor-card">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <h3 class="card-title mb-0" id="editor-title">Select an item to edit</h3>
+                                        <div id="editor-actions" style="display:none;">
+                                            <span class="badge me-2" id="editor-status-badge"></span>
+                                            <button class="btn btn-primary btn-sm" onclick="saveItem()">Save Changes</button>
+                                        </div>
+                                    </div>
+                                    <div class="card-body" id="editor-body">
+                                        <div class="text-muted text-center py-5">Click an article or ad from the list to view and edit it.</div>
+                                    </div>
+                                </div>
+                                <div id="editor-toast" style="display:none; position:fixed; bottom:20px; right:20px; z-index:9999;"></div>
                             </div>
                         </div>
                     </div>
@@ -324,6 +348,15 @@
         let currentPage = 1;
         let currentTable = 'articles';
         let totalPages = 1;
+
+        // Database editor state
+        let dbView = 'articles';  // 'articles' or 'ads'
+        let dbPage = 1;
+        let dbTotalPages = 1;
+        let dbAllItems = [];
+        let dbFilteredItems = [];
+        let dbCurrentItem = null;
+        let dbCurrentId = null;
 
         // Track loaded tabs to avoid reloading
         const loadedTabs = new Set();
@@ -345,7 +378,7 @@
                     loadEngagement();
                     break;
                 case 'database':
-                    loadTable(1);
+                    loadDbList();
                     break;
             }
         }
@@ -517,66 +550,316 @@
             }
         }
 
-        // Load database table
-        async function loadTable(page) {
-            currentTable = document.getElementById('table-select').value;
-            const pageSize = document.getElementById('page-size').value;
-            currentPage = page;
+        // ── Database Content Editor ──
 
-            document.getElementById('database-table').innerHTML = '<div class="text-muted">Loading...</div>';
+        function switchView(view) {
+            dbView = view;
+            document.getElementById('btn-view-articles').className = view === 'articles' ? 'btn btn-primary active' : 'btn btn-outline-primary';
+            document.getElementById('btn-view-ads').className = view === 'ads' ? 'btn btn-primary active' : 'btn btn-outline-primary';
+            // Update filter options
+            const filterEl = document.getElementById('db-filter-type');
+            if (view === 'articles') {
+                filterEl.innerHTML = '<option value="">All types</option><option value="news">News</option><option value="sports">Sports</option><option value="police">Police</option><option value="obituary">Obituary</option><option value="community">Community</option>';
+            } else {
+                filterEl.innerHTML = '<option value="">All categories</option>';
+            }
+            filterEl.value = '';
+            document.getElementById('db-search').value = '';
+            dbCurrentItem = null;
+            dbCurrentId = null;
+            clearEditor();
+            loadedTabs.delete('database');
+            loadDbList();
+        }
+
+        async function loadDbList() {
+            const listEl = document.getElementById('db-list');
+            listEl.innerHTML = '<div class="text-muted text-center py-4">Loading...</div>';
 
             try {
-                const response = await fetch(`/admin/api/table/${currentTable}?page=${page}&page_size=${pageSize}`);
-                const data = await response.json();
+                if (dbView === 'articles') {
+                    const resp = await fetch('/admin/api/articles?edition_id=31');
+                    const data = await resp.json();
+                    dbAllItems = (data.articles || []).map(a => ({
+                        id: a.doc_id,
+                        title: a.title || '(untitled)',
+                        subtitle: [a.author, a.section, a.start_page ? `p.${a.start_page}` : ''].filter(Boolean).join(' · '),
+                        type: a.section || '',
+                        preview: (a.cleaned_text || a.full_text || '').substring(0, 120),
+                        status: a.status || 'parsed',
+                    }));
+                } else {
+                    const resp = await fetch('/admin/api/table/advertisements?page=1&page_size=500');
+                    const data = await resp.json();
+                    dbAllItems = (data.rows || []).map(a => ({
+                        id: a.ad_id,
+                        title: a.product_name || a.headline || '(untitled)',
+                        subtitle: [a.advertiser, a.category, a.page ? `p.${a.page}` : ''].filter(Boolean).join(' · '),
+                        type: a.category || '',
+                        preview: (a.cleaned_text || a.description || a.raw_text || '').substring(0, 120),
+                        status: a.status || 'active',
+                    }));
+                    // Populate category filter
+                    const cats = [...new Set(dbAllItems.map(a => a.type).filter(Boolean))].sort();
+                    const filterEl = document.getElementById('db-filter-type');
+                    filterEl.innerHTML = '<option value="">All categories</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+                }
+                filterList();
+            } catch (err) {
+                listEl.innerHTML = '<div class="text-danger text-center py-4">Error loading data</div>';
+            }
+        }
 
-                totalPages = data.total_pages;
+        function filterList() {
+            const search = document.getElementById('db-search').value.toLowerCase();
+            const typeFilter = document.getElementById('db-filter-type').value.toLowerCase();
 
-                // Render table with dynamic columns
-                const container = document.getElementById('database-table');
-                if (!data.rows || data.rows.length === 0) {
-                    container.innerHTML = '<div class="text-muted text-center py-4">No data available</div>';
-                    document.getElementById('pagination').style.display = 'none';
-                    return;
+            dbFilteredItems = dbAllItems.filter(item => {
+                const matchSearch = !search || item.title.toLowerCase().includes(search) || item.preview.toLowerCase().includes(search);
+                const matchType = !typeFilter || item.type.toLowerCase() === typeFilter;
+                return matchSearch && matchType;
+            });
+
+            dbPage = 1;
+            renderList();
+        }
+
+        function renderList() {
+            const perPage = 20;
+            dbTotalPages = Math.max(1, Math.ceil(dbFilteredItems.length / perPage));
+            const start = (dbPage - 1) * perPage;
+            const page = dbFilteredItems.slice(start, start + perPage);
+
+            document.getElementById('db-count').textContent = `${dbFilteredItems.length} items`;
+            document.getElementById('db-page-info').textContent = `Page ${dbPage} of ${dbTotalPages}`;
+
+            const listEl = document.getElementById('db-list');
+            if (page.length === 0) {
+                listEl.innerHTML = '<div class="text-muted text-center py-4">No items found</div>';
+                return;
+            }
+
+            listEl.innerHTML = page.map(item => `
+                <div class="card mb-2 cursor-pointer ${dbCurrentId === item.id ? 'border-primary' : ''}" onclick="loadItem('${escapeHtml(item.id)}')" style="cursor:pointer;">
+                    <div class="card-body py-2 px-3">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <strong class="d-block" style="font-size:0.875rem; line-height:1.2;">${escapeHtml(item.title)}</strong>
+                            <span class="badge ${item.status === 'approved' ? 'bg-green' : item.status === 'flagged' ? 'bg-red' : 'bg-azure'} ms-2" style="font-size:0.65rem;">${escapeHtml(item.status)}</span>
+                        </div>
+                        <small class="text-muted">${escapeHtml(item.subtitle)}</small>
+                        <div class="text-muted mt-1" style="font-size:0.75rem; max-height:2.4em; overflow:hidden;">${escapeHtml(item.preview)}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function dbNextPage() { if (dbPage < dbTotalPages) { dbPage++; renderList(); } }
+        function dbPrevPage() { if (dbPage > 1) { dbPage--; renderList(); } }
+
+        async function loadItem(id) {
+            dbCurrentId = id;
+            renderList();  // Highlight selected
+
+            const editorBody = document.getElementById('editor-body');
+            editorBody.innerHTML = '<div class="text-muted text-center py-4">Loading...</div>';
+
+            try {
+                let data;
+                if (dbView === 'articles') {
+                    const resp = await fetch(`/admin/api/articles/${encodeURIComponent(id)}`);
+                    data = await resp.json();
+                    dbCurrentItem = data;
+                    renderArticleEditor(data);
+                } else {
+                    const resp = await fetch(`/admin/api/advertisements/${encodeURIComponent(id)}`);
+                    data = await resp.json();
+                    dbCurrentItem = data;
+                    renderAdEditor(data);
+                }
+                document.getElementById('editor-actions').style.display = 'block';
+            } catch (err) {
+                editorBody.innerHTML = '<div class="text-danger">Error loading item</div>';
+            }
+        }
+
+        function renderArticleEditor(art) {
+            const title = document.getElementById('editor-title');
+            title.textContent = 'Edit Article';
+
+            const badge = document.getElementById('editor-status-badge');
+            badge.textContent = art.status || 'parsed';
+            badge.className = `badge ${art.status === 'approved' ? 'bg-green' : art.status === 'flagged' ? 'bg-red' : 'bg-azure'} me-2`;
+
+            const body = art.cleaned_text || art.full_text || '';
+            const charCount = body.length;
+
+            document.getElementById('editor-body').innerHTML = `
+                <div class="row g-3 mb-3">
+                    <div class="col-md-8">
+                        <label class="form-label">Headline</label>
+                        <input type="text" class="form-control" id="edit-title" value="${escapeAttr(art.title || '')}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Author</label>
+                        <input type="text" class="form-control" id="edit-author" value="${escapeAttr(art.author || '')}">
+                    </div>
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Subheadline</label>
+                        <input type="text" class="form-control" id="edit-subheadline" value="${escapeAttr(art.subheadline || '')}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Section</label>
+                        <input type="text" class="form-control" id="edit-section" value="${escapeAttr(art.section || '')}" readonly>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Page</label>
+                        <input type="text" class="form-control" value="${art.start_page || ''}${art.continuation_pages ? ' → ' + art.continuation_pages : ''}" readonly>
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label d-flex justify-content-between">
+                        <span>Article Text (cleaned_text)</span>
+                        <small class="text-muted" id="edit-charcount">${charCount} chars</small>
+                    </label>
+                    <textarea class="form-control" id="edit-body" rows="20" style="font-family: 'SF Mono', 'Consolas', monospace; font-size: 0.8rem; line-height: 1.5;" oninput="document.getElementById('edit-charcount').textContent = this.value.length + ' chars'">${escapeHtml(body)}</textarea>
+                </div>
+                <div class="text-muted small">
+                    <strong>Doc ID:</strong> ${escapeHtml(art.doc_id || '')} &nbsp;|&nbsp;
+                    <strong>Edition:</strong> ${art.edition_id || '-'} &nbsp;|&nbsp;
+                    <strong>Publisher:</strong> ${escapeHtml(art.publisher || '-')} &nbsp;|&nbsp;
+                    <strong>Updated:</strong> ${art.updated_at || '-'}
+                </div>
+            `;
+        }
+
+        function renderAdEditor(ad) {
+            const title = document.getElementById('editor-title');
+            title.textContent = 'Edit Advertisement';
+
+            const badge = document.getElementById('editor-status-badge');
+            badge.textContent = ad.status || 'active';
+            badge.className = `badge ${ad.status === 'active' ? 'bg-green' : 'bg-yellow'} me-2`;
+
+            const body = ad.cleaned_text || ad.description || ad.raw_text || '';
+
+            document.getElementById('editor-body').innerHTML = `
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Product Name</label>
+                        <input type="text" class="form-control" id="edit-product" value="${escapeAttr(ad.product_name || '')}">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Advertiser</label>
+                        <input type="text" class="form-control" id="edit-advertiser" value="${escapeAttr(ad.advertiser || '')}">
+                    </div>
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Category</label>
+                        <input type="text" class="form-control" id="edit-category" value="${escapeAttr(ad.category || '')}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Price</label>
+                        <input type="text" class="form-control" id="edit-price" value="${ad.price || ''}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Status</label>
+                        <select class="form-select" id="edit-ad-status">
+                            <option value="active" ${ad.status === 'active' ? 'selected' : ''}>Active</option>
+                            <option value="inactive" ${ad.status === 'inactive' ? 'selected' : ''}>Inactive</option>
+                            <option value="expired" ${ad.status === 'expired' ? 'selected' : ''}>Expired</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label d-flex justify-content-between">
+                        <span>Ad Text</span>
+                        <small class="text-muted" id="edit-charcount">${body.length} chars</small>
+                    </label>
+                    <textarea class="form-control" id="edit-body" rows="14" style="font-family: 'SF Mono', 'Consolas', monospace; font-size: 0.8rem; line-height: 1.5;" oninput="document.getElementById('edit-charcount').textContent = this.value.length + ' chars'">${escapeHtml(body)}</textarea>
+                </div>
+                <div class="text-muted small">
+                    <strong>Ad ID:</strong> ${escapeHtml(ad.ad_id || '')} &nbsp;|&nbsp;
+                    <strong>Edition:</strong> ${ad.edition_id || '-'} &nbsp;|&nbsp;
+                    <strong>Page:</strong> ${ad.page || '-'} &nbsp;|&nbsp;
+                    <strong>Publisher:</strong> ${escapeHtml(ad.publisher || '-')}
+                </div>
+            `;
+        }
+
+        function clearEditor() {
+            document.getElementById('editor-title').textContent = 'Select an item to edit';
+            document.getElementById('editor-body').innerHTML = '<div class="text-muted text-center py-5">Click an article or ad from the list to view and edit it.</div>';
+            document.getElementById('editor-actions').style.display = 'none';
+        }
+
+        async function saveItem() {
+            if (!dbCurrentId) return;
+
+            try {
+                let url, payload;
+                if (dbView === 'articles') {
+                    url = `/admin/api/articles/${encodeURIComponent(dbCurrentId)}`;
+                    payload = {
+                        title: document.getElementById('edit-title').value,
+                        author: document.getElementById('edit-author').value,
+                        subheadline: document.getElementById('edit-subheadline').value,
+                        cleaned_text: document.getElementById('edit-body').value,
+                        full_text: document.getElementById('edit-body').value,
+                    };
+                } else {
+                    url = `/admin/api/advertisements/${encodeURIComponent(dbCurrentId)}`;
+                    payload = {
+                        product_name: document.getElementById('edit-product').value,
+                        advertiser: document.getElementById('edit-advertiser').value,
+                        category: document.getElementById('edit-category').value,
+                        price: parseFloat(document.getElementById('edit-price').value) || null,
+                        cleaned_text: document.getElementById('edit-body').value,
+                        raw_text: document.getElementById('edit-body').value,
+                        status: document.getElementById('edit-ad-status').value,
+                    };
                 }
 
-                let html = '<table class="table table-vcenter card-table table-striped"><thead><tr>';
-                data.columns.forEach(col => {
-                    html += `<th>${col}</th>`;
-                });
-                html += '</tr></thead><tbody>';
-
-                data.rows.forEach(row => {
-                    html += '<tr>';
-                    data.columns.forEach(col => {
-                        const value = row[col] !== undefined ? row[col] : '';
-                        html += `<td>${escapeHtml(String(value))}</td>`;
-                    });
-                    html += '</tr>';
+                const resp = await fetch(url, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
                 });
 
-                html += '</tbody></table>';
-                container.innerHTML = html;
-
-                // Update pagination
-                document.getElementById('page-info').textContent =
-                    `Page ${data.page} of ${data.total_pages} (${data.total_count} rows)`;
-                document.getElementById('pagination').style.display = 'flex';
-            } catch (error) {
-                document.getElementById('database-table').innerHTML = '<div class="text-danger">Error loading data</div>';
+                if (resp.ok) {
+                    showToast('Saved successfully!', 'success');
+                    // Refresh the list to reflect changes
+                    loadedTabs.delete('database');
+                    loadDbList();
+                } else {
+                    const err = await resp.json();
+                    showToast('Save failed: ' + (err.detail || 'Unknown error'), 'danger');
+                }
+            } catch (err) {
+                showToast('Save failed: ' + err.message, 'danger');
             }
         }
 
-        function nextPage() {
-            if (currentPage < totalPages) {
-                loadTable(currentPage + 1);
-            }
+        function showToast(message, type) {
+            const toast = document.getElementById('editor-toast');
+            toast.innerHTML = `<div class="alert alert-${type} alert-dismissible" role="alert">${escapeHtml(message)}<button type="button" class="btn-close" onclick="this.parentElement.parentElement.style.display='none'"></button></div>`;
+            toast.style.display = 'block';
+            setTimeout(() => { toast.style.display = 'none'; }, 3000);
         }
 
-        function prevPage() {
-            if (currentPage > 1) {
-                loadTable(currentPage - 1);
-            }
+        function escapeAttr(text) {
+            return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
+
+        // Legacy table loading (kept for other tabs)
+        async function loadTable(page) {
+            currentTable = document.getElementById('table-select')?.value || 'articles';
+            currentPage = page;
+        }
+        function nextPage() {}
+        function prevPage() {}
 
         // Load initial data
         loadStats();

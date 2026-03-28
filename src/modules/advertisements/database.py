@@ -359,6 +359,51 @@ def get_all_ad_categories() -> list[str]:
     return sorted([row["category"] for row in rows])
 
 
+def update_advertisement(
+    ad_id: str,
+    product_name: str | None = None,
+    advertiser: str | None = None,
+    description: str | None = None,
+    category: str | None = None,
+    price: float | None = None,
+    raw_text: str | None = None,
+    cleaned_text: str | None = None,
+    status: str | None = None,
+) -> None:
+    """Update editable fields on an advertisement."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    updates = []
+    params: list = []
+
+    for field, value in [
+        ("product_name", product_name),
+        ("advertiser", advertiser),
+        ("description", description),
+        ("category", category),
+        ("price", price),
+        ("raw_text", raw_text),
+        ("cleaned_text", cleaned_text),
+        ("status", status),
+    ]:
+        if value is not None:
+            updates.append(f"{field} = ?")
+            params.append(value)
+
+    if not updates:
+        conn.close()
+        return
+
+    params.append(ad_id)
+    cursor.execute(
+        f"UPDATE advertisements SET {', '.join(updates)} WHERE ad_id = ?",
+        params,
+    )
+    conn.commit()
+    conn.close()
+
+
 def get_advertisement_count() -> int:
     """Get total number of advertisements in the database.
 

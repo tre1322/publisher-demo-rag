@@ -54,6 +54,7 @@ security = HTTPBasic()
 BROWSABLE_TABLES = [
     "articles",
     "advertisements",
+    "content_items",
     "events",
     "editions",
     "organizations",
@@ -726,6 +727,49 @@ async def flag_article(
         after_json={"reason": reason},
     )
 
+    return JSONResponse(content={"success": True})
+
+
+# ── Advertisement editing ──
+
+
+@router.get("/api/advertisements/{ad_id}")
+async def get_single_advertisement(
+    ad_id: str,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Get a single advertisement by ID."""
+    from src.modules.advertisements.database import get_advertisement_by_id
+    ad = get_advertisement_by_id(ad_id)
+    if not ad:
+        raise HTTPException(status_code=404, detail=f"Advertisement {ad_id} not found")
+    return JSONResponse(content=ad)
+
+
+@router.put("/api/advertisements/{ad_id}")
+async def edit_advertisement(
+    ad_id: str,
+    request: Request,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Edit advertisement fields."""
+    from src.modules.advertisements.database import get_advertisement_by_id, update_advertisement
+    ad = get_advertisement_by_id(ad_id)
+    if not ad:
+        raise HTTPException(status_code=404, detail="Advertisement not found")
+
+    body = await request.json()
+    update_advertisement(
+        ad_id=ad_id,
+        product_name=body.get("product_name"),
+        advertiser=body.get("advertiser"),
+        description=body.get("description"),
+        category=body.get("category"),
+        price=body.get("price"),
+        raw_text=body.get("raw_text"),
+        cleaned_text=body.get("cleaned_text"),
+        status=body.get("status"),
+    )
     return JSONResponse(content={"success": True})
 
 
