@@ -342,6 +342,77 @@ def match_jumps(
     return final_edges
 
 
+def _merge_same_page_orphans(
+    all_fragments: dict[int, list[ArticleFragment]],
+) -> dict[int, list[ArticleFragment]]:
+    """Prepend orphan body fragments into adjacent title fragments on the same page.
+
+    When a headline's seed_col_ids underestimates the article's column span, the
+    lede paragraph ends up as an orphan_body fragment directly below the headline
+    cell rather than claimed by the headline seed.  This function detects that
+    case and prepends the orphan text to the title article's body.
+
+    Detection criteria (all must be true):
+    1. Same page as a title fragment.
+    2. Fragment kind is "orphan_body" (no headline of its own).
+    3. The orphan's top_y is within 120pt below the title fragment's top_y
+       (i.e. it sits immediately below or beside the headline cell).
+    4. The orphan's top_y is ABOVE the title fragment's own bottom_y + 50
+       (so it can't be trailing content from another article below).
+    """
+    for page_num, fragments in list(all_fragments.items()):
+        title_frags = [f for f in fragments if f.kind == "title"]
+        orphan_frags = [f for f in fragments if f.kind == "orphan_body" and not f.headline.strip()]
+
+        if not title_frags or not orphan_frags:
+            continue
+
+        merged_orphan_ids = set()
+
+        for title in title_frags:
+            lede_candidates = []
+            for orphan in orphan_frags:
+                if orphan.seed_id in merged_orphan_ids:
+                    continue
+                # Must be below (or at) the headline, not above it
+                if orphan.top_y < title.top_y - 10:
+                    continue
+                # Must be close enough to be the lede (within 300pt)
+                if orphan.top_y > title.top_y + 300:
+                    continue
+                # Must not already be well below the title fragment's content
+                if title.bottom_y > title.top_y + 50 and orphan.top_y > title.bottom_y + 50:
+                    continue
+                lede_candidates.append(orphan)
+
+            if not lede_candidates:
+                continue
+
+            # Sort by y-position: prepend topmost orphans first
+            lede_candidates.sort(key=lambda f: f.top_y)
+
+            for orphan in lede_candidates:
+                if orphan.body_text.strip():
+                    # Prepend the orphan lede before the title's body
+                    title.body_text = orphan.body_text.strip() + "\n\n" + title.body_text if title.body_text else orphan.body_text.strip()
+                    title.cell_ids.extend(orphan.cell_ids)
+                    title.lanes = orphan.lanes + title.lanes
+                    title.top_y = min(title.top_y, orphan.top_y)
+                    merged_orphan_ids.add(orphan.seed_id)
+                    logger.info(
+                        f"  Prepended orphan lede (seed {orphan.seed_id}, "
+                        f"{len(orphan.body_text)} chars) into title "
+                        f"'{title.headline[:40]}' on page {page_num}"
+                    )
+
+        if merged_orphan_ids:
+            all_fragments[page_num] = [
+                f for f in fragments if f.seed_id not in merged_orphan_ids
+            ]
+
+    return all_fragments
+
+
 def stitch_fragments(
     all_fragments: dict[int, list[ArticleFragment]],
     edges: list[JumpEdge],

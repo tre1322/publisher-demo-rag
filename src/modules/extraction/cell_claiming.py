@@ -70,22 +70,22 @@ def create_seeds(cells: list[Cell], blocks: list[dict], page_num: int) -> list[A
             headline_text = " ".join(b["text"].replace("\n", " ").strip()
                                    for b in headline_blocks)[:200]
 
-            # Use the headline block's actual bbox to determine column span
-            # This is more accurate than the cell's column_ids when the headline
-            # spans multiple grid cells
-            seed_col_ids = cell.column_ids
-            if headline_blocks:
+            # Use the cell's column_ids (derived from the cell's actual bbox by
+            # page_grid._cell_column_ids).  This is the most reliable source for
+            # multi-column headlines because the cell already spans every column
+            # that the headline occupies.
+            #
+            # Fall back to the block's span_columns estimate ONLY when the cell
+            # reports a single column — that can happen when a wide headline
+            # block sits inside a narrow cell that wasn't split by the grid.
+            seed_col_ids = tuple(cell.column_ids)
+            if headline_blocks and len(seed_col_ids) <= 1:
                 hb = headline_blocks[0]
-                hx0 = hb["bbox"][0]
-                hx1 = hb["bbox"][2]
-                from src.modules.extraction.page_grid import _cell_column_ids
-                # Get columns based on the enriched page columns
-                page_columns = [c for c in (blocks[0].get("_page_columns") or []) if c]  # may not exist
-                if not page_columns:
-                    # Fallback: use the block's span_columns from Phase 2
-                    span = hb.get("span_columns", 1)
-                    base_col = hb.get("column_id", cell.column_ids[0] if cell.column_ids else 0)
-                    seed_col_ids = tuple(range(base_col, base_col + span))
+                span = hb.get("span_columns", 1)
+                base_col = hb.get("column_id", cell.column_ids[0] if cell.column_ids else 0)
+                span_cols = tuple(range(base_col, base_col + span))
+                if len(span_cols) > len(seed_col_ids):
+                    seed_col_ids = span_cols
 
             seeds.append(ArticleSeed(
                 seed_id=seed_id,
