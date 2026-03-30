@@ -163,6 +163,121 @@ def score_match(
     return score, reasons
 
 
+def _infer_jump_outs_from_continuations(
+    continuations: list[dict],
+    all_fragments: dict[int, list[ArticleFragment]],
+) -> list[dict]:
+    """Infer jump-outs for papers that only have 'FROM PAGE N' on back pages.
+
+    Some papers (e.g. Pipestone Star) don't print 'SEE STORY • PAGE X' at the
+    end of front-page articles. Instead, back-page continuations are labeled
+    'STORY\nFROM PAGE 1'. We infer the matching front-page article by:
+    1. The continuation's source_page is known (from 'FROM PAGE N' text)
+    2. Score candidates on:
+       a. Continuation label keyword appears in front-page headline (+8)
+       b. Front-page article ends without terminal punctuation (truncated) (+5)
+       c. Text bridge: continuation starts lowercase (mid-sentence) (+3)
+    3. Best-scoring candidate above threshold becomes the inferred jump-out
+    """
+    inferred = []
+    used_source_frags: set = set()  # avoid assigning same front-page frag to multiple conts
+
+    for cont in continuations:
+        frag = cont["fragment"]
+        cont_label = cont["label"] or ""
+
+        # Only process continuations with EXPLICIT "FROM PAGE N" text in the headline.
+        # This filters out "AA/Al-Anon" style notices that just happen to use "KEYWORD/"
+        # format and aren't actually article jumps.
+        m_src = re.search(r"FROM\s+PAGE\s+(\d+)", frag.headline or "", re.IGNORECASE)
+        if not m_src:
+            m_src = re.search(r"FROM\s+PAGE\s+(\d+)", (frag.body_text or "")[:200], re.IGNORECASE)
+        if not m_src:
+            continue  # no explicit source page — skip
+        source_page = int(m_src.group(1))
+
+        source_frags = all_fragments.get(source_page, [])
+        title_frags = [f for f in source_frags if f.kind == "title" and f.body_text]
+        if not title_frags:
+            continue
+
+        # Extract the clean keyword (strip "FROM PAGE N" suffix)
+        kw = re.sub(r"\s*FROM\s+PAGE\s*\d*", "", cont_label, flags=re.IGNORECASE).strip().upper()
+        if not kw:
+            kw = cont_label.upper()
+
+        # Strip "FROM PAGE N" prefix from continuation body for text bridge check
+        cont_body = re.sub(
+            r"^[A-Z\s]+FROM\s+PAGE\s+\d+\s*", "", (frag.body_text or ""), flags=re.IGNORECASE
+        ).strip()
+
+        best_frag = None
+        best_score = 0.0
+
+        for tf in title_frags:
+            if tf.seed_id in used_source_frags:
+                continue
+
+            score = 0.0
+            hl_upper = (tf.headline or "").upper()
+            body_text = (tf.body_text or "")
+            body_end = body_text.rstrip()
+
+            # a. Keyword in headline (+8)
+            headline_score = 0.0
+            if kw and kw in hl_upper:
+                score += 8.0
+                headline_score += 8.0
+
+            # b. Any word of keyword (>=4 chars) in headline (+4)
+            kw_words = [w for w in kw.split() if len(w) >= 4]
+            if kw_words and any(w in hl_upper for w in kw_words):
+                score += 4.0
+                headline_score += 4.0
+
+            # Require at least one headline signal — body text alone is not sufficient.
+            # The continuation label (e.g. PERMITS) must appear in the article's
+            # headline; otherwise we risk matching unrelated articles that happen to
+            # mention the keyword in passing.
+            if headline_score == 0.0:
+                continue
+
+            # c. Keyword in body text (first 500 chars) — (+3, supporting signal only)
+            # Strip "KEYWORD • PAGE N" inside-the-paper teaser lines first
+            clean_body = re.sub(r"[A-Z]{2,}\s*[•·]\s*PAGE\s*\d+", "", body_text[:500], flags=re.IGNORECASE)
+            if kw and kw in clean_body.upper():
+                score += 3.0
+
+            # d. Front article is truncated (ends mid-sentence) (+3)
+            last_char = body_end[-1] if body_end else ""
+            if last_char and last_char not in ".!?\"'":
+                score += 3.0
+
+            # e. Continuation starts mid-sentence (lowercase) (+3)
+            if cont_body and cont_body[0].islower():
+                score += 3.0
+
+            if score > best_score:
+                best_score = score
+                best_frag = tf
+
+        if best_frag and best_score >= 4.0:
+            used_source_frags.add(best_frag.seed_id)
+            inferred.append({
+                "keyword": kw,
+                "target_page": cont["page"],
+                "source_page": source_page,
+                "source_fragment": best_frag,
+                "_inferred": True,
+            })
+            logger.info(
+                f"  Inferred jump-out: p{source_page} '{best_frag.headline[:40]}' "
+                f"-> p{cont['page']} '{cont_label}' (score={best_score:.1f})"
+            )
+
+    return inferred
+
+
 def merge_continuation_columns(
     all_fragments: dict[int, list[ArticleFragment]],
 ) -> dict[int, list[ArticleFragment]]:
@@ -286,7 +401,15 @@ def match_jumps(
     jump_outs = collect_jump_outs(all_fragments)
     continuations = collect_continuations(all_fragments)
 
-    if not jump_outs or not continuations:
+    if not continuations:
+        return []
+
+    # If no explicit jump-outs detected, try reverse inference from continuations
+    # that know their source_page (e.g. "PLAY\nFROM PAGE 1" format papers).
+    if not jump_outs:
+        jump_outs = _infer_jump_outs_from_continuations(continuations, all_fragments)
+
+    if not jump_outs:
         return []
 
     logger.info(f"Jump matching: {len(jump_outs)} jump-outs, {len(continuations)} continuations")
@@ -302,7 +425,7 @@ def match_jumps(
             score, reasons = score_match(jo, cont, all_fragments)
 
             if score > 0:
-                edges.append(JumpEdge(
+                edge = JumpEdge(
                     src_page=jo.get("source_page", 0),
                     src_seed_id=-1,  # will be resolved during stitching
                     src_headline=jo["keyword"],
@@ -311,7 +434,13 @@ def match_jumps(
                     dst_label=cont["label"],
                     score=score,
                     match_reasons=reasons,
-                ))
+                )
+                # For inferred jump-outs, carry the already-resolved source frag
+                if jo.get("_inferred") and jo.get("source_fragment"):
+                    edge._inferred_frag = jo["source_fragment"]
+                else:
+                    edge._inferred_frag = None
+                edges.append(edge)
 
     # Sort by score descending (greedy matching)
     edges.sort(key=lambda e: -e.score)
@@ -450,6 +579,21 @@ def stitch_fragments(
         src_frags = all_fragments.get(src_page, [])
 
         if not src_frags:
+            continue
+
+        # For inferred edges (reverse-matched), the source fragment is already known.
+        if getattr(edge, "_inferred_frag", None) is not None:
+            best_frag = edge._inferred_frag
+            key = (src_page, best_frag.seed_id)
+            existing = frag_jumps.get(key, [])
+            if existing:
+                existing.append((edge.src_headline, edge, 9999))
+            else:
+                frag_jumps[key] = [(edge.src_headline, edge, 9999)]
+            logger.info(
+                f"  Assigned inferred '{edge.src_headline}' -> '{edge.dst_label}' "
+                f"to '{best_frag.headline[:40]}'"
+            )
             continue
 
         # Find the y-position of the jump-out block on the source page

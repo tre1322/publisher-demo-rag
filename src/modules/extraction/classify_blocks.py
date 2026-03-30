@@ -277,9 +277,14 @@ def classify_block(block: dict, font_stats: dict) -> str:
     if BYLINE_PATTERN.match(first_line) and char_count < 60:
         return "byline"
 
-    # Continuation header: "KEYWORD/ subtitle"
+    # Continuation header: "KEYWORD/ subtitle" or "KEYWORD\nFROM PAGE N"
     flat = text.replace("\n", " ").strip()
     if re.match(r"^[A-Z]{2,}\s*/\s*", flat):
+        return "continuation_header"
+    # Also detect "KEYWORD FROM PAGE N" format (e.g. "PLAY\nFROM PAGE 1")
+    # _tag_jump_hints runs before this, so we can use its results directly
+    jump_hints = block.get("jump_hints", [])
+    if any(h.get("direction") == "in" and h.get("source_page") is not None for h in jump_hints):
         return "continuation_header"
 
     # Section header patterns

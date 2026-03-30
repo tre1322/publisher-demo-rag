@@ -105,8 +105,9 @@ def create_seeds(cells: list[Cell], blocks: list[dict], page_num: int) -> list[A
             if cont_blocks:
                 import re
                 text = cont_blocks[0]["text"].replace("\n", " ").strip()
-                match = re.match(r"^([A-Z]{2,})\s*/", text)
-                label = match.group(1) if match else text[:20].upper()
+                # Match "KEYWORD/" format or "KEYWORD FROM PAGE N" format
+                match = re.match(r"^([A-Z]{2,})\s*/", text) or re.match(r"^([A-Z]{2,})\s+FROM\s+PAGE", text, re.IGNORECASE)
+                label = match.group(1).upper() if match else re.sub(r"\s*FROM\s+PAGE.*", "", text, flags=re.IGNORECASE).strip()[:20].upper()
             else:
                 label = None
 
