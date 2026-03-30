@@ -741,6 +741,14 @@
         <div id="sports-stories"><div class="story-card" style="color:#999;text-align:center;padding:20px;">Loading stories...</div></div>
     </div>
 
+    <!-- Regional Column -->
+    <div class="content-col">
+        <div class="section-header">
+            <h2>Regional Top Stories</h2>
+        </div>
+        <div id="regional-stories"><div class="regional-story" style="color:#999;text-align:center;padding:20px;">Loading stories...</div></div>
+    </div>
+
 </div>
 
 <!-- ─── Footer ─── -->
@@ -809,34 +817,54 @@
     }
 
     // ─── Dynamic Story Cards ───
+    const PUB = encodeURIComponent('Cottonwood County Citizen');
+
+    function renderStoryCards(items, containerId) {
+        const el = document.getElementById(containerId);
+        if (!items.length) {
+            el.innerHTML = '<div class="story-card" style="color:#999;text-align:center;padding:20px;">No stories available yet</div>';
+            return;
+        }
+        el.innerHTML = items.map(s =>
+            '<a href="/story/' + s.item_id + '" class="story-card" style="display:block;text-decoration:none;color:inherit;">' +
+                '<div class="story-headline">' + escapeHtml(s.headline) + '</div>' +
+                (s.byline ? '<div class="story-byline">By ' + escapeHtml(s.byline) + '</div>' : '') +
+                '<div class="story-excerpt">' + escapeHtml(s.excerpt) + '</div>' +
+                '<div class="story-meta">' +
+                    '<span class="tag">' + escapeHtml(s.section) + '</span>' +
+                    (s.date ? '<span>' + escapeHtml(s.date) + '</span>' : '') +
+                '</div>' +
+            '</a>'
+        ).join('');
+    }
+
+    function renderRegionalCards(items) {
+        const el = document.getElementById('regional-stories');
+        if (!items.length) {
+            el.innerHTML = '<div class="regional-story" style="color:#999;text-align:center;padding:20px;">No regional stories yet</div>';
+            return;
+        }
+        el.innerHTML = items.map(s =>
+            '<a href="/story/' + s.item_id + '" class="regional-story" style="display:block;text-decoration:none;color:inherit;">' +
+                '<div class="story-headline">' + escapeHtml(s.headline) + '</div>' +
+                '<div class="story-source">' + escapeHtml(s.section) + (s.date ? ' &bull; ' + escapeHtml(s.date) : '') + '</div>' +
+            '</a>'
+        ).join('');
+    }
+
     async function loadStories() {
         try {
-            const res = await fetch('/api/homepage-stories?publisher=' + encodeURIComponent('Cottonwood County Citizen') + '&limit=12');
-            const data = await res.json();
-            const stories = data.stories || [];
-            const news = stories.filter(s => s.section !== 'sports');
-            const sports = stories.filter(s => s.section === 'sports');
-
-            function renderCards(items, containerId, max) {
-                const el = document.getElementById(containerId);
-                if (!items.length) {
-                    el.innerHTML = '<div class="story-card" style="color:#999;text-align:center;padding:20px;">No stories available yet</div>';
-                    return;
-                }
-                el.innerHTML = items.slice(0, max).map(s =>
-                    '<div class="story-card">' +
-                        '<div class="story-headline">' + escapeHtml(s.headline) + '</div>' +
-                        (s.byline ? '<div class="story-byline">By ' + escapeHtml(s.byline) + '</div>' : '') +
-                        '<div class="story-excerpt">' + escapeHtml(s.excerpt) + '</div>' +
-                        '<div class="story-meta">' +
-                            '<span class="tag">' + escapeHtml(s.section) + '</span>' +
-                            (s.date ? '<span>' + escapeHtml(s.date) + '</span>' : '') +
-                        '</div>' +
-                    '</div>'
-                ).join('');
-            }
-            renderCards(news, 'news-stories', 3);
-            renderCards(sports, 'sports-stories', 3);
+            const [newsRes, sportsRes, regionalRes] = await Promise.all([
+                fetch('/api/homepage-stories?publisher=' + PUB + '&section=news&limit=5'),
+                fetch('/api/homepage-stories?publisher=' + PUB + '&section=sports&limit=5'),
+                fetch('/api/homepage-stories?all_publishers=true&section=news&limit=6'),
+            ]);
+            const [newsData, sportsData, regionalData] = await Promise.all([
+                newsRes.json(), sportsRes.json(), regionalRes.json()
+            ]);
+            renderStoryCards(newsData.stories || [], 'news-stories');
+            renderStoryCards(sportsData.stories || [], 'sports-stories');
+            renderRegionalCards(regionalData.stories || []);
         } catch (e) {
             console.error('Failed to load stories:', e);
         }

@@ -211,16 +211,36 @@ def get_content_item(item_id: int) -> dict | None:
     return item
 
 
-def get_homepage_content(publisher_id: int, limit: int = 20) -> list[dict]:
-    """Get homepage-eligible content sorted by score."""
+def get_homepage_content(publisher_id: int, limit: int = 20, section: str = "") -> list[dict]:
+    """Get homepage-eligible content sorted by score.
+
+    Args:
+        publisher_id: Filter to this publisher. Pass 0 to get all publishers.
+        limit: Max results to return.
+        section: Optional content_type filter (e.g. 'news', 'sports').
+    """
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("""
+
+    where_clauses = ["homepage_eligible = 1", "publish_status = 'published'"]
+    params: list = []
+
+    if publisher_id:
+        where_clauses.append("publisher_id = ?")
+        params.append(publisher_id)
+
+    if section:
+        where_clauses.append("content_type = ?")
+        params.append(section)
+
+    params.append(limit)
+
+    cursor.execute(f"""
         SELECT * FROM content_items
-        WHERE publisher_id = ? AND homepage_eligible = 1 AND publish_status = 'published'
+        WHERE {" AND ".join(where_clauses)}
         ORDER BY homepage_score DESC, id DESC
         LIMIT ?
-    """, (publisher_id, limit))
+    """, params)
     columns = [desc[0] for desc in cursor.description]
     rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
     conn.close()

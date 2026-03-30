@@ -541,19 +541,29 @@ def create_app() -> FastAPI:
     # ── Homepage Stories API ──
 
     @app.get("/api/homepage-stories")
-    async def homepage_stories(publisher: str = "", limit: int = 6):
-        """Return top stories for a publisher's landing page."""
+    async def homepage_stories(publisher: str = "", limit: int = 6, section: str = "", all_publishers: bool = False):
+        """Return top stories for a publisher's landing page.
+
+        Args:
+            publisher: Publisher name to filter by. Ignored if all_publishers=True.
+            limit: Max stories to return.
+            section: Optional content_type filter (e.g. 'news', 'sports').
+            all_publishers: If true, return stories from all publishers (for regional column).
+        """
         from src.modules.publishers.database import get_publisher_by_name
         from src.modules.content_items.database import get_homepage_content
 
-        if not publisher:
-            return {"stories": []}
+        publisher_id = 0  # 0 = all publishers
 
-        pub = get_publisher_by_name(publisher)
-        if not pub:
-            return {"stories": []}
+        if not all_publishers:
+            if not publisher:
+                return {"stories": []}
+            pub = get_publisher_by_name(publisher)
+            if not pub:
+                return {"stories": []}
+            publisher_id = pub["id"]
 
-        items = get_homepage_content(pub["id"], limit=limit)
+        items = get_homepage_content(publisher_id, limit=limit, section=section)
         stories = []
         for item in items:
             body = item.get("cleaned_web_text", "") or item.get("raw_text", "")
@@ -566,8 +576,68 @@ def create_app() -> FastAPI:
                 "excerpt": excerpt,
                 "start_page": item.get("start_page"),
                 "item_id": item.get("id"),
+                "publisher_id": item.get("publisher_id"),
             })
         return {"stories": stories}
+
+    # ── Story Detail (content_items) ──
+
+    @app.get("/story/{item_id}", response_class=HTMLResponse)
+    async def story_detail_page(request: Request, item_id: int):
+        """Render article detail page from content_items table."""
+        from src.modules.content_items.database import get_content_item
+        from src.modules.publishers.database import get_publisher as get_publisher_by_id
+
+        item = get_content_item(item_id)
+        if not item:
+            return HTMLResponse("<h1>Story not found</h1>", status_code=404)
+
+        # Resolve publisher name
+        pub_name = "Grand Network"
+        pub = get_publisher_by_id(item.get("publisher_id")) if item.get("publisher_id") else None
+        if pub:
+            pub_name = pub.get("name", pub_name)
+
+        # Map content_items fields to article_detail template fields
+        article = {
+            "title": item.get("headline", "Untitled"),
+            "author": item.get("byline", ""),
+            "publish_date": item.get("edition_date", ""),
+            "section": item.get("content_type", ""),
+            "publisher": pub_name,
+            "location": "",
+            "subheadline": item.get("subheadline", ""),
+            "cleaned_text": item.get("cleaned_web_text", "") or item.get("raw_text", ""),
+            "full_text": item.get("cleaned_web_text", "") or item.get("raw_text", ""),
+            "start_page": item.get("start_page"),
+            "continuation_pages": None,
+        }
+
+        # Related stories from same publisher
+        related = []
+        if item.get("publisher_id"):
+            from src.modules.content_items.database import get_homepage_content
+            all_items = get_homepage_content(item["publisher_id"], limit=8)
+            for r in all_items:
+                if r["id"] != item_id:
+                    body = r.get("cleaned_web_text", "") or r.get("raw_text", "")
+                    related.append({
+                        "doc_id": f"../story/{r['id']}",
+                        "title": r.get("headline", ""),
+                        "author": r.get("byline", ""),
+                        "publish_date": r.get("edition_date", ""),
+                        "publisher": pub_name,
+                        "section": r.get("content_type", ""),
+                        "excerpt": body[:150],
+                    })
+                    if len(related) >= 4:
+                        break
+
+        return landing_templates.TemplateResponse("article_detail.html", {
+            "request": request,
+            "article": article,
+            "related": related,
+        })
 
     # ── Article Detail Pages ──
 
