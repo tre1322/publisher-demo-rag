@@ -105,6 +105,7 @@ def main() -> None:
                     "doc_id": doc_id,
                     "title": title[:200],
                     "publish_date": article.get("publish_date", "") or "",
+                    "edition_date": article.get("publish_date", "") or "",
                     "author": article.get("author", "") or "Staff",
                     "source_file": article.get("source_file", "") or "",
                     "chunk_index": i,

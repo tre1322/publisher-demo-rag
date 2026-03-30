@@ -524,6 +524,7 @@ async def upload_editions(
                             "doc_id": doc_id,
                             "title": headline[:200],
                             "publish_date": edition_date or "",
+                            "edition_date": edition_date or "",
                             "author": byline or "Unknown",
                             "source_file": file.filename,
                             "chunk_index": i,

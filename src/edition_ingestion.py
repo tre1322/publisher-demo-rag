@@ -182,6 +182,7 @@ class EditionIngester:
                             "doc_id": doc_id,
                             "title": article.headline[:200],
                             "publish_date": edition_date or "",
+                            "edition_date": edition_date or "",
                             "author": article.byline or "Unknown",
                             "source_file": pdf_path.name,
                             "chunk_index": i,

@@ -156,7 +156,7 @@ class QueryEngine:
                     continue
 
                 # Boost score for recent articles
-                publish_date = str(metadata.get("publish_date", ""))
+                publish_date = str(metadata.get("edition_date", "") or metadata.get("publish_date", ""))
                 freshness_boost = 1.0
                 if publish_date:
                     try:
