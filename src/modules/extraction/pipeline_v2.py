@@ -80,14 +80,13 @@ def run_v2_pipeline(edition_id: int) -> dict:
     page_count = extraction["page_count"]
     result["page_count"] = page_count
 
-    # Phase 2: Enrichment (if not already done)
-    enrichment = get_enrichment_summary(publisher_id, edition_id)
-    if not enrichment:
-        logger.info(f"Running Phase 2 enrichment for edition {edition_id}...")
-        enr_result = enrich_edition(edition_id)
-        if not enr_result["success"]:
-            result["error"] = f"Phase 2 failed: {enr_result.get('error')}"
-            return result
+    # Phase 2: Enrichment — always re-run to pick up latest classify_blocks logic.
+    # Enrichment is fast (~0.3s for 12 pages) and must reflect current code.
+    logger.info(f"Phase 2: Enriching {page_count} pages for edition {edition_id}...")
+    enr_result = enrich_edition(edition_id)
+    if not enr_result["success"]:
+        result["error"] = f"Phase 2 failed: {enr_result.get('error')}"
+        return result
 
     # Phase 3: Page grid + cell claiming for each page
     logger.info(f"Phase 3: Assembling articles from {page_count} pages...")
