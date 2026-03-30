@@ -30,7 +30,7 @@ from src.modules.extraction.classify_blocks import (
     get_enrichment_summary,
 )
 from src.modules.extraction.cell_claiming import assemble_page, ArticleFragment
-from src.modules.extraction.jump_matcher import match_jumps, stitch_fragments, merge_continuation_columns, _merge_same_page_orphans
+from src.modules.extraction.jump_matcher import match_jumps, stitch_fragments, merge_continuation_columns
 from src.modules.extraction.text_normalizer import normalize_all_articles
 
 logger = logging.getLogger(__name__)
@@ -111,17 +111,11 @@ def run_v2_pipeline(edition_id: int) -> dict:
             f"(titles={titles}, continuations={conts})"
         )
 
-    # Phase 3.5a: Merge same-page orphan lede fragments into title fragments.
-    # When a headline's column span was underestimated, the lede paragraph ends
-    # up as an orphan_body fragment just below the headline.  Prepend it back.
-    logger.info("Phase 3.5a: Merging same-page orphan lede fragments...")
-    all_fragments = _merge_same_page_orphans(all_fragments)
-
-    # Phase 3.5b: Merge multi-column continuations
+    # Phase 3.5: Merge multi-column continuations
     # Back-page continuations often span multiple newspaper columns. Cell claiming
     # may create separate fragments per column — merge orphan body fragments into
     # their parent continuation_header fragment before jump matching.
-    logger.info("Phase 3.5b: Merging multi-column continuations...")
+    logger.info("Phase 3.5: Merging multi-column continuations...")
     all_fragments = merge_continuation_columns(all_fragments)
 
     # Phase 4: Bipartite jump matching
