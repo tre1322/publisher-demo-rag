@@ -528,6 +528,11 @@ def create_app() -> FastAPI:
         """Render the Observer/Advocate landing page with AI chat hero."""
         return landing_templates.TemplateResponse("landing.html", {"request": request})
 
+    @app.get("/windom", response_class=HTMLResponse)
+    async def windom_landing(request: Request) -> HTMLResponse:
+        """Render the Windom / Cottonwood County Citizen landing page."""
+        return landing_templates.TemplateResponse("landing.html", {"request": request})
+
     @app.get("/pipestone", response_class=HTMLResponse)
     async def pipestone_landing(request: Request) -> HTMLResponse:
         """Render the Pipestone County Star landing page (green theme)."""

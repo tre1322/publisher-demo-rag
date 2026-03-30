@@ -126,6 +126,18 @@ def get_publisher(pub_id: int) -> dict | None:
     return dict(row) if row else None
 
 
+def get_publisher_by_name(name: str) -> dict | None:
+    """Get a publisher by name (case-insensitive)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM publishers WHERE LOWER(name) = LOWER(?)", (name,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
 def get_publisher_by_slug(slug: str) -> dict | None:
     """Get a publisher by slug."""
     conn = get_connection()

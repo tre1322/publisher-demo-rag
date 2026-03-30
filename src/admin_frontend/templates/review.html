@@ -136,15 +136,20 @@
         <h2>Upload Newspaper Edition PDFs</h2>
         <form id="edition-form">
             <div class="form-row">
-                <div><label>Publisher *</label><input type="text" name="publisher" required placeholder="Pipestone Star"></div>
-                <div><label>Organization</label><input type="text" name="organization_name" placeholder="Grand Network"></div>
-                <div><label>Publication</label><input type="text" name="publication_name" placeholder="Pipestone Star"></div>
+                <div>
+                    <label>Publisher *</label>
+                    <select name="publisher" required>
+                        <option value="">Select a publisher...</option>
+                        <option value="Cottonwood County Citizen">Cottonwood County Citizen (Windom)</option>
+                        <option value="Pipestone Star">Pipestone Star</option>
+                    </select>
+                </div>
                 <div><label>Edition Date</label><input type="date" name="edition_date"></div>
             </div>
             <div class="form-row">
                 <div><label>PDF Files *</label><input type="file" name="files" accept=".pdf" multiple required></div>
             </div>
-            <button type="submit" class="btn btn-primary" id="edition-submit">Upload &amp; Process</button>
+            <button type="submit" class="btn btn-primary" id="edition-submit">Upload &amp; Process (V2 Pipeline)</button>
             <div id="edition-status"></div>
         </form>
     </div>
@@ -154,9 +159,16 @@
         <h2>Upload Ad Files</h2>
         <form id="ad-form">
             <div class="form-row">
-                <div><label>Publisher *</label><input type="text" name="publisher" required placeholder="Pipestone Star"></div>
+                <div>
+                    <label>Publisher *</label>
+                    <select name="publisher" required>
+                        <option value="">Select a publisher...</option>
+                        <option value="Cottonwood County Citizen">Cottonwood County Citizen (Windom)</option>
+                        <option value="Pipestone Star">Pipestone Star</option>
+                    </select>
+                </div>
                 <div><label>Organization</label><input type="text" name="organization_name" placeholder="Grand Network"></div>
-                <div><label>Publication</label><input type="text" name="publication_name" placeholder="Pipestone Star"></div>
+                <div><label>Publication</label><input type="text" name="publication_name" placeholder=""></div>
             </div>
             <div class="form-row">
                 <div><label>Ad Files (PDF or image) *</label><input type="file" name="files" accept=".pdf,.png,.jpg,.jpeg,.gif,.bmp,.tiff,.tif,.webp" multiple required></div>

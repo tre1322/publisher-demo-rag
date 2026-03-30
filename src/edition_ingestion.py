@@ -189,6 +189,7 @@ class EditionIngester:
                             "subjects": "",
                             "edition_id": str(edition_id),
                             "content_type": "article",
+                            "publisher": self.publisher or "",
                         }
                         for i in range(len(chunks))
                     ]

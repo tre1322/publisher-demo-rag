@@ -912,7 +912,7 @@
         let accumulated = '';
 
         try {
-            const url = '/chat/stream?message=' + encodeURIComponent(message) + '&session_id=' + encodeURIComponent(sessionId);
+            const url = '/chat/stream?message=' + encodeURIComponent(message) + '&session_id=' + encodeURIComponent(sessionId) + '&publisher=' + encodeURIComponent('Cottonwood County Citizen');
             const response = await fetch(url);
 
             if (!response.ok) {
