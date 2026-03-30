@@ -69,6 +69,7 @@ def init_table() -> None:
     _add_column_if_missing(cursor, "content_items", "column_id", "INTEGER")
     _add_column_if_missing(cursor, "content_items", "span_columns", "INTEGER DEFAULT 1")
     _add_column_if_missing(cursor, "content_items", "bbox_json", "TEXT")
+    _add_column_if_missing(cursor, "content_items", "edition_date", "TEXT")
 
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_content_items_edition "
@@ -131,6 +132,7 @@ def insert_content_item(
     column_id: int = None,
     span_columns: int = 1,
     bbox: list = None,
+    edition_date: str = None,
 ) -> int:
     """Insert a content item and return its ID."""
     conn = get_connection()
@@ -142,15 +144,15 @@ def insert_content_item(
             byline, raw_text, cleaned_web_text, section, start_page, end_page,
             jump_pages_json, print_prominence_score, extraction_confidence,
             homepage_eligible, homepage_score, publish_status, is_stitched,
-            block_count, column_id, span_columns, bbox_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            block_count, column_id, span_columns, bbox_json, edition_date
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         edition_id, publisher_id, content_type, headline, subheadline,
         byline, raw_text, cleaned_web_text, section, start_page, end_page,
         json.dumps(jump_pages or []), print_prominence_score, extraction_confidence,
         1 if homepage_eligible else 0, homepage_score, publish_status,
         1 if is_stitched else 0, block_count, column_id, span_columns,
-        json.dumps(bbox) if bbox else None,
+        json.dumps(bbox) if bbox else None, edition_date,
     ))
 
     item_id = cursor.lastrowid

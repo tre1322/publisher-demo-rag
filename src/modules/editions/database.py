@@ -44,6 +44,7 @@ def init_table() -> None:
         ("upload_status", "TEXT DEFAULT 'pending'"),
         ("extraction_status", "TEXT DEFAULT 'not_started'"),
         ("homepage_batch_status", "TEXT DEFAULT 'not_started'"),
+        ("is_current", "INTEGER DEFAULT 0"),
     ]:
         try:
             cursor.execute(f"ALTER TABLE editions ADD COLUMN {col} {coltype}")
@@ -264,6 +265,23 @@ def get_edition_by_pdf_path(source_pdf_path: str) -> dict | None:
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+def mark_edition_current(edition_id: int, publisher_id: int) -> None:
+    """Mark an edition as current, clearing is_current on all other editions for this publisher."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE editions SET is_current = 0 WHERE publisher_id = ?",
+        (publisher_id,),
+    )
+    cursor.execute(
+        "UPDATE editions SET is_current = 1 WHERE id = ?",
+        (edition_id,),
+    )
+    conn.commit()
+    conn.close()
+    logger.info(f"Edition {edition_id} marked as current for publisher {publisher_id}")
 
 
 def get_edition_count() -> int:

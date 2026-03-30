@@ -8,6 +8,7 @@ Computes homepage scores and publishes content for homepage display.
 
 import logging
 import time
+from datetime import datetime, timedelta
 
 from src.modules.editions.database import get_edition
 from src.modules.extraction.extract_pages import ARTIFACTS_BASE
@@ -66,6 +67,7 @@ def write_edition_to_db(edition_id: int) -> dict:
         return result
 
     articles = normalized.get("articles", [])
+    edition_date = edition.get("edition_date")
 
     # Delete existing items for idempotent re-run
     deleted = delete_content_items_for_edition(edition_id)
@@ -99,6 +101,7 @@ def write_edition_to_db(edition_id: int) -> dict:
             column_id=art.get("column_id"),
             span_columns=art.get("span_columns", 1),
             bbox=art.get("bbox"),
+            edition_date=edition_date,
         )
         written += 1
 
@@ -181,7 +184,24 @@ def generate_homepage_batch(edition_id: int) -> dict:
 
         prominence = item.get("print_prominence_score", 0)
         type_bonus = TYPE_BONUS.get(item.get("content_type", "news"), 0.1)
-        freshness = 1.0  # all items from current edition are maximally fresh
+
+        # Compute freshness based on edition_date age
+        edition_date_str = edition.get("edition_date")
+        freshness = 1.0
+        if edition_date_str:
+            try:
+                ed = datetime.strptime(edition_date_str, "%Y-%m-%d")
+                age_days = (datetime.now() - ed).days
+                if age_days <= 7:
+                    freshness = 1.0
+                elif age_days <= 30:
+                    freshness = 0.8
+                elif age_days <= 90:
+                    freshness = 0.5
+                else:
+                    freshness = 0.2
+            except ValueError:
+                freshness = 0.5  # unparseable date
 
         homepage_score = round(
             prominence * 0.4 + freshness * 0.3 + type_bonus * 0.3,

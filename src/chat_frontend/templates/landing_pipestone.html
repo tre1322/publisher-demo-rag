@@ -729,110 +729,16 @@
     <div class="content-col">
         <div class="section-header">
             <h2>News</h2>
-            <a href="#" class="see-all">See All &rarr;</a>
         </div>
-
-        <a href="/article/quadd_1312_abcc1a74-43c5-597c-b02a-4e85a6a223e2" class="story-card" style="text-decoration:none;color:inherit;display:block;">
-            <div class="story-headline">Commissioners stand by driveway decision</div>
-            <div class="story-byline">By Kyle Kuphal</div>
-            <div class="story-excerpt">Pipestone County Commissioners again denied a request from the Pipestone Development Company for a permit to build driveways for six lots on land along Eighth Avenue Northwest, citing safety concerns.</div>
-            <div class="story-meta">
-                <span class="tag">Pipestone</span>
-                <span>Jan 8, 2026</span>
-            </div>
-        </a>
-
-        <a href="/article/quadd_1312_abcc1a74-43c5-597c-b02a-4e85a6a223e2" class="story-card" style="text-decoration:none;color:inherit;display:block;">
-            <div class="story-headline">Appeals Court upholds Calumet Inn ruling</div>
-            <div class="story-byline">By Kyle Kuphal</div>
-            <div class="story-excerpt">The owners of the Calumet Inn plan to take their case to the United States Supreme Court after the Eighth Circuit affirmed a decision in favor of the city of Pipestone and former building and zoning official.</div>
-            <div class="story-meta">
-                <span class="tag">Pipestone</span>
-                <span>Jan 8, 2026</span>
-            </div>
-        </a>
-
-        <a href="/article/quadd_1312_c4299b01-664e-546c-b5b9-6a6ada21d568" class="story-card" style="text-decoration:none;color:inherit;display:block;">
-            <div class="story-headline">Home tax abatement program continued</div>
-            <div class="story-byline">By Kyle Kuphal</div>
-            <div class="story-excerpt">Pipestone County Commissioners voted to extend the county's home tax abatement program until Dec. 31, 2028, encouraging the construction of new single-family homes.</div>
-            <div class="story-meta">
-                <span class="tag">Pipestone County</span>
-                <span>Jan 8, 2026</span>
-            </div>
-        </a>
+        <div id="news-stories"><div class="story-card" style="color:#999;text-align:center;padding:20px;">Loading stories...</div></div>
     </div>
 
     <!-- Sports Column -->
     <div class="content-col">
         <div class="section-header">
             <h2>Sports</h2>
-            <a href="#" class="see-all">See All &rarr;</a>
         </div>
-
-        <a href="/article/quadd_1312_068eca2f-59ec-56d3-b05d-51394058c3f3" class="story-card" style="text-decoration:none;color:inherit;display:block;">
-            <div class="story-headline">PAS nabs 2nd at Winterfest</div>
-            <div class="story-excerpt">Pipestone Area sports teams stayed busy over the winter break with multiple games and tournaments keeping athletes sharp heading into the second half of the season.</div>
-            <div class="story-meta">
-                <span class="tag">Basketball</span>
-                <span>Jan 8, 2026</span>
-            </div>
-        </a>
-
-        <a href="/article/quadd_1312_7e1f1ac3-c4d6-545c-af52-9517104da7e7" class="story-card" style="text-decoration:none;color:inherit;display:block;">
-            <div class="story-headline">Axe throwing event at PCC, January 10</div>
-            <div class="story-excerpt">The Pipestone Country Club will be the site of an axe throwing event on Saturday, Jan. 10. Throwing begins at 6 p.m. in an enclosed area inside the facility.</div>
-            <div class="story-meta">
-                <span class="tag">Events</span>
-                <span>Jan 8, 2026</span>
-            </div>
-        </a>
-
-        <a href="/article/quadd_1312_d427eba8-9284-572c-89ec-23beacb8ce57" class="story-card" style="text-decoration:none;color:inherit;display:block;">
-            <div class="story-headline">Ice fishing tournament set for January 31</div>
-            <div class="story-excerpt">The 13th Annual Lake Benton Sportsman's Club ice fishing tournament is set for Saturday, Jan. 31. Preregistration is set for 1 p.m. to 10 p.m. at A1's Landing.</div>
-            <div class="story-meta">
-                <span class="tag">Outdoors</span>
-                <span>Jan 8, 2026</span>
-            </div>
-        </a>
-    </div>
-
-    <!-- Regional Top Stories Column -->
-    <div class="content-col">
-        <div class="section-header">
-            <h2>Regional Top Stories</h2>
-        </div>
-
-        <div class="regional-story">
-            <div class="story-headline">Larson to step down as K-12 principal</div>
-            <div class="story-source">Observer/Advocate &bull; Mt. Lake</div>
-        </div>
-
-        <div class="regional-story">
-            <div class="story-headline">Butterfield secures $1.05M for upgrades</div>
-            <div class="story-source">Observer/Advocate &bull; Butterfield</div>
-        </div>
-
-        <div class="regional-story">
-            <div class="story-headline">Council deals with hazardous, unsafe buildings</div>
-            <div class="story-source">Observer/Advocate &bull; Mt. Lake</div>
-        </div>
-
-        <div class="regional-story">
-            <div class="story-headline">Wolverines surge past Mavericks</div>
-            <div class="story-source">Observer/Advocate &bull; Sports</div>
-        </div>
-
-        <div class="regional-story">
-            <div class="story-headline">Cobras take fourth at Parkston Tourney</div>
-            <div class="story-source">Observer/Advocate &bull; Sports</div>
-        </div>
-
-        <div class="regional-placeholder">
-            More regional stories coming soon.<br>
-            Network papers sharing local coverage across communities.
-        </div>
+        <div id="sports-stories"><div class="story-card" style="color:#999;text-align:center;padding:20px;">Loading stories...</div></div>
     </div>
 
 </div>
@@ -901,6 +807,41 @@
     function hideChips() {
         chipsEl.style.display = 'none';
     }
+
+    // ─── Dynamic Story Cards ───
+    async function loadStories() {
+        try {
+            const res = await fetch('/api/homepage-stories?publisher=' + encodeURIComponent('Pipestone Star') + '&limit=12');
+            const data = await res.json();
+            const stories = data.stories || [];
+            const news = stories.filter(s => s.section !== 'sports');
+            const sports = stories.filter(s => s.section === 'sports');
+
+            function renderCards(items, containerId, max) {
+                const el = document.getElementById(containerId);
+                if (!items.length) {
+                    el.innerHTML = '<div class="story-card" style="color:#999;text-align:center;padding:20px;">No stories available yet</div>';
+                    return;
+                }
+                el.innerHTML = items.slice(0, max).map(s =>
+                    '<div class="story-card">' +
+                        '<div class="story-headline">' + escapeHtml(s.headline) + '</div>' +
+                        (s.byline ? '<div class="story-byline">By ' + escapeHtml(s.byline) + '</div>' : '') +
+                        '<div class="story-excerpt">' + escapeHtml(s.excerpt) + '</div>' +
+                        '<div class="story-meta">' +
+                            '<span class="tag">' + escapeHtml(s.section) + '</span>' +
+                            (s.date ? '<span>' + escapeHtml(s.date) + '</span>' : '') +
+                        '</div>' +
+                    '</div>'
+                ).join('');
+            }
+            renderCards(news, 'news-stories', 3);
+            renderCards(sports, 'sports-stories', 3);
+        } catch (e) {
+            console.error('Failed to load stories:', e);
+        }
+    }
+    loadStories();
 
     // ─── Streaming ───
     async function streamResponse(message) {

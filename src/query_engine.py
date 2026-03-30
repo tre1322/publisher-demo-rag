@@ -155,12 +155,30 @@ class QueryEngine:
                     )
                     continue
 
+                # Boost score for recent articles
+                publish_date = str(metadata.get("publish_date", ""))
+                freshness_boost = 1.0
+                if publish_date:
+                    try:
+                        from datetime import datetime
+                        pd = datetime.strptime(publish_date, "%Y-%m-%d")
+                        age_days = (datetime.now() - pd).days
+                        if age_days <= 7:
+                            freshness_boost = 1.15
+                        elif age_days <= 30:
+                            freshness_boost = 1.05
+                    except (ValueError, TypeError):
+                        pass
+
                 chunk = {
                     "text": doc,
                     "metadata": metadata,
-                    "score": score,
+                    "score": score * freshness_boost,
                 }
                 chunks.append(chunk)
+
+        # Re-sort by boosted score
+        chunks.sort(key=lambda c: c["score"], reverse=True)
 
         logger.info(
             f"After filtering: {len(chunks)} chunks pass threshold "

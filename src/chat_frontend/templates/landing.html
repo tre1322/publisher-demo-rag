@@ -729,110 +729,16 @@
     <div class="content-col">
         <div class="section-header">
             <h2>News</h2>
-            <a href="#" class="see-all">See All &rarr;</a>
         </div>
-
-        <a href="/article/quadd_31_df98913b-e4c1-56e3-af6e-72789702fe8e" class="story-card" style="text-decoration:none;color:inherit;display:block;">
-            <div class="story-headline">Larson to step down as K-12 principal</div>
-            <div class="story-byline">By Deanna Anderson</div>
-            <div class="story-excerpt">The Mt. Lake Public School Board has accepted the resignation of K-12 Principal Michelle Larson, effective at the end of the current school year. Larson joined the district in the 2015-16 school year as the high school principal.</div>
-            <div class="story-meta">
-                <span class="tag">Mt. Lake</span>
-                <span>Jan 28, 2026</span>
-            </div>
-        </a>
-
-        <a href="/article/quadd_31_e9c646d3-d27b-5d7c-b472-b6a66099c660" class="story-card" style="text-decoration:none;color:inherit;display:block;">
-            <div class="story-headline">Butterfield secures $1.05M for upgrades</div>
-            <div class="story-byline">By Jeremy Behnke</div>
-            <div class="story-excerpt">Butterfield is in line to receive $1.05 million in federal funding to help pay for major upgrades to the city's wastewater treatment system, part of a rural water infrastructure package announced by U.S. Rep. Brad Finstad.</div>
-            <div class="story-meta">
-                <span class="tag">Butterfield</span>
-                <span>Jan 28, 2026</span>
-            </div>
-        </a>
-
-        <a href="/article/quadd_31_343ae955-09e1-5780-8f60-174c6ec0fdbf" class="story-card" style="text-decoration:none;color:inherit;display:block;">
-            <div class="story-headline">Sokolofsky continues to promote Bingham Lake</div>
-            <div class="story-byline">By Jeremy Behnke</div>
-            <div class="story-excerpt">The Bingham Lake mayor wants to continue to promote new housing in the community and other activities to benefit the small town in Cottonwood County.</div>
-            <div class="story-meta">
-                <span class="tag">Bingham Lake</span>
-                <span>Jan 28, 2026</span>
-            </div>
-        </a>
+        <div id="news-stories"><div class="story-card" style="color:#999;text-align:center;padding:20px;">Loading stories...</div></div>
     </div>
 
     <!-- Sports Column -->
     <div class="content-col">
         <div class="section-header">
             <h2>Sports</h2>
-            <a href="#" class="see-all">See All &rarr;</a>
         </div>
-
-        <a href="/article/quadd_31_d35fd656-e2ac-5287-bcc5-3fbfb626f93b" class="story-card" style="text-decoration:none;color:inherit;display:block;">
-            <div class="story-headline">Wolverines surge past Mavericks</div>
-            <div class="story-excerpt">The Mt. Lake Area-Comfrey Wolverines boys basketball team posted a strong win over the Mavericks in a conference matchup, with several players contributing double-digit scoring efforts.</div>
-            <div class="story-meta">
-                <span class="tag">Basketball</span>
-                <span>Jan 28, 2026</span>
-            </div>
-        </a>
-
-        <a href="/article/quadd_31_77a1014e-4f7b-53e6-9167-a9220ed1535c" class="story-card" style="text-decoration:none;color:inherit;display:block;">
-            <div class="story-headline">Cobras take fourth at Parkston Tourney</div>
-            <div class="story-excerpt">The RTR Cobras wrestling squad came away with a fourth-place finish at the Parkston Tournament, with several wrestlers posting strong individual results on the mat.</div>
-            <div class="story-meta">
-                <span class="tag">Wrestling</span>
-                <span>Jan 28, 2026</span>
-            </div>
-        </a>
-
-        <a href="/article/quadd_31_3794d164-896a-53b7-9bdf-e2cdb40b8a2e" class="story-card" style="text-decoration:none;color:inherit;display:block;">
-            <div class="story-headline">Eagle boys snap skid, win a pair</div>
-            <div class="story-excerpt">The Heron Lake-Okabena Eagles boys basketball team ended a losing streak with back-to-back wins, showing improved offensive execution down the stretch.</div>
-            <div class="story-meta">
-                <span class="tag">Basketball</span>
-                <span>Jan 28, 2026</span>
-            </div>
-        </a>
-    </div>
-
-    <!-- Regional Top Stories Column -->
-    <div class="content-col">
-        <div class="section-header">
-            <h2>Regional Top Stories</h2>
-        </div>
-
-        <div class="regional-story">
-            <div class="story-headline">Council deals with hazardous, unsafe buildings</div>
-            <div class="story-source">Observer/Advocate &bull; Mt. Lake</div>
-        </div>
-
-        <div class="regional-story">
-            <div class="story-headline">One act play advances to section competition</div>
-            <div class="story-source">Observer/Advocate &bull; Mt. Lake</div>
-        </div>
-
-        <div class="regional-story">
-            <div class="story-headline">Echoes of the Past: A look back at local history</div>
-            <div class="story-source">Observer/Advocate &bull; Cottonwood County</div>
-        </div>
-
-        <div class="regional-story">
-            <div class="story-headline">Historical Society plans annual meeting</div>
-            <div class="story-source">Pipestone County Star &bull; Pipestone</div>
-        </div>
-
-        <div class="regional-story">
-            <div class="story-headline">RTR Speech Team dominates at invitational</div>
-            <div class="story-source">Pipestone County Star &bull; RTR</div>
-        </div>
-
-        <div class="regional-placeholder">
-            More regional stories coming soon.<br>
-            Network papers sharing local coverage across communities.
-        </div>
+        <div id="sports-stories"><div class="story-card" style="color:#999;text-align:center;padding:20px;">Loading stories...</div></div>
     </div>
 
 </div>
@@ -901,6 +807,41 @@
     function hideChips() {
         chipsEl.style.display = 'none';
     }
+
+    // ─── Dynamic Story Cards ───
+    async function loadStories() {
+        try {
+            const res = await fetch('/api/homepage-stories?publisher=' + encodeURIComponent('Cottonwood County Citizen') + '&limit=12');
+            const data = await res.json();
+            const stories = data.stories || [];
+            const news = stories.filter(s => s.section !== 'sports');
+            const sports = stories.filter(s => s.section === 'sports');
+
+            function renderCards(items, containerId, max) {
+                const el = document.getElementById(containerId);
+                if (!items.length) {
+                    el.innerHTML = '<div class="story-card" style="color:#999;text-align:center;padding:20px;">No stories available yet</div>';
+                    return;
+                }
+                el.innerHTML = items.slice(0, max).map(s =>
+                    '<div class="story-card">' +
+                        '<div class="story-headline">' + escapeHtml(s.headline) + '</div>' +
+                        (s.byline ? '<div class="story-byline">By ' + escapeHtml(s.byline) + '</div>' : '') +
+                        '<div class="story-excerpt">' + escapeHtml(s.excerpt) + '</div>' +
+                        '<div class="story-meta">' +
+                            '<span class="tag">' + escapeHtml(s.section) + '</span>' +
+                            (s.date ? '<span>' + escapeHtml(s.date) + '</span>' : '') +
+                        '</div>' +
+                    '</div>'
+                ).join('');
+            }
+            renderCards(news, 'news-stories', 3);
+            renderCards(sports, 'sports-stories', 3);
+        } catch (e) {
+            console.error('Failed to load stories:', e);
+        }
+    }
+    loadStories();
 
     // ─── Streaming ───
     async function streamResponse(message) {

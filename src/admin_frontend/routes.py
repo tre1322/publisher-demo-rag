@@ -548,6 +548,10 @@ async def upload_editions(
             # Step 5: Homepage batch (Phase 7)
             generate_homepage_batch(edition_id)
 
+            # Step 6: Mark this edition as current for the publisher
+            from src.modules.editions.database import mark_edition_current
+            mark_edition_current(edition_id, publisher_id)
+
             logger.info(
                 f"Edition {edition_id} fully processed: "
                 f"{file_result['articles']} articles, "

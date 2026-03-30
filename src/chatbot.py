@@ -538,6 +538,37 @@ def create_app() -> FastAPI:
         """Render the Pipestone County Star landing page (green theme)."""
         return landing_templates.TemplateResponse("landing_pipestone.html", {"request": request})
 
+    # ── Homepage Stories API ──
+
+    @app.get("/api/homepage-stories")
+    async def homepage_stories(publisher: str = "", limit: int = 6):
+        """Return top stories for a publisher's landing page."""
+        from src.modules.publishers.database import get_publisher_by_name
+        from src.modules.content_items.database import get_homepage_content
+
+        if not publisher:
+            return {"stories": []}
+
+        pub = get_publisher_by_name(publisher)
+        if not pub:
+            return {"stories": []}
+
+        items = get_homepage_content(pub["id"], limit=limit)
+        stories = []
+        for item in items:
+            body = item.get("cleaned_web_text", "") or item.get("raw_text", "")
+            excerpt = body[:200].rsplit(" ", 1)[0] + "..." if len(body) > 200 else body
+            stories.append({
+                "headline": item.get("headline", "Untitled"),
+                "byline": item.get("byline", ""),
+                "section": item.get("content_type", "news"),
+                "date": item.get("edition_date", ""),
+                "excerpt": excerpt,
+                "start_page": item.get("start_page"),
+                "item_id": item.get("id"),
+            })
+        return {"stories": stories}
+
     # ── Article Detail Pages ──
 
     @app.get("/api/articles/{doc_id}")

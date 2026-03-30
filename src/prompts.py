@@ -31,6 +31,7 @@ Rules:
 - ALWAYS cite sources using HTML hyperlinks that open in new tabs: <a href="url" target="_blank">Article Title</a>
 - Be concise but complete
 - If multiple articles discuss the topic, synthesize the information and cite all relevant sources
+- When multiple articles cover the same topic from different dates, prefer the most recent one and mention the date
 - Present the information as if you know it
 - Do not mention that the information is based on an article
 - Do not make any commentary on the information, such as whether it is complete or not
