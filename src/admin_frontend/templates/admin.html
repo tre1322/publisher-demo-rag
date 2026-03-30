@@ -587,7 +587,19 @@
 
             try {
                 if (dbView === 'articles') {
-                    const resp = await authFetch('/admin/api/articles?edition_id=31');
+                    // Load most recent edition dynamically
+                    let articleUrl = '/admin/api/articles?limit=200';
+                    try {
+                        const edResp = await authFetch('/admin/api/editions');
+                        const edData = await edResp.json();
+                        const editions = (edData.editions || []);
+                        if (editions.length > 0) {
+                            // Sort by id desc, pick most recent
+                            const latest = editions.sort((a, b) => b.id - a.id)[0];
+                            articleUrl = `/admin/api/articles?edition_id=${latest.id}`;
+                        }
+                    } catch (e) { /* fall back to needs_review */ }
+                    const resp = await authFetch(articleUrl);
                     const data = await resp.json();
                     dbAllItems = (data.articles || []).map(a => ({
                         id: a.doc_id,

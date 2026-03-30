@@ -160,7 +160,24 @@ def upload_edition(
             logger.info(f"Legacy edition {edition_id} repaired")
             return result
 
-        # Already complete duplicate — just return it
+        # Complete duplicate — re-store the file if the original path is gone
+        # (Railway ephemeral filesystem clears between deploys)
+        existing_path = existing.get("pdf_path")
+        if existing_path and not Path(existing_path).exists():
+            logger.info(
+                f"Duplicate edition {edition_id}: pdf_path missing on disk, "
+                f"re-storing file for '{filename}'"
+            )
+            upload_dir = get_publisher_upload_dir(publisher_slug)
+            dest_path = upload_dir / filename
+            try:
+                dest_path.write_bytes(data)
+                _repair_edition(edition_id=edition_id, pdf_path=str(dest_path))
+                result["file_path"] = str(dest_path)
+                logger.info(f"Re-stored edition file at {dest_path}")
+            except Exception as e:
+                logger.warning(f"Could not re-store file for edition {edition_id}: {e}")
+
         result["error"] = "Duplicate edition (checksum match)"
         result["duplicate"] = True
         result["edition_id"] = edition_id
