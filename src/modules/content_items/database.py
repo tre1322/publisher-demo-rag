@@ -212,7 +212,11 @@ def get_content_item(item_id: int) -> dict | None:
 
 
 def get_homepage_content(publisher_id: int, limit: int = 20, section: str = "") -> list[dict]:
-    """Get homepage-eligible content sorted by score.
+    """Get homepage-eligible content from the current edition, sorted by score.
+
+    Only returns articles from the most recently uploaded edition(s) marked
+    is_current=1 in the editions table. If no current edition exists, falls
+    back to all published content for that publisher.
 
     Args:
         publisher_id: Filter to this publisher. Pass 0 to get all publishers.
@@ -222,27 +226,42 @@ def get_homepage_content(publisher_id: int, limit: int = 20, section: str = "") 
     conn = get_connection()
     cursor = conn.cursor()
 
-    where_clauses = ["homepage_eligible = 1", "publish_status = 'published'"]
-    params: list = []
+    def _fetch(current_only: bool) -> list[dict]:
+        where_clauses = [
+            "ci.homepage_eligible = 1",
+            "ci.publish_status = 'published'",
+        ]
+        params: list = []
 
-    if publisher_id:
-        where_clauses.append("publisher_id = ?")
-        params.append(publisher_id)
+        if current_only:
+            where_clauses.append("e.is_current = 1")
 
-    if section:
-        where_clauses.append("content_type = ?")
-        params.append(section)
+        if publisher_id:
+            where_clauses.append("ci.publisher_id = ?")
+            params.append(publisher_id)
 
-    params.append(limit)
+        if section:
+            where_clauses.append("ci.content_type = ?")
+            params.append(section)
 
-    cursor.execute(f"""
-        SELECT * FROM content_items
-        WHERE {" AND ".join(where_clauses)}
-        ORDER BY homepage_score DESC, id DESC
-        LIMIT ?
-    """, params)
-    columns = [desc[0] for desc in cursor.description]
-    rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        params.append(limit)
+
+        cursor.execute(f"""
+            SELECT ci.*
+            FROM content_items ci
+            JOIN editions e ON ci.edition_id = e.id
+            WHERE {" AND ".join(where_clauses)}
+            ORDER BY ci.homepage_score DESC, ci.id DESC
+            LIMIT ?
+        """, params)
+        columns = [desc[0] for desc in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+    # Prefer current edition; fall back to all published if none marked current
+    rows = _fetch(current_only=True)
+    if not rows:
+        rows = _fetch(current_only=False)
+
     conn.close()
 
     for row in rows:
