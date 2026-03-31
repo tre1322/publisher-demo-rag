@@ -144,6 +144,10 @@ JUMP_OUT_PATTERNS = [
     re.compile(r"SEE\s+(\w+)\s*[•·\uf06e]\s*(?:BACK\s+)?PAGE\s*(\d*)", re.IGNORECASE),
     # "S E E  FUNDING • B A C K  PA G E" — letter-spaced
     re.compile(r"S\s*E\s*E\s+(\w+)\s*[•·\u2009]\s*(?:B\s*A\s*C\s*K\s*)?P\s*A\s*G\s*E", re.IGNORECASE),
+    # "TURBINES • PAGE 7" or "JASPER• PAGE 10" — keyword+bullet+page (no SEE prefix, Pipestone Star format)
+    re.compile(r"^([A-Z]{3,})\s*[•·\uf06e\u2022]\s*PAGE\s*(\d+)\s*$", re.IGNORECASE | re.MULTILINE),
+    # "S E E COUNTY" — letter-spaced SEE without page ref (Cottonwood Citizen format)
+    re.compile(r"^S\s+E\s+E\s+([A-Z]{3,})\s*$", re.IGNORECASE | re.MULTILINE),
     # "• Page 4" or "■ Page 5" — bullet + page ref
     re.compile(r"[\uf06e■]\s*Page\s*(\d+)", re.IGNORECASE),
     # "Continued on page 8"
