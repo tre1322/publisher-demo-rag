@@ -147,9 +147,17 @@
                 <div><label>Edition Date</label><input type="date" name="edition_date"></div>
             </div>
             <div class="form-row">
-                <div><label>PDF Files *</label><input type="file" name="files" accept=".pdf" multiple required></div>
+                <div><label>Edition Files (.pdf or .idml) *</label><input type="file" name="files" accept=".pdf,.idml" multiple required></div>
+                <div>
+                    <label>PDF Pipeline</label>
+                    <select name="pipeline">
+                        <option value="auto">Auto (V2 Grid)</option>
+                        <option value="vision">Vision (Claude AI - best quality)</option>
+                        <option value="v2">V2 Grid (free, lower quality)</option>
+                    </select>
+                </div>
             </div>
-            <button type="submit" class="btn btn-primary" id="edition-submit">Upload &amp; Process (V2 Pipeline)</button>
+            <button type="submit" class="btn btn-primary" id="edition-submit">Upload &amp; Process</button>
             <div id="edition-status"></div>
         </form>
     </div>

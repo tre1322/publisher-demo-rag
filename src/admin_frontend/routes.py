@@ -391,182 +391,161 @@ async def upload_editions(
     organization_name: str = Form(""),
     publication_name: str = Form(""),
     edition_date: str = Form(""),
+    pipeline: str = Form("auto"),
     _username: str = Depends(verify_credentials),
 ) -> JSONResponse:
-    """Upload and process newspaper edition PDFs using the V2 pipeline.
+    """Upload and process newspaper editions (.pdf or .idml).
 
-    Flow: upload PDF → tenant-aware storage → V2 extraction (page grid +
-    cell claiming + bipartite jump matching) → write to content_items +
-    legacy articles table → index in ChromaDB with publisher metadata →
-    homepage batch.
+    Auto-detects file format and routes to the appropriate pipeline:
+    - .idml → IDML parser (perfect text from InDesign source)
+    - .pdf + pipeline=vision → Claude Vision extraction
+    - .pdf + pipeline=v2 → V2 grid+cell claiming (legacy)
+    - .pdf + pipeline=auto → defaults to V2
     """
-    import uuid
-
-    from sentence_transformers import SentenceTransformer
-
-    from src.core.config import CHUNK_OVERLAP, CHUNK_SIZE, EMBEDDING_MODEL
-    from src.core.vector_store import get_articles_collection
-    from src.modules.articles import insert_edition_article
     from src.modules.extraction.pipeline_v2 import run_v2_pipeline
-    from src.modules.extraction.publish import generate_homepage_batch, write_edition_to_db
+    from src.modules.extraction.publish import write_edition_to_db
+    from src.modules.extraction.shared_write_layer import write_articles_to_all
     from src.modules.publishers.database import get_publisher_by_name
     from src.modules.publishers.uploads import upload_edition
 
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
 
-    # Resolve publisher name → publisher_id
     pub_record = get_publisher_by_name(publisher)
     if not pub_record:
         raise HTTPException(
             status_code=400,
-            detail=f"Unknown publisher: '{publisher}'. Use the dropdown to select a valid publisher.",
+            detail=f"Unknown publisher: '{publisher}'.",
         )
     publisher_id = pub_record["id"]
 
+    SUPPORTED_EXTENSIONS = (".pdf", ".idml")
     results = []
+
     for file in files:
         file_result = {
             "filename": file.filename,
+            "pipeline": None,
             "articles": 0,
             "stitched": 0,
             "chunks_indexed": 0,
             "error": None,
         }
 
-        if not file.filename or not file.filename.lower().endswith(".pdf"):
-            file_result["error"] = "Not a PDF file"
+        if not file.filename:
+            file_result["error"] = "No filename"
+            results.append(file_result)
+            continue
+
+        ext = file.filename.lower().rsplit(".", 1)[-1] if "." in file.filename else ""
+        if f".{ext}" not in SUPPORTED_EXTENSIONS:
+            file_result["error"] = f"Unsupported file type: .{ext} (use .pdf or .idml)"
             results.append(file_result)
             continue
 
         try:
-            # Step 1: Tenant-aware upload (stores file, creates edition record with publisher_id)
             file_data = await file.read()
-            upload_result = upload_edition(
-                publisher_id=publisher_id,
-                data=file_data,
-                filename=file.filename,
-                edition_date=edition_date or None,
-                issue_label=None,
-            )
 
-            if upload_result.get("error") and not upload_result.get("edition_id"):
-                file_result["error"] = upload_result["error"]
-                results.append(file_result)
-                continue
+            # ── IDML path ──
+            if ext == "idml":
+                file_result["pipeline"] = "idml"
+                import tempfile
+                from src.modules.extraction.idml_parser import ingest_idml_edition
 
-            edition_id = upload_result["edition_id"]
+                with tempfile.NamedTemporaryFile(suffix=".idml", delete=False) as tmp:
+                    tmp.write(file_data)
+                    tmp_path = tmp.name
 
-            # Step 2: V2 pipeline (page grid + cell claiming + jump matching + normalization)
-            logger.info(f"Running V2 pipeline for edition {edition_id}...")
-            v2_result = run_v2_pipeline(edition_id)
+                idml_result = ingest_idml_edition(
+                    idml_path=tmp_path,
+                    publisher_name=publisher,
+                    edition_date=edition_date or None,
+                )
+                file_result["articles"] = idml_result["articles_inserted"]
+                file_result["chunks_indexed"] = idml_result.get("chunks_indexed", 0)
 
-            if not v2_result["success"]:
-                file_result["error"] = f"V2 pipeline failed: {v2_result.get('error')}"
-                results.append(file_result)
-                continue
+                os.unlink(tmp_path)
 
-            v2_articles = v2_result["articles"]
-            file_result["articles"] = len(v2_articles)
-            file_result["stitched"] = v2_result["stitched_count"]
+            # ── PDF Vision path ──
+            elif ext == "pdf" and pipeline == "vision":
+                file_result["pipeline"] = "vision"
+                from src.modules.extraction.pipeline_vision import run_vision_pipeline
 
-            # Step 3: Write to content_items table (Phase 6)
-            db_result = write_edition_to_db(edition_id)
-            if not db_result["success"]:
-                logger.warning(f"Phase 6 DB write warning: {db_result.get('error')}")
-
-            # Step 4: Insert into legacy articles table + index in ChromaDB
-            embedding_model = SentenceTransformer(EMBEDDING_MODEL)
-            collection = get_articles_collection()
-            total_chunks = 0
-
-            for art in v2_articles:
-                headline = art.get("headline", "")
-                body_text = art.get("body_text", "")
-                byline = art.get("byline", "")
-
-                if not body_text or len(body_text) < 20:
+                # Store PDF via tenant upload
+                upload_result = upload_edition(
+                    publisher_id=publisher_id, data=file_data,
+                    filename=file.filename, edition_date=edition_date or None,
+                )
+                if upload_result.get("error") and not upload_result.get("edition_id"):
+                    file_result["error"] = upload_result["error"]
+                    results.append(file_result)
                     continue
 
-                doc_id = str(uuid.uuid4())
-
-                # Insert into legacy articles table
-                insert_edition_article(
-                    doc_id=doc_id,
-                    title=headline,
+                edition_id = upload_result["edition_id"]
+                vision_result = run_vision_pipeline(
+                    pdf_path=upload_result.get("pdf_path") or upload_result.get("file_path"),
                     edition_id=edition_id,
-                    source_file=file.filename,
-                    full_text=body_text,
-                    cleaned_text=body_text,
-                    author=byline or None,
-                    publish_date=edition_date or None,
-                    section=None,
-                    start_page=art.get("start_page"),
-                    continuation_pages=art.get("jump_pages") or None,
-                    publisher=publisher,
-                    organization_id=None,
-                    publication_id=None,
-                    needs_review=True,
+                    publisher_id=publisher_id,
                 )
 
-                # Chunk and index in ChromaDB WITH publisher metadata
-                words = body_text.split()
-                chunks = []
-                start = 0
-                while start < len(words):
-                    end = start + CHUNK_SIZE
-                    chunk = " ".join(words[start:end])
-                    chunks.append(chunk)
-                    if end >= len(words):
-                        break
-                    start = end - CHUNK_OVERLAP
+                if not vision_result["success"]:
+                    file_result["error"] = f"Vision pipeline failed: {vision_result.get('error')}"
+                    results.append(file_result)
+                    continue
 
-                if chunks:
-                    embeddings = embedding_model.encode(chunks).tolist()
-                    ids = [f"{doc_id}_{i}" for i in range(len(chunks))]
-                    metadatas = [
-                        {
-                            "doc_id": doc_id,
-                            "title": headline[:200],
-                            "publish_date": edition_date or "",
-                            "edition_date": edition_date or "",
-                            "author": byline or "Unknown",
-                            "source_file": file.filename,
-                            "chunk_index": i,
-                            "location": "",
-                            "subjects": "",
-                            "edition_id": str(edition_id),
-                            "content_type": "article",
-                            "publisher": publisher,
-                        }
-                        for i in range(len(chunks))
-                    ]
-                    collection.add(
-                        ids=ids,
-                        embeddings=embeddings,
-                        documents=chunks,
-                        metadatas=metadatas,
-                    )
-                    total_chunks += len(chunks)
+                write_result = write_articles_to_all(
+                    articles=vision_result["articles"],
+                    edition_id=edition_id,
+                    publisher_id=publisher_id,
+                    publisher_name=publisher,
+                    edition_date=edition_date or None,
+                    source_filename=file.filename,
+                )
+                file_result["articles"] = write_result["articles_written"]
+                file_result["chunks_indexed"] = write_result["chunks_indexed"]
+                file_result["stitched"] = sum(1 for a in vision_result["articles"] if a.get("is_stitched"))
 
-            file_result["chunks_indexed"] = total_chunks
+            # ── PDF V2 path (default) ──
+            else:
+                file_result["pipeline"] = "v2_pdf"
 
-            # Step 5: Homepage batch (Phase 7)
-            generate_homepage_batch(edition_id)
+                upload_result = upload_edition(
+                    publisher_id=publisher_id, data=file_data,
+                    filename=file.filename, edition_date=edition_date or None,
+                )
+                if upload_result.get("error") and not upload_result.get("edition_id"):
+                    file_result["error"] = upload_result["error"]
+                    results.append(file_result)
+                    continue
 
-            # Step 6: Mark this edition as current for the publisher
-            from src.modules.editions.database import mark_edition_current
-            mark_edition_current(edition_id, publisher_id)
+                edition_id = upload_result["edition_id"]
+                v2_result = run_v2_pipeline(edition_id)
 
-            logger.info(
-                f"Edition {edition_id} fully processed: "
-                f"{file_result['articles']} articles, "
-                f"{file_result['stitched']} stitched, "
-                f"{total_chunks} chunks indexed"
-            )
+                if not v2_result["success"]:
+                    file_result["error"] = f"V2 pipeline failed: {v2_result.get('error')}"
+                    results.append(file_result)
+                    continue
+
+                # Write to content_items (Phase 6)
+                write_edition_to_db(edition_id)
+
+                # Write to articles table + ChromaDB via shared layer
+                write_result = write_articles_to_all(
+                    articles=v2_result["articles"],
+                    edition_id=edition_id,
+                    publisher_id=publisher_id,
+                    publisher_name=publisher,
+                    edition_date=edition_date or None,
+                    source_filename=file.filename,
+                )
+                file_result["articles"] = write_result["articles_written"]
+                file_result["stitched"] = v2_result["stitched_count"]
+                file_result["chunks_indexed"] = write_result["chunks_indexed"]
+
+            logger.info(f"Edition processed via {file_result['pipeline']}: {file_result['articles']} articles")
 
         except Exception as e:
-            logger.error(f"Edition upload+processing failed for {file.filename}: {e}", exc_info=True)
+            logger.error(f"Edition upload failed for {file.filename}: {e}", exc_info=True)
             file_result["error"] = str(e)
 
         results.append(file_result)

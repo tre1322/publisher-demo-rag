@@ -74,5 +74,11 @@ ENABLE_QUERY_TRANSFORMATION = (
 )
 MAX_TRANSFORMED_QUERIES = int(os.getenv("MAX_TRANSFORMED_QUERIES", "3"))
 
+# Vision Pipeline Settings
+VISION_MODEL = os.getenv("VISION_MODEL", "claude-sonnet-4-20250514")
+VISION_COST_PER_PAGE = float(os.getenv("VISION_COST_PER_PAGE", "0.02"))
+VISION_DPI = int(os.getenv("VISION_DPI", "200"))
+VISION_PAGE_DELAY = float(os.getenv("VISION_PAGE_DELAY", "1.0"))
+
 # Server Settings
 BASE_URL = os.getenv("BASE_URL", "http://localhost:7860")
