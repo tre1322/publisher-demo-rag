@@ -29,11 +29,16 @@ from src.modules.articles import (
     update_article,
 )
 from src.modules.editions import (
+    delete_jump_override,
     get_all_editions,
     get_edition_count,
+    get_fragment_edits,
+    get_jump_overrides,
     get_regions_for_article,
     get_review_actions_for_article,
+    insert_jump_override,
     insert_review_action,
+    upsert_fragment_edit,
 )
 from src.modules.organizations import (
     get_all_organizations,
@@ -1429,3 +1434,206 @@ async def get_publisher_homepage(
         "total": len(items),
         "stories": items,
     })
+
+
+# ── Jump Review endpoints ──
+
+
+@router.get("/editions/{edition_id}/jumps", response_class=HTMLResponse)
+async def jump_review_page(
+    edition_id: int,
+    request: Request,
+    _username: str = Depends(verify_credentials),
+) -> HTMLResponse:
+    """Render the jump review page for an edition."""
+    from src.modules.editions.database import get_edition
+    edition = get_edition(edition_id)
+    if not edition:
+        raise HTTPException(status_code=404, detail=f"Edition {edition_id} not found")
+    return templates.TemplateResponse("jump_review.html", {
+        "request": request,
+        "edition_id": edition_id,
+        "edition": edition,
+    })
+
+
+@router.get("/api/editions/{edition_id}/jump-review")
+async def get_jump_review_data(
+    edition_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Get the jump review artifact (fragments, edges, unmatched items)."""
+    from src.modules.editions.database import get_edition
+    from src.modules.extraction.extract_pages import ARTIFACTS_BASE
+
+    edition = get_edition(edition_id)
+    if not edition:
+        raise HTTPException(status_code=404, detail=f"Edition {edition_id} not found")
+
+    publisher_id = edition.get("publisher_id")
+    if not publisher_id:
+        raise HTTPException(status_code=400, detail="Edition has no publisher_id")
+
+    artifact_path = ARTIFACTS_BASE / f"publisher_{publisher_id}" / f"edition_{edition_id}" / "jump_review.json"
+    if not artifact_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Jump review data not available. Re-run the V2 pipeline first.",
+        )
+
+    with open(artifact_path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    # Merge in any manual overrides and fragment edits from the database
+    overrides = get_jump_overrides(edition_id)
+    data["overrides"] = overrides
+
+    edits = get_fragment_edits(edition_id)
+    data["fragment_edits"] = {fid: {"headline": e.get("edited_headline"), "body_text": e.get("edited_body_text")} for fid, e in edits.items()}
+
+    return JSONResponse(content=data)
+
+
+@router.get("/api/editions/{edition_id}/pages/{page_number}/image")
+async def get_page_image(
+    edition_id: int,
+    page_number: int,
+    dpi: int = 150,
+    _username: str = Depends(verify_credentials),
+):
+    """Render a PDF page as a PNG image for visual review."""
+    import fitz
+    from fastapi.responses import Response
+
+    from src.modules.editions.database import get_edition
+
+    edition = get_edition(edition_id)
+    if not edition:
+        raise HTTPException(status_code=404, detail=f"Edition {edition_id} not found")
+
+    pdf_path = edition.get("pdf_path")
+    if not pdf_path or not Path(pdf_path).exists():
+        raise HTTPException(status_code=404, detail="PDF file not found")
+
+    try:
+        doc = fitz.open(pdf_path)
+        if page_number < 1 or page_number > len(doc):
+            doc.close()
+            raise HTTPException(status_code=404, detail=f"Page {page_number} out of range")
+
+        page = doc[page_number - 1]
+        zoom = dpi / 72.0
+        mat = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=mat)
+        png_data = pix.tobytes("png")
+        doc.close()
+
+        return Response(content=png_data, media_type="image/png")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Page image rendering failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/editions/{edition_id}/jump-overrides")
+async def list_jump_overrides(
+    edition_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """List all manual jump overrides for an edition."""
+    overrides = get_jump_overrides(edition_id)
+    return JSONResponse(content={"overrides": overrides})
+
+
+@router.post("/api/editions/{edition_id}/jump-overrides")
+async def create_jump_override(
+    edition_id: int,
+    request: Request,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Create a manual jump override (force_match or force_unlink)."""
+    body = await request.json()
+    action = body.get("action")
+    if action not in ("force_match", "force_unlink"):
+        raise HTTPException(status_code=400, detail="action must be 'force_match' or 'force_unlink'")
+
+    override_id = insert_jump_override(
+        edition_id=edition_id,
+        action=action,
+        src_page=body.get("src_page", 0),
+        src_fragment_id=body.get("src_fragment_id", ""),
+        dst_page=body.get("dst_page", 0),
+        dst_fragment_id=body.get("dst_fragment_id", ""),
+        reason=body.get("reason"),
+    )
+    return JSONResponse(content={"success": True, "override_id": override_id})
+
+
+@router.delete("/api/editions/{edition_id}/jump-overrides/{override_id}")
+async def remove_jump_override(
+    edition_id: int,
+    override_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Delete a manual jump override."""
+    deleted = delete_jump_override(override_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Override not found")
+    return JSONResponse(content={"success": True})
+
+
+@router.put("/api/editions/{edition_id}/fragments/{fragment_id}")
+async def save_fragment_edit(
+    edition_id: int,
+    fragment_id: str,
+    request: Request,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Save edited headline or body text for a fragment.
+
+    Edits are stored in the database and applied during pipeline re-stitch,
+    so the corrected text flows through normalization into the final articles.
+    """
+    body = await request.json()
+    edited_headline = body.get("headline")
+    edited_body_text = body.get("body_text")
+
+    if edited_headline is None and edited_body_text is None:
+        raise HTTPException(status_code=400, detail="Provide headline or body_text to save")
+
+    edit_id = upsert_fragment_edit(
+        edition_id=edition_id,
+        fragment_id=fragment_id,
+        edited_headline=edited_headline,
+        edited_body_text=edited_body_text,
+    )
+    return JSONResponse(content={"success": True, "edit_id": edit_id})
+
+
+@router.post("/api/editions/{edition_id}/restitch")
+async def restitch_edition(
+    edition_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Re-run the V2 pipeline with manual jump overrides applied.
+
+    Re-runs Phases 3-5 (cell claiming, jump matching with overrides,
+    normalization) then rewrites to the database and re-indexes in ChromaDB.
+    """
+    from src.modules.extraction.pipeline_v2 import run_v2_pipeline
+
+    try:
+        result = run_v2_pipeline(edition_id)
+        if not result["success"]:
+            return JSONResponse(content=result, status_code=400)
+
+        return JSONResponse(content={
+            "success": True,
+            "edition_id": edition_id,
+            "article_count": result["article_count"],
+            "stitched_count": result["stitched_count"],
+        })
+    except Exception as e:
+        logger.error(f"Restitch failed for edition {edition_id}: {e}", exc_info=True)
+        return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)

@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jump Review - Edition {{ edition_id }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Inter', sans-serif; background: #f5f5f7; color: #1a1a2e; }
+
+        .topbar {
+            background: #1a1f36; color: white; padding: 14px 24px;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .topbar h1 { font-size: 1.1rem; font-weight: 600; }
+        .topbar .meta { font-size: 0.8rem; color: rgba(255,255,255,0.6); margin-left: 12px; }
+        .topbar-left { display: flex; align-items: center; }
+        .topbar a { color: rgba(255,255,255,0.7); text-decoration: none; font-size: 0.85rem; }
+        .topbar a:hover { color: white; }
+        .topbar-actions { display: flex; gap: 8px; align-items: center; }
+
+        .btn {
+            padding: 8px 18px; border: none; border-radius: 8px; font-size: 0.82rem;
+            font-weight: 600; cursor: pointer; font-family: inherit; transition: all 0.15s;
+        }
+        .btn-primary { background: #3b82f6; color: white; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-success { background: #16a34a; color: white; }
+        .btn-success:hover { background: #15803d; }
+        .btn-danger { background: #dc2626; color: white; }
+        .btn-danger:hover { background: #b91c1c; }
+        .btn-outline { background: transparent; border: 1px solid #d1d5db; color: #374151; }
+        .btn-outline:hover { background: #f3f4f6; }
+        .btn-sm { padding: 4px 10px; font-size: 0.75rem; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px 24px; }
+
+        /* Status bar */
+        .status-bar {
+            display: flex; gap: 20px; margin-bottom: 20px; padding: 14px 20px;
+            background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            align-items: center; flex-wrap: wrap;
+        }
+        .stat { text-align: center; }
+        .stat-value { font-size: 1.5rem; font-weight: 700; }
+        .stat-label { font-size: 0.7rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; }
+        .stat-matched .stat-value { color: #16a34a; }
+        .stat-unmatched .stat-value { color: #dc2626; }
+        .stat-overrides .stat-value { color: #3b82f6; }
+
+        /* Section headers */
+        .section-header {
+            font-size: 0.85rem; font-weight: 600; color: #374151; margin: 24px 0 12px;
+            text-transform: uppercase; letter-spacing: 0.05em;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .section-header .count {
+            background: #e5e7eb; color: #374151; padding: 1px 8px;
+            border-radius: 10px; font-size: 0.75rem;
+        }
+
+        /* Jump cards */
+        .jump-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 16px; }
+
+        .jump-card {
+            background: white; border-radius: 12px; overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08); border: 2px solid transparent;
+            cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .jump-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+        .jump-card.matched { border-color: #bbf7d0; }
+        .jump-card.override { border-color: #93c5fd; }
+        .jump-card.unmatched { border-color: #fecaca; }
+
+        .card-header {
+            padding: 10px 16px; display: flex; justify-content: space-between;
+            align-items: center; border-bottom: 1px solid #f0f0f0;
+        }
+        .card-status {
+            padding: 2px 8px; border-radius: 10px; font-size: 0.7rem;
+            font-weight: 600; text-transform: uppercase;
+        }
+        .card-status.matched { background: #dcfce7; color: #166534; }
+        .card-status.override { background: #dbeafe; color: #1e40af; }
+        .card-score { font-size: 0.72rem; color: #6b7280; }
+
+        .card-body { display: flex; padding: 14px; gap: 10px; align-items: stretch; }
+
+        .card-fragment {
+            flex: 1; padding: 10px; border-radius: 8px; background: #f9fafb;
+            border: 1px solid #e5e7eb; min-width: 0;
+        }
+        .card-fragment .frag-page {
+            font-size: 0.7rem; font-weight: 600; color: #6b7280;
+            text-transform: uppercase; margin-bottom: 4px;
+        }
+        .card-fragment .frag-headline {
+            font-size: 0.85rem; font-weight: 600; color: #1a1a2e;
+            margin-bottom: 4px; line-height: 1.3;
+            overflow: hidden; text-overflow: ellipsis;
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+        }
+        .card-fragment .frag-preview {
+            font-size: 0.75rem; color: #6b7280; line-height: 1.4;
+            overflow: hidden; text-overflow: ellipsis;
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+        }
+
+        .card-arrow {
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.4rem; color: #9ca3af; flex-shrink: 0;
+        }
+
+        /* ── Detail modal ── */
+        .modal-overlay {
+            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+            z-index: 1000; justify-content: center; align-items: start; padding: 30px 20px;
+            overflow-y: auto;
+        }
+        .modal-overlay.open { display: flex; }
+        .modal {
+            background: white; border-radius: 16px; max-width: 1200px; width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.25); max-height: 92vh; overflow-y: auto;
+        }
+        .modal-header {
+            padding: 16px 24px; border-bottom: 1px solid #eee;
+            display: flex; justify-content: space-between; align-items: center;
+            position: sticky; top: 0; background: white; z-index: 1; border-radius: 16px 16px 0 0;
+        }
+        .modal-header h2 { font-size: 1rem; font-weight: 600; }
+        .modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #999; }
+        .modal-close:hover { color: #333; }
+
+        .modal-body { padding: 24px; }
+
+        .detail-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+
+        .detail-pane {
+            border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;
+        }
+        .detail-pane-header {
+            padding: 10px 16px; font-size: 0.8rem; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.03em;
+        }
+        .detail-pane.source .detail-pane-header { background: #f0fdf4; color: #166534; border-bottom: 1px solid #bbf7d0; }
+        .detail-pane.continuation .detail-pane-header { background: #eff6ff; color: #1e40af; border-bottom: 1px solid #93c5fd; }
+
+        .detail-pane-body { padding: 16px; }
+        .detail-headline-input {
+            font-size: 1.05rem; font-weight: 700; margin-bottom: 4px; line-height: 1.3;
+            width: 100%; border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px 8px;
+            font-family: inherit;
+        }
+        .detail-headline-input:focus { border-color: #3b82f6; outline: none; }
+        .detail-byline { font-size: 0.8rem; color: #6b7280; margin-bottom: 10px; font-style: italic; }
+        .detail-text {
+            font-size: 0.85rem; line-height: 1.7; color: #1a1a2e;
+            width: 100%; min-height: 300px; max-height: 400px; resize: vertical;
+            padding: 12px; background: #fafafa; border-radius: 8px; border: 1px solid #e5e7eb;
+            font-family: inherit;
+        }
+        .detail-text:focus { border-color: #3b82f6; outline: none; background: #fff; }
+        .detail-meta { font-size: 0.72rem; color: #9ca3af; margin-top: 8px; }
+        .detail-save-row { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
+        .edit-badge {
+            display: inline-block; font-size: 0.65rem; padding: 1px 6px;
+            border-radius: 4px; background: #dbeafe; color: #1e40af; font-weight: 600;
+        }
+
+        /* Stitched preview */
+        .stitched-section { margin-top: 4px; }
+        .stitched-section h3 {
+            font-size: 0.85rem; font-weight: 600; margin-bottom: 8px; color: #374151;
+        }
+        .stitched-text {
+            font-size: 0.85rem; line-height: 1.7; color: #1a1a2e;
+            white-space: pre-wrap; word-wrap: break-word;
+            max-height: 500px; overflow-y: auto;
+            padding: 16px; background: #fffbeb; border-radius: 8px; border: 1px solid #fde68a;
+        }
+        .stitch-mark {
+            display: block; text-align: center; padding: 6px 0; margin: 8px 0;
+            font-size: 0.75rem; font-weight: 600; color: #d97706;
+            border-top: 2px dashed #fbbf24; border-bottom: 2px dashed #fbbf24;
+            background: #fef3c7;
+        }
+
+        .modal-actions {
+            padding: 14px 24px; border-top: 1px solid #eee;
+            display: flex; gap: 8px; justify-content: flex-end;
+            position: sticky; bottom: 0; background: white; border-radius: 0 0 16px 16px;
+        }
+
+        /* Unmatched items */
+        .unmatched-list {
+            background: white; border-radius: 12px; overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        .unmatched-row {
+            display: flex; align-items: center; padding: 10px 16px;
+            border-bottom: 1px solid #f0f0f0; gap: 12px; cursor: pointer;
+        }
+        .unmatched-row:last-child { border-bottom: none; }
+        .unmatched-row:hover { background: #f9fafb; }
+        .unmatched-info { flex: 1; }
+        .unmatched-keyword { font-weight: 600; font-size: 0.85rem; }
+        .unmatched-detail { font-size: 0.75rem; color: #6b7280; }
+
+        /* Page viewer */
+        .page-viewer {
+            background: white; border-radius: 12px; padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-top: 24px;
+        }
+        .page-tabs { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
+        .page-tab {
+            padding: 6px 14px; border-radius: 6px; border: 1px solid #d1d5db;
+            background: white; cursor: pointer; font-size: 0.8rem; font-weight: 500;
+            font-family: inherit;
+        }
+        .page-tab.active { background: #1a1f36; color: white; border-color: #1a1f36; }
+        .page-tab.has-jumps { border-color: #f59e0b; }
+
+        .page-canvas-wrap {
+            position: relative; display: inline-block; margin: 0 auto;
+            max-width: 100%; overflow: auto;
+        }
+        .page-canvas-wrap img { display: block; max-width: 100%; height: auto; }
+        .page-canvas-wrap svg {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+        }
+        .page-canvas-wrap svg rect {
+            pointer-events: all; cursor: pointer; transition: opacity 0.15s;
+        }
+        .page-canvas-wrap svg rect:hover { opacity: 0.6 !important; }
+
+        /* Link mode */
+        .link-mode-banner {
+            display: none; padding: 12px 20px; background: #dbeafe; border-radius: 8px;
+            margin-bottom: 16px; font-size: 0.85rem; color: #1e40af; font-weight: 500;
+            align-items: center; gap: 12px;
+        }
+        .link-mode-banner.active { display: flex; }
+
+        /* Toast */
+        .toast {
+            position: fixed; bottom: 24px; right: 24px; padding: 12px 20px;
+            background: #1a1f36; color: white; border-radius: 8px; font-size: 0.85rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 2000;
+            transform: translateY(100px); opacity: 0; transition: all 0.3s;
+        }
+        .toast.visible { transform: translateY(0); opacity: 1; }
+        .toast.error { background: #dc2626; }
+        .toast.success { background: #16a34a; }
+
+        /* Legend */
+        .legend { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+        .legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; }
+        .legend-swatch { width: 16px; height: 12px; border-radius: 3px; border: 1px solid rgba(0,0,0,0.15); }
+
+        .loading { text-align: center; padding: 40px; color: #9ca3af; }
+
+        @media (max-width: 800px) {
+            .jump-cards { grid-template-columns: 1fr; }
+            .detail-columns { grid-template-columns: 1fr; }
+            .card-body { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="topbar">
+    <div class="topbar-left">
+        <h1>Jump Review</h1>
+        <span class="meta">Edition #{{ edition_id }} &mdash; {{ edition.get('source_filename', '') }} &mdash; {{ edition.get('edition_date', '') }}</span>
+    </div>
+    <div class="topbar-actions">
+        <a href="/admin/review">Back to Review</a>
+        <button class="btn btn-primary" id="restitch-btn" onclick="restitch()">Re-stitch &amp; Save</button>
+    </div>
+</div>
+
+<div class="container">
+    <div class="status-bar" id="status-bar">
+        <div class="stat stat-matched"><div class="stat-value" id="stat-matched">-</div><div class="stat-label">Matched</div></div>
+        <div class="stat stat-unmatched"><div class="stat-value" id="stat-unmatched">-</div><div class="stat-label">Unmatched</div></div>
+        <div class="stat stat-overrides"><div class="stat-value" id="stat-overrides">-</div><div class="stat-label">Overrides</div></div>
+        <div class="stat"><div class="stat-value" id="stat-pages">-</div><div class="stat-label">Pages</div></div>
+        <div class="stat"><div class="stat-value" id="stat-fragments">-</div><div class="stat-label">Fragments</div></div>
+    </div>
+
+    <div class="link-mode-banner" id="link-banner">
+        <span id="link-banner-text">Select a continuation fragment to link to...</span>
+        <button class="btn btn-outline btn-sm" onclick="cancelLinkMode()">Cancel</button>
+    </div>
+
+    <!-- Matched jumps — click to open detail -->
+    <div class="section-header">Matched Jumps <span class="count" id="matched-count">0</span></div>
+    <div class="jump-cards" id="matched-cards"></div>
+
+    <!-- Manual overrides -->
+    <div class="section-header" id="overrides-header" style="display:none">Manual Overrides <span class="count" id="overrides-count">0</span></div>
+    <div class="jump-cards" id="override-cards"></div>
+
+    <!-- Unmatched jump-outs -->
+    <div class="section-header" id="unmatched-outs-header" style="display:none">Unmatched Jump-Outs <span class="count" id="unmatched-outs-count">0</span></div>
+    <div class="unmatched-list" id="unmatched-outs"></div>
+
+    <!-- Unmatched continuations — click to read full text -->
+    <div class="section-header" id="unmatched-conts-header" style="display:none">Unmatched Continuations <span class="count" id="unmatched-conts-count">0</span></div>
+    <div class="unmatched-list" id="unmatched-conts"></div>
+
+    <!-- Page viewer -->
+    <div class="page-viewer">
+        <div class="section-header" style="margin-top:0">Page Viewer</div>
+        <div class="legend">
+            <div class="legend-item"><div class="legend-swatch" style="background:rgba(22,163,74,0.3)"></div> Source (matched)</div>
+            <div class="legend-item"><div class="legend-swatch" style="background:rgba(59,130,246,0.3)"></div> Continuation (matched)</div>
+            <div class="legend-item"><div class="legend-swatch" style="background:rgba(220,38,38,0.2)"></div> Unmatched</div>
+            <div class="legend-item"><div class="legend-swatch" style="background:rgba(156,163,175,0.15)"></div> Other</div>
+        </div>
+        <div class="page-tabs" id="page-tabs"></div>
+        <div class="page-canvas-wrap" id="page-canvas">
+            <div class="loading">Select a page to view</div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Detail modal ── -->
+<div class="modal-overlay" id="detail-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="detail-title">Jump Detail</h2>
+            <button class="modal-close" onclick="closeDetail()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <!-- Side by side: source | continuation -->
+            <div class="detail-columns">
+                <div class="detail-pane source">
+                    <div class="detail-pane-header">Source Article (Page <span id="detail-src-page"></span>) <span id="detail-src-edited-badge"></span></div>
+                    <div class="detail-pane-body">
+                        <input type="text" class="detail-headline-input" id="detail-src-headline" placeholder="Headline">
+                        <div class="detail-byline" id="detail-src-byline"></div>
+                        <textarea class="detail-text" id="detail-src-text"></textarea>
+                        <div class="detail-save-row">
+                            <button class="btn btn-success btn-sm" onclick="saveFragmentFromDetail('src')">Save Source</button>
+                            <span class="detail-meta" id="detail-src-meta"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="detail-pane continuation">
+                    <div class="detail-pane-header">Continuation (Page <span id="detail-dst-page"></span>) <span id="detail-dst-edited-badge"></span></div>
+                    <div class="detail-pane-body">
+                        <input type="text" class="detail-headline-input" id="detail-dst-headline" placeholder="Headline / Label">
+                        <div class="detail-byline" id="detail-dst-byline"></div>
+                        <textarea class="detail-text" id="detail-dst-text"></textarea>
+                        <div class="detail-save-row">
+                            <button class="btn btn-success btn-sm" onclick="saveFragmentFromDetail('dst')">Save Continuation</button>
+                            <span class="detail-meta" id="detail-dst-meta"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stitched preview -->
+            <div class="stitched-section">
+                <h3>Stitched Preview (how the combined article reads)</h3>
+                <div class="stitched-text" id="detail-stitched"></div>
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeDetail()">Close</button>
+            <button class="btn btn-danger" id="detail-unlink-btn">Unlink This Jump</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Single fragment modal (for unmatched items) ── -->
+<div class="modal-overlay" id="frag-modal">
+    <div class="modal" style="max-width:700px">
+        <div class="modal-header">
+            <h2 id="frag-title">Fragment Detail</h2>
+            <button class="modal-close" onclick="closeFragModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <input type="text" class="detail-headline-input" id="frag-headline" placeholder="Headline">
+            <div class="detail-byline" id="frag-byline"></div>
+            <textarea class="detail-text" id="frag-text" style="min-height:350px"></textarea>
+            <div class="detail-save-row">
+                <button class="btn btn-success btn-sm" id="frag-save-btn" onclick="saveFragmentFromFragModal()">Save Changes</button>
+                <span class="detail-meta" id="frag-meta"></span>
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeFragModal()">Close</button>
+            <button class="btn btn-primary" id="frag-link-btn" style="display:none">Link This Fragment</button>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const EDITION_ID = {{ edition_id }};
+let reviewData = null;
+let currentPage = null;
+let linkMode = null;
+let currentDetailEdge = null;
+let currentDetailSrcFrag = null;
+let currentDetailDstFrag = null;
+let currentFragModalFrag = null;
+let currentFragModalPage = null;
+
+// ── Data loading ──
+
+async function loadReviewData() {
+    try {
+        const res = await fetch(`/admin/api/editions/${EDITION_ID}/jump-review`);
+        if (!res.ok) { showToast((await res.json()).detail || 'Failed to load', 'error'); return; }
+        reviewData = await res.json();
+        renderAll();
+    } catch (e) { showToast('Failed to load: ' + e.message, 'error'); }
+}
+
+function renderAll() {
+    if (!reviewData) return;
+    const d = reviewData;
+    const totalFrags = Object.values(d.pages).reduce((s, p) => s + p.fragments.length, 0);
+
+    document.getElementById('stat-matched').textContent = d.edges.length;
+    document.getElementById('stat-unmatched').textContent = d.unmatched_jump_outs.length + d.unmatched_continuations.length;
+    document.getElementById('stat-overrides').textContent = (d.overrides || []).length;
+    document.getElementById('stat-pages').textContent = d.page_count;
+    document.getElementById('stat-fragments').textContent = totalFrags;
+
+    renderMatchedCards();
+    renderOverrideCards();
+    renderUnmatched();
+    renderPageTabs();
+    if (currentPage) showPage(currentPage);
+}
+
+// ── Matched jump cards (click to open detail) ──
+
+function renderMatchedCards() {
+    const el = document.getElementById('matched-cards');
+    const edges = reviewData.edges;
+    document.getElementById('matched-count').textContent = edges.length;
+
+    if (!edges.length) {
+        el.innerHTML = '<div style="color:#9ca3af;font-size:0.85rem;padding:12px">No automatic matches found</div>';
+        return;
+    }
+    el.innerHTML = edges.map((edge, i) => {
+        const srcFrag = findFragment(edge.src_page, edge.src_fragment);
+        const dstFrag = findFragment(edge.dst_page, edge.dst_fragment);
+        return `
+        <div class="jump-card matched" onclick="openDetail(${i})">
+            <div class="card-header">
+                <span class="card-status matched">matched</span>
+                <span class="card-score">Score ${edge.score} &mdash; ${esc(edge.reasons.join(', '))}</span>
+            </div>
+            <div class="card-body">
+                <div class="card-fragment">
+                    <div class="frag-page">Page ${edge.src_page} &mdash; Source</div>
+                    <div class="frag-headline">${esc(srcFrag ? srcFrag.headline : edge.src_headline)}</div>
+                    <div class="frag-preview">${esc(srcFrag ? srcFrag.body_preview : '')}</div>
+                </div>
+                <div class="card-arrow">&rarr;</div>
+                <div class="card-fragment">
+                    <div class="frag-page">Page ${edge.dst_page} &mdash; Continuation</div>
+                    <div class="frag-headline">${esc(dstFrag ? (dstFrag.headline || dstFrag.label) : edge.dst_label)}</div>
+                    <div class="frag-preview">${esc(dstFrag ? dstFrag.body_preview : '')}</div>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function renderOverrideCards() {
+    const overrides = reviewData.overrides || [];
+    const el = document.getElementById('override-cards');
+    const header = document.getElementById('overrides-header');
+    if (!overrides.length) { header.style.display = 'none'; el.innerHTML = ''; return; }
+    header.style.display = '';
+    document.getElementById('overrides-count').textContent = overrides.length;
+    el.innerHTML = overrides.map(ov => {
+        const srcFrag = findFragment(ov.src_page, ov.src_fragment_id);
+        const dstFrag = findFragment(ov.dst_page, ov.dst_fragment_id);
+        const label = ov.action === 'force_match' ? 'Force Match' : 'Force Unlink';
+        return `
+        <div class="jump-card override" onclick="event.stopPropagation()">
+            <div class="card-header">
+                <span class="card-status override">${esc(label)}</span>
+                <span class="card-score">${esc(ov.reason || '')}</span>
+            </div>
+            <div class="card-body">
+                <div class="card-fragment">
+                    <div class="frag-page">Page ${ov.src_page}</div>
+                    <div class="frag-headline">${esc(srcFrag ? srcFrag.headline : ov.src_fragment_id)}</div>
+                </div>
+                <div class="card-arrow">&rarr;</div>
+                <div class="card-fragment">
+                    <div class="frag-page">Page ${ov.dst_page}</div>
+                    <div class="frag-headline">${esc(dstFrag ? (dstFrag.label || dstFrag.headline) : ov.dst_fragment_id)}</div>
+                </div>
+            </div>
+            <div style="padding:8px 16px;border-top:1px solid #f0f0f0;text-align:right">
+                <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteOverride(${ov.id})">Remove Override</button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+// ── Detail modal ──
+
+function openDetail(edgeIdx) {
+    const edge = reviewData.edges[edgeIdx];
+    if (!edge) return;
+    currentDetailEdge = edgeIdx;
+
+    const srcFrag = findFragment(edge.src_page, edge.src_fragment);
+    const dstFrag = findFragment(edge.dst_page, edge.dst_fragment);
+    currentDetailSrcFrag = srcFrag;
+    currentDetailDstFrag = dstFrag;
+
+    const edits = reviewData.fragment_edits || {};
+
+    document.getElementById('detail-title').textContent = `Jump: ${edge.src_headline} (p${edge.src_page} \u2192 p${edge.dst_page})`;
+    document.getElementById('detail-src-page').textContent = edge.src_page;
+    document.getElementById('detail-dst-page').textContent = edge.dst_page;
+
+    // Source pane — use edited text if available, otherwise original
+    const srcEdit = srcFrag ? edits[srcFrag.id] : null;
+    document.getElementById('detail-src-headline').value = srcEdit && srcEdit.headline != null ? srcEdit.headline : (srcFrag ? srcFrag.headline : edge.src_headline);
+    document.getElementById('detail-src-byline').textContent = srcFrag && srcFrag.byline ? 'By ' + srcFrag.byline : '';
+    document.getElementById('detail-src-text').value = srcEdit && srcEdit.body_text != null ? srcEdit.body_text : (srcFrag ? srcFrag.body_text : '');
+    document.getElementById('detail-src-meta').textContent = srcFrag ? `${srcFrag.id} | ${srcFrag.kind}` : '';
+    document.getElementById('detail-src-edited-badge').innerHTML = srcEdit ? '<span class="edit-badge">edited</span>' : '';
+
+    // Continuation pane
+    const dstEdit = dstFrag ? edits[dstFrag.id] : null;
+    document.getElementById('detail-dst-headline').value = dstEdit && dstEdit.headline != null ? dstEdit.headline : (dstFrag ? (dstFrag.headline || dstFrag.label || '') : edge.dst_label);
+    document.getElementById('detail-dst-byline').textContent = '';
+    document.getElementById('detail-dst-text').value = dstEdit && dstEdit.body_text != null ? dstEdit.body_text : (dstFrag ? dstFrag.body_text : '');
+    document.getElementById('detail-dst-meta').textContent = dstFrag ? `${dstFrag.id} | ${dstFrag.kind}` : '';
+    document.getElementById('detail-dst-edited-badge').innerHTML = dstEdit ? '<span class="edit-badge">edited</span>' : '';
+
+    // Build stitched preview from current textarea values
+    updateStitchedPreview(edge);
+
+    // Update stitched preview live as user edits
+    document.getElementById('detail-src-text').oninput = () => updateStitchedPreview(edge);
+    document.getElementById('detail-dst-text').oninput = () => updateStitchedPreview(edge);
+
+    document.getElementById('detail-unlink-btn').onclick = () => { closeDetail(); unlinkEdge(edgeIdx); };
+    document.getElementById('detail-modal').classList.add('open');
+}
+
+function updateStitchedPreview(edge) {
+    const srcText = document.getElementById('detail-src-text').value;
+    const dstText = document.getElementById('detail-dst-text').value;
+    const el = document.getElementById('detail-stitched');
+    el.innerHTML = esc(srcText)
+        + '<span class="stitch-mark">\u2702 JUMP: Page ' + edge.src_page + ' \u2192 Page ' + edge.dst_page
+        + ' (keyword: ' + esc(edge.src_headline) + ')</span>'
+        + esc(dstText);
+}
+
+function closeDetail() {
+    document.getElementById('detail-modal').classList.remove('open');
+    currentDetailEdge = null;
+}
+
+// ── Single fragment modal (for unmatched items) ──
+
+function openFragDetail(page, fragId, linkAction) {
+    const frag = findFragment(page, fragId);
+    if (!frag) { showToast('Fragment not found', 'error'); return; }
+
+    currentFragModalFrag = frag;
+    currentFragModalPage = page;
+
+    const edits = reviewData.fragment_edits || {};
+    const edit = edits[frag.id];
+
+    document.getElementById('frag-title').textContent = `Fragment: ${frag.headline || frag.label || frag.id} (Page ${page})`;
+    document.getElementById('frag-headline').value = edit && edit.headline != null ? edit.headline : (frag.headline || frag.label || '');
+    document.getElementById('frag-byline').textContent = frag.byline ? 'By ' + frag.byline : '';
+    document.getElementById('frag-text').value = edit && edit.body_text != null ? edit.body_text : (frag.body_text || '');
+    document.getElementById('frag-meta').textContent = `${frag.id} | ${frag.kind}` + (edit ? ' | edited' : '');
+
+    const linkBtn = document.getElementById('frag-link-btn');
+    if (linkAction) {
+        linkBtn.style.display = '';
+        linkBtn.textContent = linkAction.label;
+        linkBtn.onclick = () => { closeFragModal(); linkAction.fn(); };
+    } else {
+        linkBtn.style.display = 'none';
+    }
+
+    document.getElementById('frag-modal').classList.add('open');
+}
+
+function closeFragModal() { document.getElementById('frag-modal').classList.remove('open'); }
+
+// ── Unmatched items ──
+
+function renderUnmatched() {
+    const outs = reviewData.unmatched_jump_outs;
+    const outsEl = document.getElementById('unmatched-outs');
+    const outsHeader = document.getElementById('unmatched-outs-header');
+
+    if (outs.length) {
+        outsHeader.style.display = '';
+        document.getElementById('unmatched-outs-count').textContent = outs.length;
+        outsEl.innerHTML = outs.map(jo => `
+            <div class="unmatched-row">
+                <div class="unmatched-info">
+                    <div class="unmatched-keyword">${esc(jo.keyword)}</div>
+                    <div class="unmatched-detail">Page ${jo.source_page} &rarr; ${jo.target_page ? 'Page ' + jo.target_page : 'unknown page'}</div>
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();startLinkFromSource(${jo.source_page}, '${esc(jo.keyword)}')">Link to Continuation</button>
+            </div>`).join('');
+    } else { outsHeader.style.display = 'none'; outsEl.innerHTML = ''; }
+
+    const conts = reviewData.unmatched_continuations;
+    const contsEl = document.getElementById('unmatched-conts');
+    const contsHeader = document.getElementById('unmatched-conts-header');
+
+    if (conts.length) {
+        contsHeader.style.display = '';
+        document.getElementById('unmatched-conts-count').textContent = conts.length;
+        contsEl.innerHTML = conts.map(c => `
+            <div class="unmatched-row" onclick="openFragDetail(${c.page}, '${esc(c.id)}', {
+                label: 'Link to Source Article',
+                fn: () => startLinkFromCont(${c.page}, '${esc(c.id)}', '${esc(c.label)}')
+            })">
+                <div class="unmatched-info">
+                    <div class="unmatched-keyword">${esc(c.label)} <span style="font-weight:400;color:#6b7280">/ ${esc(c.headline)}</span></div>
+                    <div class="unmatched-detail">Page ${c.page} &mdash; click to read full text</div>
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();startLinkFromCont(${c.page}, '${esc(c.id)}', '${esc(c.label)}')">Link to Source</button>
+            </div>`).join('');
+    } else { contsHeader.style.display = 'none'; contsEl.innerHTML = ''; }
+}
+
+// ── Page viewer ──
+
+function renderPageTabs() {
+    const el = document.getElementById('page-tabs');
+    const pages = reviewData.pages;
+    const jumpPages = new Set();
+    reviewData.edges.forEach(e => { jumpPages.add(e.src_page); jumpPages.add(e.dst_page); });
+    reviewData.unmatched_jump_outs.forEach(j => jumpPages.add(j.source_page));
+    reviewData.unmatched_continuations.forEach(c => jumpPages.add(c.page));
+
+    el.innerHTML = Object.keys(pages).sort((a, b) => +a - +b).map(pn => {
+        const hasJumps = jumpPages.has(+pn);
+        const active = +pn === currentPage;
+        return `<button class="page-tab ${active ? 'active' : ''} ${hasJumps ? 'has-jumps' : ''}"
+                    onclick="showPage(${pn})">Page ${pn}</button>`;
+    }).join('');
+}
+
+function showPage(pageNum) {
+    currentPage = pageNum;
+    renderPageTabs();
+    const wrap = document.getElementById('page-canvas');
+    const pageData = reviewData.pages[String(pageNum)];
+    if (!pageData) { wrap.innerHTML = '<div class="loading">No data for page ' + pageNum + '</div>'; return; }
+
+    wrap.innerHTML = '<div class="loading">Loading page image...</div>';
+    const img = new Image();
+    img.onload = () => {
+        wrap.innerHTML = '';
+        wrap.appendChild(img);
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', `0 0 ${pageData.width} ${pageData.height}`);
+        svg.style.width = img.naturalWidth + 'px';
+        svg.style.height = img.naturalHeight + 'px';
+
+        pageData.fragments.forEach(frag => {
+            if (!frag.bbox || frag.bbox.length < 4) return;
+            const color = getFragmentColor(frag, pageNum);
+            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            rect.setAttribute('x', frag.bbox[0]); rect.setAttribute('y', frag.bbox[1]);
+            rect.setAttribute('width', frag.bbox[2] - frag.bbox[0]);
+            rect.setAttribute('height', frag.bbox[3] - frag.bbox[1]);
+            rect.setAttribute('fill', color.fill); rect.setAttribute('stroke', color.stroke);
+            rect.setAttribute('stroke-width', '2'); rect.setAttribute('opacity', '0.4');
+
+            // Click: in link mode, handle linking; otherwise open fragment detail
+            rect.addEventListener('click', () => {
+                if (linkMode) { onFragmentClick(frag, pageNum); }
+                else { openFragDetail(pageNum, frag.id, null); }
+            });
+
+            const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+            title.textContent = `${frag.kind}: ${frag.headline || frag.label || '(no headline)'}\n${frag.id} | click to read`;
+            rect.appendChild(title);
+            svg.appendChild(rect);
+
+            const label = frag.headline || frag.label || frag.kind;
+            if (label) {
+                const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                text.setAttribute('x', frag.bbox[0] + 4); text.setAttribute('y', frag.bbox[1] + 12);
+                text.setAttribute('font-size', '9'); text.setAttribute('font-weight', '600');
+                text.setAttribute('fill', color.stroke);
+                text.textContent = label.substring(0, 40);
+                text.style.pointerEvents = 'none';
+                svg.appendChild(text);
+            }
+        });
+        wrap.appendChild(svg);
+    };
+    img.onerror = () => { wrap.innerHTML = '<div class="loading">Failed to load page image</div>'; };
+    img.src = `/admin/api/editions/${EDITION_ID}/pages/${pageNum}/image?dpi=150`;
+}
+
+function getFragmentColor(frag, pageNum) {
+    const isMatchedSrc = reviewData.edges.some(e => e.src_page === pageNum && e.src_fragment === frag.id);
+    const isMatchedDst = reviewData.edges.some(e => e.dst_page === pageNum && e.dst_fragment === frag.id);
+    const isUnmatchedOut = frag.jump_out_keyword && !isMatchedSrc;
+    const isUnmatchedCont = frag.kind === 'continuation_header' && !isMatchedDst;
+
+    if (isMatchedSrc) return { fill: 'rgba(22,163,74,0.25)', stroke: '#16a34a' };
+    if (isMatchedDst) return { fill: 'rgba(59,130,246,0.25)', stroke: '#3b82f6' };
+    if (isUnmatchedOut || isUnmatchedCont) return { fill: 'rgba(220,38,38,0.2)', stroke: '#dc2626' };
+    if (frag.kind === 'continuation_header') return { fill: 'rgba(245,158,11,0.2)', stroke: '#f59e0b' };
+    return { fill: 'rgba(156,163,175,0.1)', stroke: '#9ca3af' };
+}
+
+// ── Link mode ──
+
+function startLinkFromSource(srcPage, keyword) {
+    const pageFrags = (reviewData.pages[String(srcPage)] || {}).fragments || [];
+    const titleFrag = pageFrags.find(f => f.kind === 'title' && f.jump_out_keyword === keyword)
+                   || pageFrags.find(f => f.kind === 'title');
+    if (!titleFrag) { showToast('No title fragment found on page ' + srcPage, 'error'); return; }
+
+    linkMode = { type: 'pick_continuation', srcPage, srcFragId: titleFrag.id, keyword };
+    document.getElementById('link-banner').classList.add('active');
+    document.getElementById('link-banner-text').textContent =
+        `Linking "${keyword}" from page ${srcPage}. Click a continuation fragment on any page.`;
+    const jo = reviewData.unmatched_jump_outs.find(j => j.keyword === keyword && j.source_page === srcPage);
+    if (jo && jo.target_page) showPage(jo.target_page);
+}
+
+function startLinkFromCont(contPage, contFragId, label) {
+    linkMode = { type: 'pick_source', dstPage: contPage, dstFragId: contFragId, label };
+    document.getElementById('link-banner').classList.add('active');
+    document.getElementById('link-banner-text').textContent =
+        `Linking continuation "${label}" from page ${contPage}. Click a source article on any page.`;
+}
+
+function cancelLinkMode() {
+    linkMode = null;
+    document.getElementById('link-banner').classList.remove('active');
+}
+
+function onFragmentClick(frag, pageNum) {
+    if (!linkMode) return;
+    if (linkMode.type === 'pick_continuation') {
+        if (frag.kind !== 'continuation_header') { showToast('Click a continuation fragment, not ' + frag.kind, 'error'); return; }
+        createOverride('force_match', linkMode.srcPage, linkMode.srcFragId, pageNum, frag.id,
+            `Manual link: ${linkMode.keyword} -> ${frag.label || frag.id}`);
+    } else if (linkMode.type === 'pick_source') {
+        if (frag.kind === 'continuation_header') { showToast('Click a source article (title), not another continuation', 'error'); return; }
+        createOverride('force_match', pageNum, frag.id, linkMode.dstPage, linkMode.dstFragId,
+            `Manual link: ${frag.headline || frag.id} -> ${linkMode.label}`);
+    }
+    cancelLinkMode();
+}
+
+// ── Fragment save ──
+
+async function saveFragment(fragId, headline, bodyText) {
+    try {
+        const res = await fetch(`/admin/api/editions/${EDITION_ID}/fragments/${fragId}`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ headline, body_text: bodyText }),
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Saved ' + fragId, 'success');
+            // Update local data so stitched preview and cards reflect edits
+            if (!reviewData.fragment_edits) reviewData.fragment_edits = {};
+            reviewData.fragment_edits[fragId] = { headline, body_text: bodyText };
+        } else {
+            showToast('Save failed', 'error');
+        }
+    } catch (e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+function saveFragmentFromDetail(side) {
+    const frag = side === 'src' ? currentDetailSrcFrag : currentDetailDstFrag;
+    if (!frag) { showToast('No fragment to save', 'error'); return; }
+
+    const headline = document.getElementById(`detail-${side}-headline`).value;
+    const bodyText = document.getElementById(`detail-${side}-text`).value;
+    saveFragment(frag.id, headline, bodyText);
+
+    // Update the edited badge
+    document.getElementById(`detail-${side}-edited-badge`).innerHTML = '<span class="edit-badge">edited</span>';
+}
+
+function saveFragmentFromFragModal() {
+    if (!currentFragModalFrag) { showToast('No fragment to save', 'error'); return; }
+
+    const headline = document.getElementById('frag-headline').value;
+    const bodyText = document.getElementById('frag-text').value;
+    saveFragment(currentFragModalFrag.id, headline, bodyText);
+    document.getElementById('frag-meta').textContent = `${currentFragModalFrag.id} | ${currentFragModalFrag.kind} | edited`;
+}
+
+// ── Override CRUD ──
+
+async function createOverride(action, srcPage, srcFragId, dstPage, dstFragId, reason) {
+    try {
+        const res = await fetch(`/admin/api/editions/${EDITION_ID}/jump-overrides`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action, src_page: srcPage, src_fragment_id: srcFragId,
+                                   dst_page: dstPage, dst_fragment_id: dstFragId, reason }),
+        });
+        const data = await res.json();
+        if (data.success) { showToast('Override created', 'success'); await loadReviewData(); }
+        else showToast('Failed: ' + JSON.stringify(data), 'error');
+    } catch (e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function deleteOverride(overrideId) {
+    try {
+        const res = await fetch(`/admin/api/editions/${EDITION_ID}/jump-overrides/${overrideId}`, { method: 'DELETE' });
+        if ((await res.json()).success) { showToast('Override removed', 'success'); await loadReviewData(); }
+    } catch (e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function unlinkEdge(edgeIdx) {
+    const edge = reviewData.edges[edgeIdx];
+    if (!edge) return;
+    if (!confirm(`Unlink "${edge.src_headline}" (p${edge.src_page}) from "${edge.dst_label}" (p${edge.dst_page})?`)) return;
+    await createOverride('force_unlink', edge.src_page, edge.src_fragment,
+                         edge.dst_page, edge.dst_fragment,
+                         `Unlink: ${edge.src_headline} -> ${edge.dst_label}`);
+}
+
+// ── Restitch ──
+
+async function restitch() {
+    const btn = document.getElementById('restitch-btn');
+    btn.disabled = true; btn.textContent = 'Re-stitching...';
+    showToast('Running pipeline...');
+    try {
+        const res = await fetch(`/admin/api/editions/${EDITION_ID}/restitch`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) { showToast(`Re-stitched: ${data.article_count} articles, ${data.stitched_count} jumps`, 'success'); await loadReviewData(); }
+        else showToast('Failed: ' + (data.error || ''), 'error');
+    } catch (e) { showToast('Error: ' + e.message, 'error'); }
+    btn.disabled = false; btn.textContent = 'Re-stitch & Save';
+}
+
+// ── Helpers ──
+
+function findFragment(page, fragId) {
+    const pd = reviewData.pages[String(page)];
+    return pd ? pd.fragments.find(f => f.id === fragId) || null : null;
+}
+
+function esc(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = String(text);
+    return div.innerHTML;
+}
+
+function showToast(msg, type) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'toast visible ' + (type || '');
+    clearTimeout(el._timeout);
+    el._timeout = setTimeout(() => el.className = 'toast', 3500);
+}
+
+// Close modals on Escape
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closeDetail(); closeFragModal(); cancelLinkMode(); }
+});
+
+// ── Init ──
+loadReviewData();
+</script>
+</body>
+</html>

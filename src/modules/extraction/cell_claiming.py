@@ -46,6 +46,7 @@ class ArticleFragment:
     body_text: str = ""  # assembled after lane ordering
     top_y: float = 0.0  # top-most y of all claimed cells
     bottom_y: float = 0.0  # bottom-most y of all claimed cells
+    bbox: tuple = ()  # (x0, y0, x1, y1) bounding box of all claimed cells
 
 
 def create_seeds(cells: list[Cell], blocks: list[dict], page_num: int) -> list[ArticleSeed]:
@@ -87,13 +88,18 @@ def create_seeds(cells: list[Cell], blocks: list[dict], page_num: int) -> list[A
                 if len(span_cols) > len(seed_col_ids):
                     seed_col_ids = span_cols
 
+            # Wider headlines (more columns) indicate more prominent articles
+            # that own more of the page. Give them higher confidence so they
+            # win cell competition against smaller neighboring headlines.
+            span_confidence = 1.0 + len(seed_col_ids) * 0.1
+
             seeds.append(ArticleSeed(
                 seed_id=seed_id,
                 page=page_num,
                 cell_id=cell.cell_id,
                 kind="title",
                 headline_text=headline_text,
-                confidence=1.0,
+                confidence=span_confidence,
                 column_ids=seed_col_ids,
             ))
             seed_id += 1
@@ -534,28 +540,54 @@ def build_fragments(
                             jump_out_keyword = h.get("keyword")
                             jump_out_target = h.get("target_page")
 
-        # Assemble body text in lane order
-        body_parts = []
-        for col_id, lane_cell_ids in lanes:
-            for cid in lane_cell_ids:
-                cell = cell_map.get(cid)
-                if cell is None:
+        # Assemble body text in newspaper reading order: column by column
+        # (left to right), top to bottom within each column. This matches
+        # how newspaper articles flow — down one column, then continue at
+        # the top of the next column.
+        #
+        # We use the block's physical x-position (quantized to ~100pt bands)
+        # instead of the extraction column_id.  On back pages, continuation
+        # articles often span many physical newspaper columns, and two
+        # adjacent newspaper columns can be assigned the same extraction
+        # column_id because their x-ranges are close.  Sorting by extraction
+        # column_id would interleave blocks from different newspaper columns
+        # by y-position, scrambling the reading order.  Using the actual
+        # x-midpoint avoids this.
+        _COL_BAND = 100  # ~1.4 inches — safely narrower than newspaper columns
+        body_blocks = []
+        for cid in claimed:
+            cell = cell_map.get(cid)
+            if cell is None:
+                continue
+            for bi in cell.block_indices:
+                role = blocks[bi].get("role", "body")
+                # Skip non-body blocks (headlines, furniture, jump refs, cont headers)
+                if role in ("headline", "furniture", "jump_ref", "continuation_header", "caption", "kicker", "section_header", "subheadline"):
                     continue
-                # Sort blocks within cell by y
-                sorted_bis = sorted(cell.block_indices, key=lambda bi: blocks[bi]["bbox"][1])
-                for bi in sorted_bis:
-                    role = blocks[bi].get("role", "body")
-                    # Skip non-body blocks (headlines, furniture, jump refs, cont headers)
-                    if role in ("headline", "furniture", "jump_ref", "continuation_header", "caption", "kicker"):
-                        continue
-                    text = blocks[bi]["text"].strip()
-                    if text:
-                        body_parts.append(text)
+                text = blocks[bi]["text"].strip()
+                if text:
+                    bbox = blocks[bi]["bbox"]
+                    y = bbox[1]
+                    # Use x0 (left edge) for column banding — x_mid varies with
+                    # line length and causes blocks from the same column to land
+                    # in different bands (short lines get smaller x_mid)
+                    x0 = bbox[0]
+                    body_blocks.append((x0, y, text))
+
+        # Sort by physical column band (left to right), then y (top to bottom)
+        body_blocks.sort(key=lambda b: (int(b[0] // _COL_BAND), b[1]))
+        body_parts = [text for _, _, text in body_blocks]
 
         # Compute spatial bounds
         claimed_cells = [cell_map[cid] for cid in claimed if cid in cell_map]
         top_y = min(c.y0 for c in claimed_cells) if claimed_cells else 0
         bottom_y = max(c.y1 for c in claimed_cells) if claimed_cells else 0
+        bbox = (
+            min(c.x0 for c in claimed_cells),
+            top_y,
+            max(c.x1 for c in claimed_cells),
+            bottom_y,
+        ) if claimed_cells else ()
 
         fragment = ArticleFragment(
             seed_id=seed.seed_id,
@@ -571,6 +603,7 @@ def build_fragments(
             body_text="\n\n".join(body_parts),
             top_y=top_y,
             bottom_y=bottom_y,
+            bbox=bbox,
         )
         fragments.append(fragment)
 
@@ -594,6 +627,124 @@ def build_fragments(
         frag._page_jump_outs = page_jump_outs
 
     return fragments
+
+
+def _sweep_unclaimed_into_continuations(
+    fragments: list[ArticleFragment],
+    seed_cells: dict[int, list[int]],
+    cells: list[Cell],
+    blocks: list[dict],
+) -> None:
+    """Sweep unclaimed body cells into continuation_header fragments.
+
+    On back pages, continuation articles often span 3-5 physical newspaper
+    columns. Cell claiming grows ±1 column from the seed, leaving body
+    cells in distant columns unclaimed. This function finds those unclaimed
+    body cells and appends their text to the nearest continuation_header
+    fragment in the same y-band.
+    """
+    cell_map = {c.cell_id: c for c in cells}
+    owned_cells = set()
+    for cids in seed_cells.values():
+        owned_cells.update(cids)
+
+    # Collect unclaimed body cells
+    unclaimed = []
+    for c in cells:
+        if c.cell_id in owned_cells:
+            continue
+        if c.kind in ("title", "continuation_header", "furniture", "ad", "jump_ref", "caption"):
+            continue
+        # Must contain at least one body block
+        has_body = any(blocks[bi].get("role") == "body" for bi in c.block_indices)
+        if has_body:
+            unclaimed.append(c)
+
+    if not unclaimed:
+        return
+
+    # Find continuation_header fragments and their y-bands
+    cont_frags = [f for f in fragments if f.kind == "continuation_header"]
+    if not cont_frags:
+        return
+
+    # Collect all boundary positions with their x-ranges, so y-bands
+    # are column-aware. A SCHOOL header at x=594 shouldn't constrain
+    # a COUNTY continuation's body at x=312.
+    boundaries = []
+    for f in fragments:
+        if f.kind in ("continuation_header", "title"):
+            x_min = f.bbox[0] if f.bbox else 0
+            x_max = f.bbox[2] if f.bbox else 9999
+            boundaries.append((f.top_y, x_min, x_max))
+
+    _COL_BAND = 100
+
+    for cont in cont_frags:
+        # Find unclaimed cells and compute per-cell y_max based on
+        # boundaries in nearby columns only
+        swept_blocks = []
+        for cell in unclaimed:
+            if cell.y0 < cont.top_y - 30:
+                continue
+
+            # Column-aware y_max: only consider boundaries whose x-range
+            # overlaps with this cell's x-range (within 1 column band)
+            cell_x_mid = (cell.x0 + cell.x1) / 2
+            y_max = float("inf")
+            for by, bx_min, bx_max in sorted(boundaries):
+                if by <= cont.top_y + 5:
+                    continue
+                # Check if this boundary is in a nearby column
+                bx_mid = (bx_min + bx_max) / 2
+                if abs(cell_x_mid - bx_mid) < _COL_BAND * 1.5:
+                    y_max = by
+                    break
+
+            if cell.y0 >= y_max - 5:
+                continue
+
+            for bi in cell.block_indices:
+                role = blocks[bi].get("role", "body")
+                if role in ("headline", "furniture", "jump_ref", "continuation_header",
+                            "caption", "kicker", "section_header", "subheadline"):
+                    continue
+                text = blocks[bi]["text"].strip()
+                if text:
+                    bbox = blocks[bi]["bbox"]
+                    x0 = bbox[0]
+                    y = bbox[1]
+                    swept_blocks.append((x0, y, text))
+
+        if not swept_blocks:
+            continue
+
+        # Rebuild the fragment's body text from ALL blocks (original + swept)
+        # sorted together, so the swept text interleaves at the correct
+        # reading position rather than being appended at the end.
+        original_blocks = []
+        for cid in cont.cell_ids:
+            c = cell_map.get(cid)
+            if c is None:
+                continue
+            for bi in c.block_indices:
+                role = blocks[bi].get("role", "body")
+                if role in ("headline", "furniture", "jump_ref", "continuation_header",
+                            "caption", "kicker", "section_header", "subheadline"):
+                    continue
+                text = blocks[bi]["text"].strip()
+                if text:
+                    original_blocks.append((blocks[bi]["bbox"][0], blocks[bi]["bbox"][1], text))
+
+        all_blocks = original_blocks + swept_blocks
+        all_blocks.sort(key=lambda b: (int(b[0] // _COL_BAND), b[1]))
+        cont.body_text = "\n\n".join(t for _, _, t in all_blocks)
+        cont.bottom_y = max(cont.bottom_y, max(c.y1 for c in unclaimed if cont.top_y - 30 <= c.y0 < y_max - 5))
+
+        logger.info(
+            f"  Swept {len(swept_blocks)} unclaimed blocks into continuation "
+            f"'{cont.label}' (total {len(all_blocks)} blocks)"
+        )
 
 
 def assemble_page(
@@ -647,6 +798,13 @@ def assemble_page(
 
     # Step 5: Build fragments
     fragments = build_fragments(seeds, seed_cells, cells, blocks, page_num)
+
+    # Step 6: Sweep unclaimed body cells into continuation_header fragments.
+    # On back pages, continuation articles often span 3-5 newspaper columns.
+    # Cell claiming can only reach ±1 column from the seed, leaving body cells
+    # in distant columns unclaimed.  This step finds unclaimed body cells in
+    # the same y-band as a continuation_header and appends their text.
+    _sweep_unclaimed_into_continuations(fragments, seed_cells, cells, blocks)
 
     logger.info(
         f"Page {page_num}: {len(cells)} cells, {len(seeds)} seeds, "

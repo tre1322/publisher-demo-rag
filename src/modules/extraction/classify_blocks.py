@@ -35,7 +35,13 @@ MIN_COLUMN_BLOCKS = 3
 
 
 def detect_columns(blocks: list[dict], page_width: float) -> list[dict]:
-    """Detect newspaper columns by clustering block left-edge x-positions."""
+    """Detect newspaper columns by clustering block left-edge x-positions.
+
+    After initial clustering, merges adjacent columns that are too close
+    together to be separate physical newspaper columns (gap < 40% of the
+    median inter-column gap). This prevents degenerate 0-width columns
+    from splitting a single column into two.
+    """
     if not blocks:
         return []
 
@@ -70,7 +76,82 @@ def detect_columns(blocks: list[dict], page_width: float) -> list[dict]:
         })
         col_id += 1
 
+    # Post-merge: merge adjacent columns whose gap is much smaller than
+    # the median gap. This handles degenerate columns (e.g. a 0-width
+    # cluster at x=732 next to a real column at x=765) that arise when
+    # blocks in the same physical column have slightly different x offsets.
+    columns = _merge_close_columns(columns)
+
     return columns
+
+
+def _merge_close_columns(columns: list[dict]) -> list[dict]:
+    """Merge adjacent columns that are too close to be separate newspaper columns.
+
+    Merges happen when either:
+    1. A column is degenerate (width < 15pt) and its gap to the nearest
+       neighbor is less than the median inter-column gap. This catches the
+       common case where blocks in one physical column have slightly different
+       x offsets, creating a spurious 0-width cluster.
+    2. Two adjacent columns have a gap less than 40% of the median gap.
+    """
+    if len(columns) < 3:
+        return columns
+
+    sorted_cols = sorted(columns, key=lambda c: c["x_center"])
+    centers = [c["x_center"] for c in sorted_cols]
+    gaps = [centers[i + 1] - centers[i] for i in range(len(centers) - 1)]
+
+    if not gaps:
+        return columns
+
+    median_gap = sorted(gaps)[len(gaps) // 2]
+
+    merged = [sorted_cols[0]]
+    for i in range(1, len(sorted_cols)):
+        prev = merged[-1]
+        curr = sorted_cols[i]
+        gap = curr["x_center"] - prev["x_center"]
+
+        prev_width = prev["x_max"] - prev["x_min"]
+        curr_width = curr["x_max"] - curr["x_min"]
+
+        should_merge = False
+        # Rule 1: degenerate column (< 15pt wide) near a neighbor
+        if (prev_width < 15 or curr_width < 15) and gap < median_gap:
+            should_merge = True
+        # Rule 2: very close columns (gap < 40% of median)
+        if gap < median_gap * 0.4:
+            should_merge = True
+
+        if should_merge:
+            all_xs_min = min(prev["x_min"], curr["x_min"])
+            all_xs_max = max(prev["x_max"], curr["x_max"])
+            total_blocks = prev["block_count"] + curr["block_count"]
+            weighted_center = (
+                prev["x_center"] * prev["block_count"]
+                + curr["x_center"] * curr["block_count"]
+            ) / total_blocks
+            merged[-1] = {
+                "column_id": prev["column_id"],
+                "x_center": round(weighted_center, 1),
+                "x_min": round(all_xs_min, 1),
+                "x_max": round(all_xs_max, 1),
+                "block_count": total_blocks,
+            }
+            logger.debug(
+                f"Merged column {curr['column_id']} (x={curr['x_center']:.0f}, w={curr_width:.0f}) "
+                f"into column {prev['column_id']} (x={prev['x_center']:.0f}, w={prev_width:.0f}), "
+                f"gap={gap:.0f}, median_gap={median_gap:.0f}"
+            )
+        else:
+            merged.append(curr)
+
+    # Re-number column IDs
+    for i, col in enumerate(merged):
+        col["column_id"] = i
+
+    return merged
 
 
 def assign_column_ids(blocks: list[dict], columns: list[dict]) -> list[dict]:
@@ -236,6 +317,9 @@ FURNITURE_PATTERNS = [
     re.compile(r"^Wednesday,|^Thursday,|^Friday,", re.IGNORECASE),
     # Page index bar: "Briefly 2 | Classifieds 7 | Sports 5-6"
     re.compile(r"Briefly\s+\d|Classifieds\s+\d", re.IGNORECASE),
+    # Letter-spaced mastheads: "C O T T O N W O O D  C O U N T Y" or "W E D N E S D A Y"
+    # Detected by 4+ uppercase letters each separated by a space
+    re.compile(r"[A-Z] [A-Z] [A-Z] [A-Z]"),
 ]
 CAPTION_PATTERNS = [
     re.compile(r"^(Photo|PHOTO)\s*(by|BY|courtesy|COURTESY)", re.IGNORECASE),
@@ -318,6 +402,20 @@ def classify_block(block: dict, font_stats: dict) -> str:
     # Bold text at section-header size, short
     if is_bold and font_size >= font_stats["median"] * 1.1 and char_count <= 40:
         return "section_header"
+
+    # Pull quote attribution: short bold text like "TOM APPEL\nCounty Board Chair"
+    # or "— TOM APPEL" that attributes a pull quote. These are decorative,
+    # not article body text.
+    if is_bold and char_count <= 80:
+        flat = text.replace("\n", " ").strip()
+        # Attribution pattern: ALL-CAPS name followed by a title
+        if re.match(r"^[A-Z]{2,}\s+[A-Z]{2,}", flat) and any(
+            w in flat.lower() for w in ("chair", "director", "chief", "mayor",
+            "commissioner", "superintendent", "president", "manager", "sheriff",
+            "attorney", "officer", "editor", "pastor", "reverend", "dr.",
+            "coach", "principal", "administrator", "coordinator", "board")
+        ):
+            return "furniture"
 
     # Short bold text that looks like a photo label (e.g. "Michelle Larson")
     # These are names/captions under photos, not body text.

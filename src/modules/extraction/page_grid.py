@@ -410,7 +410,11 @@ def _classify_cells(cells: list[Cell], blocks: list[dict]) -> None:
         elif "continuation_header" in roles:
             cell.kind = "continuation_header"
         elif "jump_ref" in roles:
-            cell.kind = "jump_ref"
+            # If the cell also has body/byline blocks, treat it as body.
+            # The jump_ref block will be individually skipped during text
+            # assembly. Only classify as jump_ref if that's ALL it contains.
+            has_body = any(r in ("body", "byline") for r in roles)
+            cell.kind = "body" if has_body else "jump_ref"
         elif "byline" in roles:
             cell.kind = "body"  # byline cells are part of article body
         elif "caption" in roles:

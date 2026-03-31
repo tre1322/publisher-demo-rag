@@ -108,6 +108,21 @@ def init_table() -> None:
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS jump_overrides (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            edition_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            src_page INTEGER NOT NULL,
+            src_fragment_id TEXT NOT NULL,
+            dst_page INTEGER NOT NULL,
+            dst_fragment_id TEXT NOT NULL,
+            reason TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (edition_id) REFERENCES editions(id)
+        )
+    """)
+
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_editions_pub ON editions(publication_id)"
     )
@@ -131,6 +146,26 @@ def init_table() -> None:
     )
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_review_actions_article ON review_actions(article_id)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_jump_overrides_edition ON jump_overrides(edition_id)"
+    )
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS fragment_edits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            edition_id INTEGER NOT NULL,
+            fragment_id TEXT NOT NULL,
+            edited_headline TEXT,
+            edited_body_text TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (edition_id) REFERENCES editions(id),
+            UNIQUE(edition_id, fragment_id)
+        )
+    """)
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_fragment_edits_edition ON fragment_edits(edition_id)"
     )
 
     conn.commit()
@@ -382,3 +417,107 @@ def get_review_actions_for_article(article_id: str) -> list[dict]:
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+
+# ── Jump Overrides ──
+
+def insert_jump_override(
+    edition_id: int,
+    action: str,
+    src_page: int,
+    src_fragment_id: str,
+    dst_page: int,
+    dst_fragment_id: str,
+    reason: str | None = None,
+) -> int:
+    """Insert a manual jump override (force_match or force_unlink)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """INSERT INTO jump_overrides
+        (edition_id, action, src_page, src_fragment_id, dst_page, dst_fragment_id, reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (edition_id, action, src_page, src_fragment_id, dst_page, dst_fragment_id, reason),
+    )
+    override_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return override_id
+
+
+def get_jump_overrides(edition_id: int) -> list[dict]:
+    """Get all jump overrides for an edition."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM jump_overrides WHERE edition_id = ? ORDER BY created_at",
+        (edition_id,),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def delete_jump_override(override_id: int) -> bool:
+    """Delete a jump override by ID."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM jump_overrides WHERE id = ?", (override_id,))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+
+# ── Fragment Edits ──
+
+def upsert_fragment_edit(
+    edition_id: int,
+    fragment_id: str,
+    edited_headline: str | None = None,
+    edited_body_text: str | None = None,
+) -> int:
+    """Save or update an edited fragment's text. Returns the edit ID."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """INSERT INTO fragment_edits
+        (edition_id, fragment_id, edited_headline, edited_body_text, updated_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(edition_id, fragment_id) DO UPDATE SET
+            edited_headline = COALESCE(excluded.edited_headline, edited_headline),
+            edited_body_text = COALESCE(excluded.edited_body_text, edited_body_text),
+            updated_at = CURRENT_TIMESTAMP""",
+        (edition_id, fragment_id, edited_headline, edited_body_text),
+    )
+    edit_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return edit_id
+
+
+def get_fragment_edits(edition_id: int) -> dict[str, dict]:
+    """Get all fragment edits for an edition, keyed by fragment_id."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM fragment_edits WHERE edition_id = ?",
+        (edition_id,),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return {row["fragment_id"]: dict(row) for row in rows}
+
+
+def delete_fragment_edit(edition_id: int, fragment_id: str) -> bool:
+    """Delete a fragment edit."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "DELETE FROM fragment_edits WHERE edition_id = ? AND fragment_id = ?",
+        (edition_id, fragment_id),
+    )
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted

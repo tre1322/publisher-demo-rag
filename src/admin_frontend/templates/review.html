@@ -334,6 +334,7 @@
                     '<span class="badge badge-' + (e.processing_status === 'completed' ? 'approved' : e.processing_status === 'failed' ? 'flagged' : 'review') + '">' + e.processing_status + '</span>' +
                     '<span class="title">' + escapeHtml(e.source_filename || e.source_pdf_path || 'Unknown') + '</span>' +
                     '<span class="meta">' + (e.edition_date || '') + ' | ' + (e.article_count || 0) + ' articles, ' + (e.ad_count || 0) + ' ads</span>' +
+                    (e.id ? '<a href="/admin/editions/' + e.id + '/jumps" class="btn" style="padding:4px 10px;font-size:0.75rem;background:#3b82f6;color:white;border-radius:6px;text-decoration:none;margin-left:8px" onclick="event.stopPropagation()">Review Jumps</a>' : '') +
                 '</div>';
             }).join('') + '</div>';
         } catch (err) {
