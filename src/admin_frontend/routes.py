@@ -5,6 +5,7 @@ import logging
 import os
 import secrets
 import shutil
+import threading
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -51,6 +52,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 templates = Jinja2Templates(directory="src/admin_frontend/templates")
+
+# ── Background vision processing tracker ──
+# Keyed by edition_id, stores progress for async vision uploads.
+_vision_jobs: dict[int, dict] = {}
+_vision_jobs_lock = threading.Lock()
 
 # Security
 security = HTTPBasic()
@@ -466,10 +472,9 @@ async def upload_editions(
 
                 os.unlink(tmp_path)
 
-            # ── PDF Vision path ──
+            # ── PDF Vision path (async — returns immediately) ──
             elif ext == "pdf" and pipeline == "vision":
                 file_result["pipeline"] = "vision"
-                from src.modules.extraction.pipeline_vision import run_vision_pipeline
 
                 # Store PDF via tenant upload
                 upload_result = upload_edition(
@@ -482,28 +487,80 @@ async def upload_editions(
                     continue
 
                 edition_id = upload_result["edition_id"]
-                vision_result = run_vision_pipeline(
-                    pdf_path=upload_result.get("pdf_path") or upload_result.get("file_path"),
-                    edition_id=edition_id,
-                    publisher_id=publisher_id,
-                )
+                pdf_path = upload_result.get("pdf_path") or upload_result.get("file_path")
 
-                if not vision_result["success"]:
-                    file_result["error"] = f"Vision pipeline failed: {vision_result.get('error')}"
-                    results.append(file_result)
-                    continue
+                # Initialize job tracker
+                with _vision_jobs_lock:
+                    _vision_jobs[edition_id] = {
+                        "status": "processing",
+                        "filename": file.filename,
+                        "current_page": 0,
+                        "total_pages": 0,
+                        "articles": 0,
+                        "stitched": 0,
+                        "chunks_indexed": 0,
+                        "error": None,
+                    }
 
-                write_result = write_articles_to_all(
-                    articles=vision_result["articles"],
-                    edition_id=edition_id,
-                    publisher_id=publisher_id,
-                    publisher_name=publisher,
-                    edition_date=edition_date or None,
-                    source_filename=file.filename,
+                # Launch background thread
+                def _run_vision(eid, path, pub_id, pub_name, ed_date, fname):
+                    try:
+                        from src.modules.extraction.pipeline_vision import run_vision_pipeline
+                        from src.modules.extraction.shared_write_layer import write_articles_to_all as _write
+
+                        def on_page(page_num, total, _data):
+                            with _vision_jobs_lock:
+                                if eid in _vision_jobs:
+                                    _vision_jobs[eid]["current_page"] = page_num
+                                    _vision_jobs[eid]["total_pages"] = total
+
+                        vision_result = run_vision_pipeline(
+                            pdf_path=path,
+                            edition_id=eid,
+                            publisher_id=pub_id,
+                            on_page_complete=on_page,
+                        )
+
+                        if not vision_result["success"]:
+                            with _vision_jobs_lock:
+                                _vision_jobs[eid]["status"] = "failed"
+                                _vision_jobs[eid]["error"] = vision_result.get("error", "Unknown error")
+                            return
+
+                        write_result = _write(
+                            articles=vision_result["articles"],
+                            edition_id=eid,
+                            publisher_id=pub_id,
+                            publisher_name=pub_name,
+                            edition_date=ed_date or None,
+                            source_filename=fname,
+                        )
+
+                        with _vision_jobs_lock:
+                            _vision_jobs[eid]["status"] = "complete"
+                            _vision_jobs[eid]["articles"] = write_result["articles_written"]
+                            _vision_jobs[eid]["chunks_indexed"] = write_result["chunks_indexed"]
+                            _vision_jobs[eid]["stitched"] = sum(
+                                1 for a in vision_result["articles"] if a.get("is_stitched")
+                            )
+
+                        logger.info(f"Vision background job complete: edition={eid}, articles={write_result['articles_written']}")
+
+                    except Exception as e:
+                        logger.error(f"Vision background job failed: edition={eid}: {e}", exc_info=True)
+                        with _vision_jobs_lock:
+                            _vision_jobs[eid]["status"] = "failed"
+                            _vision_jobs[eid]["error"] = str(e)
+
+                thread = threading.Thread(
+                    target=_run_vision,
+                    args=(edition_id, pdf_path, publisher_id, publisher, edition_date, file.filename),
+                    daemon=True,
                 )
-                file_result["articles"] = write_result["articles_written"]
-                file_result["chunks_indexed"] = write_result["chunks_indexed"]
-                file_result["stitched"] = sum(1 for a in vision_result["articles"] if a.get("is_stitched"))
+                thread.start()
+
+                file_result["edition_id"] = edition_id
+                file_result["async"] = True
 
             # ── PDF V2 path (default) ──
             else:
@@ -560,6 +617,22 @@ async def upload_editions(
         "failures": failures,
         "details": results,
     })
+
+
+# ── Vision job status polling ──
+
+
+@router.get("/api/editions/{edition_id}/vision-status")
+async def vision_job_status(
+    edition_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Poll the status of a background vision processing job."""
+    with _vision_jobs_lock:
+        job = _vision_jobs.get(edition_id)
+    if not job:
+        return JSONResponse(content={"status": "not_found"}, status_code=404)
+    return JSONResponse(content=job)
 
 
 # ── Ad upload endpoints (Track 1) ──

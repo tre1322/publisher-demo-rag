@@ -91,39 +91,44 @@ def estimate_vision_cost(page_count: int) -> dict:
     }
 
 
-def _render_page_to_png(doc: fitz.Document, page_num: int) -> bytes:
-    """Render a single PDF page to PNG bytes.
+def _render_page_to_jpeg(doc: fitz.Document, page_num: int) -> bytes:
+    """Render a single PDF page to JPEG bytes.
+
+    JPEG is ~3-5x smaller than PNG, allowing full 200 DPI without
+    hitting the 5MB API limit. This dramatically improves text
+    readability for the vision model on dense newspaper pages.
 
     Args:
         doc: Open PyMuPDF document.
         page_num: 1-indexed page number.
 
     Returns:
-        PNG image bytes.
+        JPEG image bytes.
     """
     page = doc[page_num - 1]
     zoom = VISION_DPI / 72.0
     mat = fitz.Matrix(zoom, zoom)
     pix = page.get_pixmap(matrix=mat)
-    png_bytes = pix.tobytes("png")
 
-    # Anthropic API limit is 5MB for base64 images.
-    # Reduce DPI in steps until under limit (4.5MB target for safety margin).
+    # JPEG quality 90 — sharp enough for text, small enough for API
+    jpeg_bytes = pix.tobytes("jpeg", jpg_quality=90)
+
+    # Fallback: reduce DPI if still over 5MB (unlikely with JPEG)
     max_bytes = 4_500_000
     scale = 0.75
-    while len(png_bytes) > max_bytes and scale > 0.3:
+    while len(jpeg_bytes) > max_bytes and scale > 0.3:
         reduced_dpi = int(VISION_DPI * scale)
         logger.warning(
-            f"Page {page_num} image too large ({len(png_bytes)} bytes), "
+            f"Page {page_num} JPEG too large ({len(jpeg_bytes)} bytes), "
             f"reducing to {reduced_dpi} DPI"
         )
         zoom = reduced_dpi / 72.0
         mat = fitz.Matrix(zoom, zoom)
         pix = page.get_pixmap(matrix=mat)
-        png_bytes = pix.tobytes("png")
+        jpeg_bytes = pix.tobytes("jpeg", jpg_quality=90)
         scale -= 0.1
 
-    return png_bytes
+    return jpeg_bytes
 
 
 def _extract_page_vision(
@@ -134,7 +139,7 @@ def _extract_page_vision(
     """Send one page image to Claude Vision and get structured JSON back.
 
     Args:
-        image_bytes: PNG image bytes.
+        image_bytes: JPEG image bytes.
         page_num: 1-indexed page number (injected into prompt).
         client: Anthropic API client.
 
@@ -154,7 +159,7 @@ def _extract_page_vision(
                     "type": "image",
                     "source": {
                         "type": "base64",
-                        "media_type": "image/png",
+                        "media_type": "image/jpeg",
                         "data": image_b64,
                     },
                 },
@@ -390,12 +395,12 @@ def run_vision_pipeline(
         logger.info(f"Vision extracting page {page_num}/{total_pages}...")
 
         try:
-            # Render page to PNG
-            png_bytes = _render_page_to_png(doc, page_num)
-            logger.info(f"  Page {page_num}: {len(png_bytes)} bytes PNG")
+            # Render page to JPEG (much smaller than PNG, keeps full DPI)
+            jpeg_bytes = _render_page_to_jpeg(doc, page_num)
+            logger.info(f"  Page {page_num}: {len(jpeg_bytes)} bytes JPEG")
 
             # Send to Claude Vision
-            page_data = _extract_page_vision(png_bytes, page_num, client)
+            page_data = _extract_page_vision(jpeg_bytes, page_num, client)
 
             article_count = len(page_data.get("articles", []))
             ad_count = len(page_data.get("ads", []))

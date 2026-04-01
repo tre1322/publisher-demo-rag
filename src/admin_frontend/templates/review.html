@@ -251,30 +251,71 @@
         });
     });
 
-    // Edition upload
+    // Edition upload (supports async vision jobs with polling)
     document.getElementById('edition-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const form = e.target;
         const btn = document.getElementById('edition-submit');
         const statusEl = document.getElementById('edition-status');
         btn.disabled = true;
-        btn.textContent = 'Processing...';
+        btn.textContent = 'Uploading...';
         statusEl.innerHTML = '';
 
         const formData = new FormData(form);
         try {
             const res = await fetch('/admin/api/editions/upload', { method: 'POST', body: formData });
             const data = await res.json();
-            if (data.success) {
-                statusEl.innerHTML = '<div class="status-msg success">Processed ' + data.files_processed + ' file(s): ' + data.total_articles + ' articles, ' + data.total_ads + ' ads' + (data.failures ? ', ' + data.failures + ' failures' : '') + '</div>';
-            } else {
+
+            if (!data.success) {
                 statusEl.innerHTML = '<div class="status-msg error">' + (data.detail || 'Upload failed') + '</div>';
+                btn.disabled = false;
+                btn.textContent = 'Upload & Process';
+                return;
+            }
+
+            // Check if any files are async (vision pipeline)
+            const asyncJobs = (data.details || []).filter(d => d.async && d.edition_id);
+            if (asyncJobs.length > 0) {
+                // Poll for vision job status
+                const editionId = asyncJobs[0].edition_id;
+                btn.textContent = 'Vision processing...';
+                statusEl.innerHTML = '<div class="status-msg">Vision pipeline started. Extracting pages...</div>';
+
+                const pollInterval = setInterval(async () => {
+                    try {
+                        const pollRes = await fetch('/admin/api/editions/' + editionId + '/vision-status');
+                        const job = await pollRes.json();
+
+                        if (job.total_pages > 0) {
+                            statusEl.innerHTML = '<div class="status-msg">Processing page ' + job.current_page + ' of ' + job.total_pages + '...</div>';
+                        }
+
+                        if (job.status === 'complete') {
+                            clearInterval(pollInterval);
+                            statusEl.innerHTML = '<div class="status-msg success">Vision complete: ' + job.articles + ' articles extracted, ' + job.stitched + ' stitched, ' + job.chunks_indexed + ' chunks indexed</div>';
+                            btn.disabled = false;
+                            btn.textContent = 'Upload & Process';
+                        } else if (job.status === 'failed') {
+                            clearInterval(pollInterval);
+                            statusEl.innerHTML = '<div class="status-msg error">Vision failed: ' + (job.error || 'Unknown error') + '</div>';
+                            btn.disabled = false;
+                            btn.textContent = 'Upload & Process';
+                        }
+                    } catch (pollErr) {
+                        // Keep polling on network blips
+                    }
+                }, 3000);
+            } else {
+                // Synchronous result (IDML or V2)
+                statusEl.innerHTML = '<div class="status-msg success">Processed ' + data.files_processed + ' file(s): ' + data.total_articles + ' articles' + (data.failures ? ', ' + data.failures + ' failures' : '') + '</div>';
+                btn.disabled = false;
+                btn.textContent = 'Upload & Process';
             }
         } catch (err) {
             statusEl.innerHTML = '<div class="status-msg error">Error: ' + err.message + '</div>';
+            btn.disabled = false;
+            btn.textContent = 'Upload & Process';
         }
-        btn.disabled = false;
-        btn.textContent = 'Upload & Process';
     });
 
     // Ad upload
