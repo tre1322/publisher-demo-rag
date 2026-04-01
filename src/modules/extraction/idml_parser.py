@@ -23,48 +23,62 @@ logger = logging.getLogger(__name__)
 # Paragraph style classification rules.
 # Map InDesign paragraph style names to semantic roles.
 # These are matched case-insensitively using substring matching.
-STYLE_ROLES = {
+# Style rules are checked in order — put more specific patterns first
+# to avoid false matches (e.g. "head" matching "subhead").
+STYLE_RULES = [
+    # Furniture / skip (check first to exclude boilerplate)
+    ("paragraph break", "furniture"),
+    ("folio", "furniture"),
+    ("page number", "furniture"),
+    ("what's inside", "furniture"),   # "what's inside headline cit" = sidebar teasers
+    ("minor category", "furniture"),  # classified section headers
+    ("end of category", "furniture"),
+    ("letterhead", "furniture"),
+    ("briefly head", "furniture"),    # brief teasers
+    # Captions / photo credits
+    ("cutline", "caption"),
+    ("caption", "caption"),
+    ("photo credit", "caption"),
+    # Pull quotes (skip — duplicate body text)
+    ("drop quote", "pullquote"),
+    ("pull quote", "pullquote"),
+    ("blockquote", "pullquote"),
+    # Subheadlines — check BEFORE "head" to avoid false match
+    ("subhead", "subhead"),
+    ("deck", "subhead"),
+    ("summary deck", "subhead"),
+    ("summary", "subhead"),
     # Headlines
-    "headline": "headline",
-    "head": "headline",
-    "banner": "headline",
-    "title": "headline",
-    "flag": "headline",
-    # Subheadlines
-    "subhead": "subhead",
-    "deck": "subhead",
-    "summary": "subhead",
+    ("headline", "headline"),
+    ("banner", "headline"),
+    ("flag", "headline"),
     # Bylines
-    "byline": "byline",
+    ("byline", "byline"),
     # Body copy
-    "body": "body",
-    "copy": "body",
-    "text": "body",
-    "nimrod": "body",
-    # Captions
-    "cutline": "caption",
-    "caption": "caption",
-    "photo credit": "caption",
-    # Pull quotes
-    "drop quote": "pullquote",
-    "pull quote": "pullquote",
-    "blockquote": "pullquote",
-    # Furniture / skip
-    "paragraph break": "furniture",
-    "folio": "furniture",
-    "page number": "furniture",
-}
+    ("nimrod body copy", "body"),      # "cit nimrod body copy"
+    ("nimrodbodycopy", "body"),
+    ("nimrodcopy", "body"),
+    ("body text", "body"),             # "body text OA"
+    ("body copy", "body"),
+    ("body", "body"),
+    ("nimrod", "body"),
+    ("classified", "body"),
+    # Normal/default styles — treat as body
+    ("normal", "body"),
+]
 
 
 def _classify_style(style_name: str) -> str:
-    """Classify a paragraph style name into a semantic role."""
+    """Classify a paragraph style name into a semantic role.
+
+    Uses ordered rules list (STYLE_RULES) — more specific patterns
+    are checked first to avoid false matches like 'head' in 'subhead'.
+    """
     lower = style_name.lower()
-    for pattern, role in STYLE_ROLES.items():
+    for pattern, role in STYLE_RULES:
         if pattern in lower:
             return role
-    # Default: if no match, treat as body
-    if style_name in ("NormalParagraphStyle", "Normal", "[No paragraph style]"):
-        return "body"
+    # Default: unstyled text treated as body
     return "body"
 
 
