@@ -91,57 +91,71 @@ def estimate_vision_cost(page_count: int) -> dict:
     }
 
 
-def _render_page_to_jpeg(doc: fitz.Document, page_num: int) -> bytes:
-    """Render a single PDF page to JPEG bytes.
+def _render_page_image(doc: fitz.Document, page_num: int) -> tuple[bytes, str]:
+    """Render a single PDF page to image bytes for vision API.
 
-    JPEG is ~3-5x smaller than PNG, allowing full 200 DPI without
-    hitting the 5MB API limit. This dramatically improves text
-    readability for the vision model on dense newspaper pages.
+    Uses PNG (lossless) at full DPI. Falls back to JPEG if PNG exceeds
+    the 5MB API limit — JPEG with quality 95 preserves text sharpness
+    while being ~3x smaller. Only reduces DPI as a last resort.
 
     Args:
         doc: Open PyMuPDF document.
         page_num: 1-indexed page number.
 
     Returns:
-        JPEG image bytes.
+        Tuple of (image_bytes, media_type) where media_type is
+        "image/png" or "image/jpeg".
     """
     page = doc[page_num - 1]
     zoom = VISION_DPI / 72.0
     mat = fitz.Matrix(zoom, zoom)
     pix = page.get_pixmap(matrix=mat)
-
-    # JPEG quality 90 — sharp enough for text, small enough for API
-    jpeg_bytes = pix.tobytes("jpeg", jpg_quality=90)
-
-    # Fallback: reduce DPI if still over 5MB (unlikely with JPEG)
     max_bytes = 4_500_000
-    scale = 0.75
-    while len(jpeg_bytes) > max_bytes and scale > 0.3:
+
+    # Try PNG first (lossless — best for text)
+    png_bytes = pix.tobytes("png")
+    if len(png_bytes) <= max_bytes:
+        return png_bytes, "image/png"
+
+    # PNG too large — switch to JPEG at quality 95 (still very sharp)
+    logger.info(
+        f"Page {page_num}: PNG too large ({len(png_bytes)} bytes), "
+        f"using JPEG at full {VISION_DPI} DPI"
+    )
+    jpeg_bytes = pix.tobytes("jpeg", jpg_quality=95)
+    if len(jpeg_bytes) <= max_bytes:
+        return jpeg_bytes, "image/jpeg"
+
+    # JPEG still too large — reduce DPI progressively
+    scale = 0.80
+    while len(jpeg_bytes) > max_bytes and scale > 0.4:
         reduced_dpi = int(VISION_DPI * scale)
         logger.warning(
-            f"Page {page_num} JPEG too large ({len(jpeg_bytes)} bytes), "
-            f"reducing to {reduced_dpi} DPI"
+            f"Page {page_num} image too large ({len(jpeg_bytes)} bytes), "
+            f"reducing to {reduced_dpi} DPI JPEG"
         )
         zoom = reduced_dpi / 72.0
         mat = fitz.Matrix(zoom, zoom)
         pix = page.get_pixmap(matrix=mat)
-        jpeg_bytes = pix.tobytes("jpeg", jpg_quality=90)
+        jpeg_bytes = pix.tobytes("jpeg", jpg_quality=95)
         scale -= 0.1
 
-    return jpeg_bytes
+    return jpeg_bytes, "image/jpeg"
 
 
 def _extract_page_vision(
     image_bytes: bytes,
     page_num: int,
     client: anthropic.Anthropic,
+    media_type: str = "image/png",
 ) -> dict:
     """Send one page image to Claude Vision and get structured JSON back.
 
     Args:
-        image_bytes: JPEG image bytes.
+        image_bytes: Image bytes (PNG or JPEG).
         page_num: 1-indexed page number (injected into prompt).
         client: Anthropic API client.
+        media_type: MIME type of the image ("image/png" or "image/jpeg").
 
     Returns:
         Parsed JSON dict with page_num, articles, ads.
@@ -159,7 +173,7 @@ def _extract_page_vision(
                     "type": "image",
                     "source": {
                         "type": "base64",
-                        "media_type": "image/jpeg",
+                        "media_type": media_type,
                         "data": image_b64,
                     },
                 },
@@ -395,12 +409,13 @@ def run_vision_pipeline(
         logger.info(f"Vision extracting page {page_num}/{total_pages}...")
 
         try:
-            # Render page to JPEG (much smaller than PNG, keeps full DPI)
-            jpeg_bytes = _render_page_to_jpeg(doc, page_num)
-            logger.info(f"  Page {page_num}: {len(jpeg_bytes)} bytes JPEG")
+            # Render page (PNG preferred, falls back to JPEG for large pages)
+            image_bytes, media_type = _render_page_image(doc, page_num)
+            fmt = "PNG" if "png" in media_type else "JPEG"
+            logger.info(f"  Page {page_num}: {len(image_bytes)} bytes {fmt}")
 
             # Send to Claude Vision
-            page_data = _extract_page_vision(jpeg_bytes, page_num, client)
+            page_data = _extract_page_vision(image_bytes, page_num, client, media_type)
 
             article_count = len(page_data.get("articles", []))
             ad_count = len(page_data.get("ads", []))
