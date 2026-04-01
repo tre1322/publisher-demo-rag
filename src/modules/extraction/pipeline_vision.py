@@ -107,13 +107,21 @@ def _render_page_to_png(doc: fitz.Document, page_num: int) -> bytes:
     pix = page.get_pixmap(matrix=mat)
     png_bytes = pix.tobytes("png")
 
-    # If image is too large (>5MB API limit), reduce quality
-    if len(png_bytes) > 4_500_000:
-        logger.warning(f"Page {page_num} image too large ({len(png_bytes)} bytes), reducing DPI")
-        zoom = (VISION_DPI * 0.75) / 72.0
+    # Anthropic API limit is 5MB for base64 images.
+    # Reduce DPI in steps until under limit (4.5MB target for safety margin).
+    max_bytes = 4_500_000
+    scale = 0.75
+    while len(png_bytes) > max_bytes and scale > 0.3:
+        reduced_dpi = int(VISION_DPI * scale)
+        logger.warning(
+            f"Page {page_num} image too large ({len(png_bytes)} bytes), "
+            f"reducing to {reduced_dpi} DPI"
+        )
+        zoom = reduced_dpi / 72.0
         mat = fitz.Matrix(zoom, zoom)
         pix = page.get_pixmap(matrix=mat)
         png_bytes = pix.tobytes("png")
+        scale -= 0.1
 
     return png_bytes
 
