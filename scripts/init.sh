@@ -56,8 +56,12 @@ echo "[DEBUG] Article count after init_db: $(python3 -c "import sqlite3; c=sqlit
 
 echo ""
 echo "[2.5/4] Seeding articles from quadd extraction..."
-python3 scripts/seed_articles.py || echo "⚠ Warning: Article seeding failed (continuing)"
-echo "[DEBUG] Article count after seed: $(python3 -c "import sqlite3; c=sqlite3.connect('data/articles.db'); print(c.execute('SELECT COUNT(*) FROM articles').fetchone()[0])" 2>&1)"
+if [ "${SEED_QUADD_ON_STARTUP}" = "true" ]; then
+    python3 scripts/seed_articles.py || echo "⚠ Warning: Article seeding failed (continuing)"
+    echo "[DEBUG] Article count after seed: $(python3 -c "import sqlite3; c=sqlite3.connect('data/articles.db'); print(c.execute('SELECT COUNT(*) FROM articles').fetchone()[0])" 2>&1)"
+else
+    echo "[INIT] QuadD seed skipped (set SEED_QUADD_ON_STARTUP=true to enable)"
+fi
 
 # Verify tables exist
 echo ""
@@ -111,18 +115,22 @@ fi
 
 echo ""
 echo "[2.5/4] Ingesting quadd extraction articles..."
-# Ingest articles extracted by the quadd pipeline (if quadd DB is available)
-QUADD_DB="${QUADD_DB_PATH:-/app/data/quadd_articles.db}"
-if [ -f "$QUADD_DB" ]; then
-    echo "[INIT] Found quadd DB at $QUADD_DB, ingesting articles..."
-    python scripts/ingest_quadd_articles.py --quadd-db "$QUADD_DB" && QUADD_RC=$? || QUADD_RC=$?
-    if [ "${QUADD_RC}" -ne 0 ]; then
-        echo "[INIT] WARNING: Quadd ingestion failed (exit ${QUADD_RC}), continuing"
+if [ "${SEED_QUADD_ON_STARTUP}" = "true" ]; then
+    # Ingest articles extracted by the quadd pipeline (if quadd DB is available)
+    QUADD_DB="${QUADD_DB_PATH:-/app/data/quadd_articles.db}"
+    if [ -f "$QUADD_DB" ]; then
+        echo "[INIT] Found quadd DB at $QUADD_DB, ingesting articles..."
+        python scripts/ingest_quadd_articles.py --quadd-db "$QUADD_DB" && QUADD_RC=$? || QUADD_RC=$?
+        if [ "${QUADD_RC}" -ne 0 ]; then
+            echo "[INIT] WARNING: Quadd ingestion failed (exit ${QUADD_RC}), continuing"
+        else
+            echo "✓ Quadd articles ingested"
+        fi
     else
-        echo "✓ Quadd articles ingested"
+        echo "[INIT] No quadd DB found at $QUADD_DB, skipping article ingestion"
     fi
 else
-    echo "[INIT] No quadd DB found at $QUADD_DB, skipping article ingestion"
+    echo "[INIT] QuadD ingestion skipped (set SEED_QUADD_ON_STARTUP=true to enable)"
 fi
 
 # Reindex articles into Chroma AFTER all ingestion is done
