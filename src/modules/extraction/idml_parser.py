@@ -264,10 +264,12 @@ def _match_headlines_to_bodies(
         story_text = (story.get("body_text") or story.get("headline") or "").lower()
         is_continuation = bool(re.search(r"from\s+page\s*\d|^\w+/\s", story_text))
         is_jump_ref = bool(re.search(r"see\s+\w+\s*[•·]|continued\s+on", story_text))
-        is_masthead = bool(re.search(
-            r"citizen|star|advocate|observer|wednesday|thursday|friday|monday|tuesday",
+        # Masthead: only short text that looks like a newspaper header
+        # (e.g. "Cottonwood County Citizen WEDNESDAY, April 1, 2026")
+        is_masthead = story["char_count"] < 200 and bool(re.search(
+            r"citizen|star|advocate|observer",
             story_text,
-        ) and re.search(r"\d{4}|\d+th year|\d+rd year", story_text))
+        ) and re.search(r"(monday|tuesday|wednesday|thursday|friday|saturday|sunday).*\d{4}", story_text))
         is_cutline = any("cutline" in s.lower() or "photo credit" in s.lower()
                          for s in story.get("styles_used", []))
         is_boilerplate = bool(re.search(
@@ -354,6 +356,137 @@ def _match_headlines_to_bodies(
                     body_story["headline"] = first_line[:80]
 
 
+def _stitch_jumped_articles(
+    stories: dict[str, dict | None],
+    frame_positions: dict[str, list[dict]],
+) -> None:
+    """Stitch articles that jump across pages using keyword matching.
+
+    InDesign newspapers use jump references like:
+    - Jump out: "See riverfest •BACK Page" (on front page)
+    - Jump in:  "Riverfest/ Parade will take place June 13 From page 1" (on inner page)
+
+    The continuation body text is in a SEPARATE story positioned near the
+    jump-in header. This function:
+    1. Finds jump-out/jump-in keyword pairs
+    2. Identifies the front-page body story (near the jump-out)
+    3. Identifies the continuation body story (near the jump-in)
+    4. Appends the continuation text to the front-page story
+    """
+    # Step 1: Find all jump-out and jump-in stories by keyword
+    jump_outs: dict[str, str] = {}   # keyword -> story_id
+    jump_ins: dict[str, str] = {}    # keyword -> story_id
+
+    for sid, story in stories.items():
+        if not story:
+            continue
+        full_text = (story.get("body_text") or story.get("headline") or "").strip()
+        lower = full_text.lower()
+
+        # Jump out: "See KEYWORD •Page" or "See KEYWORD •BACK Page"
+        m = re.search(r"[Ss]ee\s+(\w+)\s*[•·]", lower)
+        if m:
+            jump_outs[m.group(1).lower()] = sid
+
+        # Jump in: "KEYWORD/ ... From page N" (may have newlines between)
+        m = re.search(r"^(\w+)/\s*.*[Ff]rom\s+page", full_text, re.DOTALL)
+        if m:
+            jump_ins[m.group(1).lower()] = sid
+
+    if not jump_outs or not jump_ins:
+        return
+
+    # Step 2: For each matched keyword, find front body + continuation body
+    consumed_sids: set[str] = set()
+
+    for keyword in set(jump_outs.keys()) & set(jump_ins.keys()):
+        out_sid = jump_outs[keyword]
+        in_sid = jump_ins[keyword]
+
+        # Find front-page body story: the article that CONTAINS the keyword
+        # or whose headline contains it. This is more reliable than spatial
+        # proximity because InDesign spreads use different coordinate systems.
+        best_front_sid = None
+        best_front_score = 0
+
+        for sid, story in stories.items():
+            if not story or sid == out_sid or sid == in_sid:
+                continue
+            if story.get("content_type") != "article" or story.get("char_count", 0) < 100:
+                continue
+            headline_lower = (story.get("headline") or "").lower()
+            body_lower = (story.get("body_text") or "").lower()
+            # Score: headline match is strongest, then early body mention.
+            # Penalize stories that look like continuations (start mid-sentence).
+            starts_mid = body_lower and body_lower[0].islower()
+            if keyword in headline_lower:
+                score = 10000
+            elif keyword in body_lower[:200] and not starts_mid:
+                score = 5000
+            elif keyword in body_lower[:500]:
+                score = 1000
+            elif keyword in body_lower:
+                score = 100
+            else:
+                continue
+            if score > best_front_score:
+                best_front_score = score
+                best_front_sid = sid
+
+        # Find continuation body story: positioned near the jump-in header
+        # on the same spread (similar coordinates)
+        in_frames = frame_positions.get(in_sid, [])
+        best_cont_sid = None
+        best_cont_dist = float("inf")
+
+        if in_frames:
+            in_f = in_frames[0]
+            for sid, story in stories.items():
+                if not story or sid == out_sid or sid == in_sid or sid == best_front_sid:
+                    continue
+                if story.get("char_count", 0) < 50:
+                    continue
+                # Skip other jump-in headers
+                st = (story.get("body_text") or "").strip()
+                if re.search(r"^\w+/\s*.*[Ff]rom\s+page", st, re.DOTALL):
+                    continue
+                sid_frames = frame_positions.get(sid, [])
+                for sf in sid_frames:
+                    x_dist = abs(sf["x"] - in_f["x"])
+                    y_diff = sf["y"] - in_f["y"]
+                    # Same spread = similar coordinate range
+                    if x_dist < 300 and -20 < y_diff < 500:
+                        dist = x_dist + abs(y_diff)
+                        if dist < best_cont_dist:
+                            best_cont_dist = dist
+                            best_cont_sid = sid
+
+        # Step 3: Merge continuation into front story
+        if best_front_sid and best_cont_sid:
+            front_story = stories[best_front_sid]
+            cont_story = stories[best_cont_sid]
+            if front_story and cont_story:
+                cont_text = cont_story.get("body_text", "").strip()
+                if cont_text:
+                    front_story["body_text"] = (
+                        front_story.get("body_text", "") + "\n\n" + cont_text
+                    )
+                    front_story["char_count"] = len(front_story["body_text"])
+                    front_story["is_stitched"] = True
+                    # Mark continuation as consumed so it doesn't appear as separate article
+                    cont_story["content_type"] = "consumed_continuation"
+                    logger.info(
+                        f"Stitched '{keyword}': {best_front_sid} + {best_cont_sid} "
+                        f"({front_story['char_count']} chars)"
+                    )
+
+        # Mark jump-out and jump-in header stories as furniture (not articles)
+        if stories.get(out_sid):
+            stories[out_sid]["content_type"] = "furniture"
+        if stories.get(in_sid):
+            stories[in_sid]["content_type"] = "furniture"
+
+
 def parse_idml(idml_path: str) -> list[dict]:
     """Parse an IDML file and extract all articles.
 
@@ -391,6 +524,12 @@ def parse_idml(idml_path: str) -> list[dict]:
 
         # Get text frame positions from spreads
         frame_positions = _get_text_frame_positions(spreads_dir)
+
+        # Stitch jumped articles using keyword matching (before headline matching)
+        _stitch_jumped_articles(
+            {k: v for k, v in all_stories.items() if v},
+            frame_positions,
+        )
 
         # Match headlines to body stories using proximity
         _match_headlines_to_bodies(
