@@ -1638,6 +1638,8 @@ async def reset_data(
         content_items_deleted = cur.rowcount
         cur.execute("DELETE FROM editions")
         editions_deleted = cur.rowcount
+        cur.execute("DELETE FROM advertisements")
+        ads_deleted = cur.rowcount
         cur.execute("DELETE FROM conversations")
         cur.execute("DELETE FROM conversation_messages")
         cur.execute("DELETE FROM content_impressions")
@@ -1648,13 +1650,26 @@ async def reset_data(
         # Reset auto-increment sequences for cleared tables
         cur.execute(
             "DELETE FROM sqlite_sequence WHERE name IN "
-            "('articles','content_items','editions','conversations','conversation_messages')"
+            "('articles','content_items','editions','conversations','conversation_messages','advertisements')"
         )
 
         conn.commit()
         conn.close()
 
-        # Clear ChromaDB vectors
+        # Clear ads ChromaDB collection
+        ads_vectors_deleted = 0
+        try:
+            from src.core.vector_store import get_ads_collection
+            ads_col = get_ads_collection()
+            ads_count = ads_col.count()
+            if ads_count > 0:
+                ads_results = ads_col.get()
+                ads_col.delete(ids=ads_results["ids"])
+                ads_vectors_deleted = ads_count
+        except Exception as e:
+            logger.warning(f"Ads ChromaDB clear failed: {e}")
+
+        # Clear articles ChromaDB vectors
         vectors_deleted = 0
         try:
             from src.core.vector_store import get_articles_collection
@@ -1670,7 +1685,7 @@ async def reset_data(
         logger.info(
             f"Reset complete: {articles_deleted} articles, "
             f"{content_items_deleted} content_items, {editions_deleted} editions, "
-            f"{vectors_deleted} vectors"
+            f"{vectors_deleted} article vectors, {ads_vectors_deleted} ad vectors"
         )
 
         return JSONResponse(content={
@@ -1679,7 +1694,9 @@ async def reset_data(
                 "articles": articles_deleted,
                 "content_items": content_items_deleted,
                 "editions": editions_deleted,
+                "advertisements": ads_deleted,
                 "vectors": vectors_deleted,
+                "ad_vectors": ads_vectors_deleted,
             },
         })
     except Exception as e:
