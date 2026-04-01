@@ -203,6 +203,7 @@ def main() -> None:
         ("upload_status", "TEXT DEFAULT 'pending'"),
         ("extraction_status", "TEXT DEFAULT 'not_started'"),
         ("homepage_batch_status", "TEXT DEFAULT 'not_started'"),
+        ("is_current", "INTEGER DEFAULT 0"),
     ]:
         _add_column_if_missing(cur, "editions", col, coltype)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_editions_pub ON editions(publication_id)")
@@ -351,6 +352,29 @@ def main() -> None:
             FOREIGN KEY (publisher_id) REFERENCES publishers(id)
         )
     """)
+    # Migrations for content_items columns used by shared_write_layer / publish
+    for col, coltype in [
+        ("headline", "TEXT"),
+        ("subheadline", "TEXT"),
+        ("byline", "TEXT"),
+        ("cleaned_web_text", "TEXT"),
+        ("section", "TEXT"),
+        ("start_page", "INTEGER"),
+        ("end_page", "INTEGER"),
+        ("jump_pages_json", "TEXT"),
+        ("print_prominence_score", "REAL DEFAULT 0"),
+        ("extraction_confidence", "REAL DEFAULT 0"),
+        ("homepage_eligible", "INTEGER DEFAULT 0"),
+        ("homepage_score", "REAL DEFAULT 0"),
+        ("publish_status", "TEXT DEFAULT 'draft'"),
+        ("is_stitched", "INTEGER DEFAULT 0"),
+        ("block_count", "INTEGER DEFAULT 0"),
+        ("column_id", "INTEGER"),
+        ("span_columns", "INTEGER DEFAULT 1"),
+        ("bbox_json", "TEXT"),
+        ("edition_date", "TEXT"),
+    ]:
+        _add_column_if_missing(cur, "content_items", col, coltype)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_content_items_edition ON content_items(edition_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_content_items_publisher ON content_items(publisher_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_content_items_type ON content_items(content_type)")
