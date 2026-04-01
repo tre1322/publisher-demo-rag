@@ -223,10 +223,12 @@ def _get_text_frame_positions(spreads_dir: str) -> dict[str, list[dict]]:
                 x_min += tx; x_max += tx
                 y_min += ty; y_max += ty
 
+            spread_id = fname.replace(".xml", "")
             frames.setdefault(story_ref, []).append({
                 "x": x_min, "y": y_min,
                 "x2": x_max, "y2": y_max,
                 "w": x_max - x_min, "h": y_max - y_min,
+                "spread": spread_id,
             })
 
     return frames
@@ -314,11 +316,13 @@ def _match_headlines_to_bodies(
                     continue
                 hl_frames = frame_positions.get(hl_sid, [])
                 for hf in hl_frames:
+                    # CRITICAL: only match frames on the SAME spread/page.
+                    # Different spreads reuse the same coordinate space,
+                    # so cross-spread comparisons produce false matches.
+                    if hf.get("spread") != bf.get("spread"):
+                        continue
                     # Headline must start above or near this body frame
                     if hf["y"] > bf["y"] + 50:
-                        continue
-                    # Must be on the same "page" (within ~900pt vertically)
-                    if abs(hf["y"] - bf["y"]) > 900:
                         continue
                     # Horizontal proximity
                     x_dist = abs(hf["x"] - bf["x"])
@@ -537,15 +541,68 @@ def parse_idml(idml_path: str) -> list[dict]:
             frame_positions,
         )
 
-        # Collect articles (filter small items)
+        # Collect articles — filter boilerplate, furniture, and tiny fragments
         articles = []
         for sid, story in all_stories.items():
             if story is None:
                 continue
             if story["content_type"] != "article":
                 continue
-            if story["char_count"] < 100:
+            if story["char_count"] < 150:
                 continue  # Skip tiny text blocks
+
+            # Filter boilerplate by content patterns
+            hl = (story.get("headline") or "").lower()
+            body = (story.get("body_text") or "").lower()
+            combined = hl + " " + body[:300]
+
+            # Staff listings and contact info
+            if re.search(r"citizen staff:|citizen publishing|507-831-3455|@windomnews\.com", combined):
+                if story["char_count"] < 800:
+                    continue
+            # Subscription/masthead info
+            if re.search(r"\d+\w*\s+year\s+\d+\w*\s+edition\s+\$", combined):
+                continue
+            # "Visit us online" promos
+            if re.search(r"visit us online|www\.windomnews\.com", hl):
+                continue
+            # "MORE ONLINE" sidebars
+            if "more online" in hl.lower():
+                continue
+            # Pull quote attributions (short text with name + title)
+            if story["char_count"] < 300 and re.search(
+                r"(board member|co-chair|columnist|editor|artist|graduate)",
+                hl, re.IGNORECASE,
+            ):
+                continue
+            # Letters to editor policy box
+            if "we welcome letters to the editor" in body[:100]:
+                continue
+            # Weather data tables
+            if re.search(r"a look back.*[HLPT].*tues|mon\.\s+\d+\s+\d+", body[:100]):
+                continue
+            # Poll quotes (very short, just a quote)
+            if story["char_count"] < 200 and body.startswith('"'):
+                continue
+            # Q&A sidebar fragments (n Year GRADUATED:)
+            if re.search(r"^\s*n\s+(year|current residence|parents|siblings)", body[:80]):
+                continue
+            # Classified ad contact headers
+            if "to place your classified" in combined:
+                continue
+            # Subscription rate info
+            if "subscription rates of" in body[:200]:
+                continue
+            # All-conference team tables (just stats, no article)
+            if re.search(r"^\d{4}\s+(red rock|big south|conference).*team", body[:80], re.IGNORECASE):
+                continue
+            # "Quick views" sidebar
+            if hl.startswith("quick views"):
+                continue
+            # Photo captions that slipped through (very short, starts with ALL CAPS name)
+            if story["char_count"] < 300 and re.match(r"^[A-Z]{2,}\s+[A-Z]{2,}", body.strip()):
+                continue
+
             articles.append(story)
 
         logger.info(
