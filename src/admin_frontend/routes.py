@@ -1616,3 +1616,72 @@ async def restitch_edition(
     except Exception as e:
         logger.error(f"Restitch failed for edition {edition_id}: {e}", exc_info=True)
         return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
+
+
+@router.post("/api/reset-data")
+async def reset_data(
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Clear all articles, content_items, editions, and ChromaDB vectors.
+
+    Keeps publishers, schema, and all code intact. Use this to start fresh
+    before re-ingesting editions through the new pipeline.
+    """
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        # Clear data tables
+        cur.execute("DELETE FROM articles")
+        articles_deleted = cur.rowcount
+        cur.execute("DELETE FROM content_items")
+        content_items_deleted = cur.rowcount
+        cur.execute("DELETE FROM editions")
+        editions_deleted = cur.rowcount
+        cur.execute("DELETE FROM conversations")
+        cur.execute("DELETE FROM conversation_messages")
+        cur.execute("DELETE FROM content_impressions")
+        cur.execute("DELETE FROM url_clicks")
+        cur.execute("DELETE FROM page_regions")
+        cur.execute("DELETE FROM review_actions")
+
+        # Reset auto-increment sequences for cleared tables
+        cur.execute(
+            "DELETE FROM sqlite_sequence WHERE name IN "
+            "('articles','content_items','editions','conversations','conversation_messages')"
+        )
+
+        conn.commit()
+        conn.close()
+
+        # Clear ChromaDB vectors
+        vectors_deleted = 0
+        try:
+            from src.core.vector_store import get_articles_collection
+            col = get_articles_collection()
+            count = col.count()
+            if count > 0:
+                results = col.get()
+                col.delete(ids=results["ids"])
+                vectors_deleted = count
+        except Exception as e:
+            logger.warning(f"ChromaDB clear failed (may not exist yet): {e}")
+
+        logger.info(
+            f"Reset complete: {articles_deleted} articles, "
+            f"{content_items_deleted} content_items, {editions_deleted} editions, "
+            f"{vectors_deleted} vectors"
+        )
+
+        return JSONResponse(content={
+            "success": True,
+            "deleted": {
+                "articles": articles_deleted,
+                "content_items": content_items_deleted,
+                "editions": editions_deleted,
+                "vectors": vectors_deleted,
+            },
+        })
+    except Exception as e:
+        logger.error(f"Reset failed: {e}", exc_info=True)
+        return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
