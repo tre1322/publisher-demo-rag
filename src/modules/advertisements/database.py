@@ -22,6 +22,11 @@ _REQUIRED_MIGRATIONS = [
     ("embedding_text", "TEXT"),
     ("ad_category", "TEXT"),
     ("location", "TEXT"),
+    # Phase 1: Ad system upgrade columns
+    ("ad_type", "TEXT"),           # display, help_wanted, auction, directory, classified
+    ("file_path", "TEXT"),         # original file on disk (data/ads/{ad_id}.{ext})
+    ("web_image_path", "TEXT"),    # optimized JPEG for modal (data/ads/{ad_id}_web.jpg)
+    ("file_type", "TEXT"),         # pdf, png, jpg, etc
 ]
 
 
@@ -74,6 +79,12 @@ def init_table() -> None:
     )
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_ads_checksum ON advertisements(checksum)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ads_publisher ON advertisements(publisher)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ads_ad_type ON advertisements(ad_type)"
     )
 
     conn.commit()
@@ -172,6 +183,10 @@ def insert_edition_advertisement(
     embedding_text: str | None = None,
     ad_category: str | None = None,
     location: str | None = None,
+    ad_type: str | None = None,
+    file_path: str | None = None,
+    web_image_path: str | None = None,
+    file_type: str | None = None,
 ) -> None:
     """Insert an advertisement (from edition or standalone upload)."""
     conn = get_connection()
@@ -181,14 +196,16 @@ def insert_edition_advertisement(
         INSERT OR REPLACE INTO advertisements
         (ad_id, product_name, advertiser, raw_text, edition_id, page, category,
          publisher, organization_id, publication_id, headline, checksum,
-         cleaned_text, status, ocr_text, embedding_text, ad_category, location)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
+         cleaned_text, status, ocr_text, embedding_text, ad_category, location,
+         ad_type, file_path, web_image_path, file_type)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?)
     """
     params = (
         ad_id, advertiser_name, advertiser_name, extracted_text,
         edition_id, page, category, publisher, organization_id,
         publication_id, headline, checksum, extracted_text,
         ocr_text, embedding_text, ad_category, location,
+        ad_type, file_path, web_image_path, file_type,
     )
 
     try:

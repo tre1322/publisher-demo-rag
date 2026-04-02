@@ -33,7 +33,7 @@ def main() -> None:
     conn = sqlite3.connect(str(DATABASE_PATH))
     cur = conn.cursor()
 
-    # ── Organizations ──
+    # ── Organizations (also serves as business directory) ──
     cur.execute("""
         CREATE TABLE IF NOT EXISTS organizations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,6 +43,28 @@ def main() -> None:
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    # Business directory columns (Phase 1 of ad system upgrade)
+    for col, coltype in [
+        ("address", "TEXT"),
+        ("city", "TEXT"),
+        ("state", "TEXT"),
+        ("phone", "TEXT"),
+        ("email", "TEXT"),
+        ("website", "TEXT"),
+        ("social_json", "TEXT"),         # JSON: {facebook, instagram, twitter}
+        ("hours_json", "TEXT"),          # JSON: {mon: "9am-5pm", ...}
+        ("category", "TEXT"),            # retail, dining, service, etc.
+        ("description", "TEXT"),         # AI-generated business summary
+        ("services", "TEXT"),            # what they offer
+        ("publisher", "TEXT"),           # which paper's market area
+        ("enrichment_status", "TEXT DEFAULT 'pending'"),  # pending, enriched, failed
+        ("last_enriched_at", "TEXT"),
+        ("last_advertised_at", "TEXT"),  # tracks recency for tiered search
+    ]:
+        _add_column_if_missing(cur, "organizations", col, coltype)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_orgs_publisher ON organizations(publisher)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_orgs_category ON organizations(category)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_orgs_enrichment ON organizations(enrichment_status)")
     print("OK: organizations")
 
     # ── Publications ──
@@ -140,6 +162,10 @@ def main() -> None:
         ("embedding_text", "TEXT"),
         ("ad_category", "TEXT"),
         ("location", "TEXT"),
+        ("ad_type", "TEXT"),
+        ("file_path", "TEXT"),
+        ("web_image_path", "TEXT"),
+        ("file_type", "TEXT"),
     ]:
         _add_column_if_missing(cur, "advertisements", col, coltype)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_ad_category ON advertisements(category)")
@@ -148,6 +174,8 @@ def main() -> None:
     cur.execute("CREATE INDEX IF NOT EXISTS idx_ads_org ON advertisements(organization_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_ads_checksum ON advertisements(checksum)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_ads_ad_category ON advertisements(ad_category)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_ads_publisher ON advertisements(publisher)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_ads_ad_type ON advertisements(ad_type)")
     print("OK: advertisements")
 
     # ── Events ──
