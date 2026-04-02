@@ -570,13 +570,20 @@ def create_app() -> FastAPI:
                 return {"stories": []}
             publisher_id = pub["id"]
 
-        items = get_homepage_content(publisher_id, limit=limit, section=section)
+        # When filtering for front page, fetch extra items since we filter after
+        fetch_limit = limit * 3 if front_page else limit
+        items = get_homepage_content(publisher_id, limit=fetch_limit, section=section)
 
-        # Filter to front-page stories only (start_page may be int or str)
+        # Filter to front-page stories only, then take the top N by size
         if front_page:
             front_items = [i for i in items if str(i.get("start_page", "")) == "1"]
             if front_items:
-                items = front_items
+                # Sort by article length (largest = most prominent front-page stories)
+                front_items.sort(
+                    key=lambda x: len(x.get("cleaned_web_text") or x.get("raw_text") or ""),
+                    reverse=True,
+                )
+                items = front_items[:limit]
             # else: fall back to all items (no front-page data available)
         stories = []
         for item in items:
