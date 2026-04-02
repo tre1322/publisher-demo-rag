@@ -148,6 +148,9 @@ async def stream_response(
             # Send thinking status
             yield b'{"type": "status", "content": "Thinking..."}\n'
 
+            # Set publisher context for dynamic system prompt
+            engine._current_publisher = publisher
+
             # Stream response tokens
             for token in engine.generate_response_streaming(message, chunks):
                 accumulated += token

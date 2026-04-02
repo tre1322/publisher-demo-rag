@@ -31,6 +31,7 @@ from src.prompts import (
     SYSTEM_PROMPT,
     format_context,
     format_sources,
+    get_system_prompt,
 )
 from src.search_agent import SearchAgent
 
@@ -266,7 +267,8 @@ class QueryEngine:
         if self.llm_provider == "gradient":
             logger.info(f"Calling Gradient API ({GRADIENT_MODEL})...")
             # OpenAI-compatible format — system prompt goes as first message
-            oai_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
+            sys_prompt = get_system_prompt(getattr(self, "_current_publisher", "") or "your local newspaper")
+            oai_messages = [{"role": "system", "content": sys_prompt}] + messages
             response = self.openai_client.chat.completions.create(
                 model=GRADIENT_MODEL,
                 max_tokens=1024,
@@ -281,7 +283,7 @@ class QueryEngine:
                 model=LLM_MODEL,
                 max_tokens=1024,
                 temperature=LLM_TEMPERATURE,
-                system=SYSTEM_PROMPT,
+                system=get_system_prompt(getattr(self, "_current_publisher", "") or "your local newspaper"),
                 messages=messages,  # type: ignore[arg-type]
             )
             logger.info("Received response from Claude")
@@ -356,7 +358,8 @@ class QueryEngine:
         # Call LLM API with streaming
         if self.llm_provider == "gradient":
             logger.info(f"Calling Gradient API with streaming ({GRADIENT_MODEL})...")
-            oai_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
+            sys_prompt = get_system_prompt(getattr(self, "_current_publisher", "") or "your local newspaper")
+            oai_messages = [{"role": "system", "content": sys_prompt}] + messages
             stream = self.openai_client.chat.completions.create(
                 model=GRADIENT_MODEL,
                 max_tokens=1024,
@@ -374,7 +377,7 @@ class QueryEngine:
                 model=LLM_MODEL,
                 max_tokens=1024,
                 temperature=LLM_TEMPERATURE,
-                system=SYSTEM_PROMPT,
+                system=get_system_prompt(getattr(self, "_current_publisher", "") or "your local newspaper"),
                 messages=messages,  # type: ignore[arg-type]
             ) as stream:
                 for text in stream.text_stream:
@@ -413,6 +416,9 @@ class QueryEngine:
         Returns:
             Dictionary with response and sources.
         """
+        # Store publisher for dynamic system prompt
+        self._current_publisher = publisher
+
         # Check if user is asking for help
         if self._is_help_request(query):
             logger.info("Help request detected")
