@@ -160,7 +160,7 @@ def write_articles_to_all(
         end_page = max(jump_pages + [start_page or 1]) if jump_pages else start_page
         homepage_eligible = bool(headline) and len(body_text) >= 100 and content_type in ("news", "sports")
 
-        insert_content_item(
+        content_item_id = insert_content_item(
             edition_id=edition_id,
             publisher_id=publisher_id,
             content_type=content_type,
@@ -180,6 +180,7 @@ def write_articles_to_all(
             edition_date=edition_date,
         )
         content_items_written += 1
+        story_url = f"/story/{content_item_id}" if content_item_id else ""
 
         # 3. ChromaDB vector embeddings
         chunks = _chunk_text(body_text)
@@ -200,6 +201,7 @@ def write_articles_to_all(
                     "edition_id": str(edition_id),
                     "content_type": content_type,
                     "publisher": publisher_name,
+                    "url": story_url,
                 }
                 for i in range(len(chunks))
             ]
