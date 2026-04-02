@@ -15,27 +15,32 @@ from src.modules.advertisements.database import (
 logger = logging.getLogger(__name__)
 
 
-def _search_by_advertiser_name(query: str, limit: int = 10) -> list[dict]:
+def _search_by_advertiser_name(query: str, limit: int = 10, publisher: str | None = None) -> list[dict]:
     """Search ads by advertiser name match (case-insensitive LIKE)."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        """
+
+    sql = """
         SELECT * FROM advertisements
         WHERE (
             advertiser LIKE ? OR advertiser LIKE ?
             OR product_name LIKE ? OR product_name LIKE ?
         )
         AND status = 'active'
-        ORDER BY created_at DESC
-        LIMIT ?
-        """,
-        (
-            f"%{query}%", f"%{query.title()}%",
-            f"%{query}%", f"%{query.title()}%",
-            limit,
-        ),
-    )
+    """
+    params: list = [
+        f"%{query}%", f"%{query.title()}%",
+        f"%{query}%", f"%{query.title()}%",
+    ]
+
+    if publisher:
+        sql += " AND publisher = ?"
+        params.append(publisher)
+
+    sql += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+
+    cursor.execute(sql, params)
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
@@ -125,6 +130,7 @@ class AdvertisementSearch:
         category: str | None = None,
         max_price: float | None = None,
         on_sale_only: bool = False,
+        publisher: str | None = None,
     ) -> list[dict]:
         """Search for advertisements with semantic + name + filter search.
 
@@ -138,13 +144,14 @@ class AdvertisementSearch:
             category: Product category filter.
             max_price: Maximum price filter.
             on_sale_only: Only return items on sale.
+            publisher: Filter to this publisher's ads (priority, not hard filter).
 
         Returns:
             List of matching advertisements.
         """
         logger.info(
             f"Advertisement search: query={query}, category={category}, "
-            f"max_price={max_price}, on_sale_only={on_sale_only}"
+            f"max_price={max_price}, on_sale_only={on_sale_only}, publisher={publisher}"
         )
 
         results = []
@@ -153,7 +160,7 @@ class AdvertisementSearch:
         # 1. Semantic vector search (highest quality matches)
         if query and self.collection is not None:
             try:
-                semantic_results = self._semantic_search(query)
+                semantic_results = self._semantic_search(query, publisher=publisher)
                 logger.info(
                     f"  Ad semantic search: {len(semantic_results)} results "
                     f"from ads collection"
@@ -168,7 +175,7 @@ class AdvertisementSearch:
 
         # 2. Advertiser-name boost
         if query:
-            name_matches = _search_by_advertiser_name(query)
+            name_matches = _search_by_advertiser_name(query, publisher=publisher)
             if name_matches:
                 logger.info(
                     f"  Advertiser-name boost: {len(name_matches)} matches"
@@ -185,6 +192,7 @@ class AdvertisementSearch:
             max_price=max_price,
             on_sale_only=on_sale_only,
             active_only=True,
+            publisher=publisher,
         )
         for ad in ads:
             ad_id = ad.get("ad_id", "")
@@ -206,17 +214,22 @@ class AdvertisementSearch:
         query: str,
         top_k: int = RETRIEVAL_TOP_K,
         min_score: float = SIMILARITY_THRESHOLD,
+        publisher: str | None = None,
     ) -> list[dict]:
         """Search the ads Chroma collection by semantic similarity."""
         if self.collection is None:
             return []
 
         query_embedding = self.embedding_model.encode(query).tolist()
-        results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-            include=["documents", "metadatas", "distances"],
-        )
+        query_kwargs = {
+            "query_embeddings": [query_embedding],
+            "n_results": top_k,
+            "include": ["documents", "metadatas", "distances"],
+        }
+        if publisher:
+            query_kwargs["where"] = {"publisher": publisher}
+
+        results = self.collection.query(**query_kwargs)
 
         chunks = []
         if results and results["documents"]:

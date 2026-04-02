@@ -145,11 +145,13 @@ class SearchAgent:
                 publisher=pub,
             )
         elif tool_name == "search_advertisements":
+            pub = getattr(self, "_current_publisher", None)
             return self.search_tools.search_advertisements(
                 query=tool_input.get("query"),
                 category=tool_input.get("category"),
                 max_price=tool_input.get("max_price"),
                 on_sale_only=tool_input.get("on_sale_only", False),
+                publisher=pub,
             )
         elif tool_name == "search_events":
             return self.search_tools.search_events(

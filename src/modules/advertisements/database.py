@@ -284,6 +284,7 @@ def search_advertisements(
     on_sale_only: bool = False,
     active_only: bool = True,
     limit: int = 20,
+    publisher: str | None = None,
 ) -> list[dict]:
     """Search advertisements by filters.
 
@@ -316,6 +317,10 @@ def search_advertisements(
 
     if active_only:
         query += " AND (valid_to IS NULL OR valid_to >= date('now'))"
+
+    if publisher:
+        query += " AND publisher = ?"
+        params.append(publisher)
 
     query += " ORDER BY discount_percent DESC NULLS LAST LIMIT ?"
     params.append(limit)

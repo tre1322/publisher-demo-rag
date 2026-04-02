@@ -84,6 +84,7 @@ class SearchTools:
         category: str | None = None,
         max_price: float | None = None,
         on_sale_only: bool = False,
+        publisher: str | None = None,
     ) -> list[dict]:
         """Search for advertisements."""
         return self.advertisements.search(
@@ -91,6 +92,7 @@ class SearchTools:
             category=category,
             max_price=max_price,
             on_sale_only=on_sale_only,
+            publisher=publisher,
         )
 
     # Event search methods

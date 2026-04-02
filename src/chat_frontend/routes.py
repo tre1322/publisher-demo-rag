@@ -138,7 +138,7 @@ async def stream_response(
             try:
                 from src.modules.advertisements.search import AdvertisementSearch
                 from src.modules.events.search import EventSearch
-                ad_results = AdvertisementSearch().search(message)
+                ad_results = AdvertisementSearch().search(message, publisher=effective_publisher)
                 chunks.extend(ad_results)
                 event_results = EventSearch().search(message)
                 chunks.extend(event_results)
