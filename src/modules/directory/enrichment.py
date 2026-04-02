@@ -1,0 +1,230 @@
+"""Business directory enrichment via Brave Search + LLM summarization.
+
+When ads are uploaded, basic business info (name, address, phone) is extracted
+and stored in the organizations table. This module enriches those entries by:
+
+1. Searching Brave Search for the business website
+2. Fetching the website content
+3. Using Qwen3-32B (via DigitalOcean Gradient) to summarize into a structured profile
+4. Updating the organizations table with enriched data
+
+Cost: ~$0.004 per business (Brave Search free tier + Qwen3-32B token cost).
+"""
+
+import json
+import logging
+import os
+
+import httpx
+from bs4 import BeautifulSoup
+
+from src.core.config import GRADIENT_BASE_URL, GRADIENT_MODEL, GRADIENT_MODEL_ACCESS_KEY
+from src.core.database import get_connection
+
+logger = logging.getLogger(__name__)
+
+BRAVE_API_KEY = os.getenv("BRAVE_SEARCH_API_KEY", "")
+
+
+def _brave_search(query: str) -> str | None:
+    """Search Brave and return the top result URL."""
+    if not BRAVE_API_KEY:
+        logger.warning("BRAVE_SEARCH_API_KEY not set — skipping web enrichment")
+        return None
+
+    try:
+        resp = httpx.get(
+            "https://api.search.brave.com/res/v1/web/search",
+            params={"q": query, "count": 3},
+            headers={"X-Subscription-Token": BRAVE_API_KEY, "Accept": "application/json"},
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        results = data.get("web", {}).get("results", [])
+        if results:
+            # Prefer the business's own website over directories
+            for r in results:
+                url = r.get("url", "")
+                if "facebook.com" not in url and "yelp.com" not in url:
+                    return url
+            return results[0].get("url")
+    except Exception as e:
+        logger.error(f"Brave Search failed: {e}")
+    return None
+
+
+def _fetch_page_text(url: str, max_chars: int = 3000) -> str:
+    """Fetch a URL and extract text content."""
+    try:
+        resp = httpx.get(url, timeout=10.0, follow_redirects=True)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        # Remove scripts, styles, nav, footer
+        for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
+            tag.decompose()
+        text = soup.get_text(separator="\n", strip=True)
+        return text[:max_chars]
+    except Exception as e:
+        logger.error(f"Failed to fetch {url}: {e}")
+        return ""
+
+
+def _llm_summarize(business_name: str, page_text: str) -> dict:
+    """Use Qwen3-32B via Gradient to summarize business info into structured JSON."""
+    if not GRADIENT_MODEL_ACCESS_KEY:
+        logger.warning("GRADIENT_MODEL_ACCESS_KEY not set — skipping LLM enrichment")
+        return {}
+
+    from openai import OpenAI
+    client = OpenAI(
+        api_key=GRADIENT_MODEL_ACCESS_KEY,
+        base_url=GRADIENT_BASE_URL,
+    )
+
+    prompt = f"""Based on this website content for "{business_name}", extract the following information as JSON.
+If a field is not found, use null. Do NOT make up information.
+
+Return ONLY valid JSON with these fields:
+{{
+  "description": "1-2 sentence summary of what this business does",
+  "services": "comma-separated list of services/products they offer",
+  "hours": "business hours if found, e.g. 'Mon-Fri 8am-5pm, Sat 9am-1pm'",
+  "email": "contact email if found",
+  "website": "website URL",
+  "facebook": "Facebook page URL if found",
+  "instagram": "Instagram URL if found"
+}}
+
+Website content:
+{page_text[:2000]}"""
+
+    try:
+        response = client.chat.completions.create(
+            model=GRADIENT_MODEL,
+            max_tokens=512,
+            temperature=0.1,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = response.choices[0].message.content or ""
+        # Strip markdown fences
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0]
+        return json.loads(raw)
+    except Exception as e:
+        logger.error(f"LLM summarization failed for {business_name}: {e}")
+        return {}
+
+
+def enrich_business(org_id: int) -> bool:
+    """Enrich a single business directory entry.
+
+    Returns True if enrichment succeeded.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM organizations WHERE id = ?", (org_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return False
+
+    org = dict(row)
+    name = org.get("name", "")
+    city = org.get("city", "")
+    state = org.get("state", "MN")
+
+    logger.info(f"Enriching business: {name} ({city}, {state})")
+
+    # Step 1: Brave Search
+    search_query = f"{name} {city} {state}".strip()
+    url = _brave_search(search_query)
+    if not url:
+        cursor.execute(
+            "UPDATE organizations SET enrichment_status = 'failed', updated_at = datetime('now') WHERE id = ?",
+            (org_id,),
+        )
+        conn.commit()
+        conn.close()
+        return False
+
+    # Step 2: Fetch page
+    page_text = _fetch_page_text(url)
+    if not page_text:
+        cursor.execute(
+            "UPDATE organizations SET enrichment_status = 'failed', website = ?, updated_at = datetime('now') WHERE id = ?",
+            (url, org_id),
+        )
+        conn.commit()
+        conn.close()
+        return False
+
+    # Step 3: LLM summarize
+    profile = _llm_summarize(name, page_text)
+
+    # Step 4: Update organizations table
+    social = {}
+    if profile.get("facebook"):
+        social["facebook"] = profile["facebook"]
+    if profile.get("instagram"):
+        social["instagram"] = profile["instagram"]
+
+    cursor.execute(
+        """UPDATE organizations SET
+            description = ?,
+            services = ?,
+            hours_json = ?,
+            email = ?,
+            website = ?,
+            social_json = ?,
+            enrichment_status = 'enriched',
+            last_enriched_at = datetime('now'),
+            updated_at = datetime('now')
+        WHERE id = ?""",
+        (
+            profile.get("description") or "",
+            profile.get("services") or "",
+            profile.get("hours") or "",
+            profile.get("email") or "",
+            profile.get("website") or url,
+            json.dumps(social) if social else "",
+            org_id,
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    logger.info(f"Enriched: {name} — {profile.get('description', '')[:80]}")
+    return True
+
+
+def enrich_pending_businesses() -> dict:
+    """Enrich all businesses with enrichment_status='pending'.
+
+    Returns summary dict with counts.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, name FROM organizations WHERE enrichment_status = 'pending'"
+    )
+    pending = cursor.fetchall()
+    conn.close()
+
+    total = len(pending)
+    enriched = 0
+    failed = 0
+
+    for row in pending:
+        org_id = row[0]
+        try:
+            if enrich_business(org_id):
+                enriched += 1
+            else:
+                failed += 1
+        except Exception as e:
+            logger.error(f"Enrichment failed for org {org_id}: {e}")
+            failed += 1
+
+    logger.info(f"Enrichment batch: {enriched}/{total} enriched, {failed} failed")
+    return {"total": total, "enriched": enriched, "failed": failed}

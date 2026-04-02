@@ -799,6 +799,19 @@ async def upload_ads(
     failures = sum(1 for r in results if r.get("error") and not r.get("duplicate"))
     warnings = sum(1 for r in results if r.get("warning"))
 
+    # Trigger background business directory enrichment for new entries
+    if ingested > 0:
+        def _run_enrichment():
+            try:
+                from src.modules.directory.enrichment import enrich_pending_businesses
+                enrich_result = enrich_pending_businesses()
+                logger.info(f"Background enrichment: {enrich_result}")
+            except Exception as e:
+                logger.error(f"Background enrichment failed: {e}")
+
+        enrichment_thread = threading.Thread(target=_run_enrichment, daemon=True)
+        enrichment_thread.start()
+
     return JSONResponse(content={
         "success": True,
         "files_received": len(files),

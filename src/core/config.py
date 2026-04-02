@@ -80,5 +80,8 @@ VISION_COST_PER_PAGE = float(os.getenv("VISION_COST_PER_PAGE", "0.04"))
 VISION_DPI = int(os.getenv("VISION_DPI", "200"))
 VISION_PAGE_DELAY = float(os.getenv("VISION_PAGE_DELAY", "1.0"))
 
+# Business Directory Enrichment
+BRAVE_SEARCH_API_KEY = os.getenv("BRAVE_SEARCH_API_KEY", "")
+
 # Server Settings
 BASE_URL = os.getenv("BASE_URL", "http://localhost:7860")
