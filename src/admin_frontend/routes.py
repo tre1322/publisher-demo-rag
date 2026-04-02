@@ -644,6 +644,7 @@ async def upload_ads(
     publisher: str = Form(...),
     organization_name: str = Form(""),
     publication_name: str = Form(""),
+    ad_type: str = Form(""),
     _username: str = Depends(verify_credentials),
 ) -> JSONResponse:
     """Upload individual ad PDFs with checksum dedup."""
@@ -690,6 +691,7 @@ async def upload_ads(
                 organization_id=organization_id,
                 publication_id=publication_id,
                 publisher=publisher,
+                ad_type=ad_type or None,
             )
         else:
             result = ingester.ingest_ad_bytes(
@@ -698,6 +700,7 @@ async def upload_ads(
                 organization_id=organization_id,
                 publication_id=publication_id,
                 publisher=publisher,
+                ad_type=ad_type or None,
             )
         results.append(result)
 

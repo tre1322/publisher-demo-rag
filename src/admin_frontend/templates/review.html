@@ -176,7 +176,17 @@
                     </select>
                 </div>
                 <div><label>Organization</label><input type="text" name="organization_name" placeholder="Grand Network"></div>
-                <div><label>Publication</label><input type="text" name="publication_name" placeholder=""></div>
+                <div>
+                    <label>Ad Type</label>
+                    <select name="ad_type">
+                        <option value="">Auto-detect</option>
+                        <option value="display">Display</option>
+                        <option value="help_wanted">Help Wanted</option>
+                        <option value="auction">Auction</option>
+                        <option value="directory">Directory</option>
+                        <option value="classified">Classified</option>
+                    </select>
+                </div>
             </div>
             <div class="form-row">
                 <div><label>Ad Files (PDF or image) *</label><input type="file" name="files" accept=".pdf,.png,.jpg,.jpeg,.gif,.bmp,.tiff,.tif,.webp" multiple required></div>

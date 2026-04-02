@@ -5,11 +5,14 @@ stored, and indexed for chatbot retrieval.
 """
 
 import hashlib
+import io
 import logging
+import re
 import uuid
 from pathlib import Path
 
 import fitz
+from PIL import Image
 from sentence_transformers import SentenceTransformer
 
 from src.core.config import (
@@ -47,6 +50,169 @@ def compute_file_checksum(file_path: Path) -> str:
 def compute_bytes_checksum(data: bytes) -> str:
     """Compute SHA-256 checksum of bytes."""
     return hashlib.sha256(data).hexdigest()
+
+
+ADS_DIR = Path("data/ads")
+
+
+def _save_ad_files(ad_id: str, data: bytes, filename: str) -> tuple[str, str, str]:
+    """Save original ad file + generate web-optimized JPEG.
+
+    Returns:
+        Tuple of (file_path, web_image_path, file_type).
+    """
+    ADS_DIR.mkdir(parents=True, exist_ok=True)
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "pdf"
+    file_type = ext
+
+    # Save original
+    original_path = ADS_DIR / f"{ad_id}.{ext}"
+    original_path.write_bytes(data)
+
+    # Generate web-optimized JPEG
+    web_path = ADS_DIR / f"{ad_id}_web.jpg"
+    max_width = 1200
+
+    try:
+        if ext == "pdf":
+            # Render PDF page 1 to image
+            doc = fitz.open(stream=data, filetype="pdf")
+            page = doc[0]
+            pix = page.get_pixmap(dpi=150)
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            doc.close()
+        else:
+            # Open image directly
+            img = Image.open(io.BytesIO(data)).convert("RGB")
+
+        # Resize to max width, maintain aspect ratio
+        if img.width > max_width:
+            ratio = max_width / img.width
+            img = img.resize((max_width, int(img.height * ratio)), Image.LANCZOS)
+
+        img.save(str(web_path), "JPEG", quality=85)
+        logger.info(f"Saved ad files: {original_path} + {web_path} ({img.width}x{img.height})")
+
+    except Exception as e:
+        logger.error(f"Failed to generate web image for {filename}: {e}")
+        web_path = None
+
+    return (
+        str(original_path),
+        str(web_path) if web_path and web_path.exists() else "",
+        file_type,
+    )
+
+
+def _extract_business_info(text: str, filename: str) -> dict:
+    """Extract basic business info (name, address, phone) from ad text.
+
+    Used to auto-populate the business directory from uploaded ads.
+
+    Returns:
+        Dict with name, address, city, state, phone (any may be empty).
+    """
+    info = {"name": "", "address": "", "city": "", "state": "", "phone": ""}
+
+    # Phone: 507-XXX-XXXX or (507) XXX-XXXX patterns
+    phone_match = re.search(r"[\(]?(\d{3})[\)\-\.\s]+(\d{3})[\-\.\s]+(\d{4})", text)
+    if phone_match:
+        info["phone"] = f"{phone_match.group(1)}-{phone_match.group(2)}-{phone_match.group(3)}"
+
+    # Address: look for street number + street name (stop at newline)
+    addr_match = re.search(
+        r"(\d+\s+(?:\d+\w*\s+)?(?:St\.?|Ave\.?|Rd\.?|Dr\.?|Blvd\.?|Hwy\.?|Street|Avenue|Road|Drive|Highway|Lane|Ln\.?|Way|Circle|Ct\.?)[^\n]*)",
+        text, re.IGNORECASE,
+    )
+    if addr_match:
+        info["address"] = addr_match.group(1).strip().rstrip(",. ")
+
+    # City + State: "City, MN" or "MOUNTAIN LAKE" near a state abbreviation
+    city_match = re.search(
+        r"([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*)\s*,?\s*(MN|Minnesota|SD|South Dakota|IA|Iowa)\b",
+        text,
+    )
+    # Also try: city name on its own line near known MN cities
+    if not city_match:
+        mn_cities = ["windom", "pipestone", "mountain lake", "mt. lake", "slayton",
+                     "jackson", "worthington", "marshall", "redwood falls", "lamberton",
+                     "westbrook", "storden", "jeffers", "bingham lake", "butterfield"]
+        text_lower = text.lower()
+        for city in mn_cities:
+            if city in text_lower:
+                city_match = True
+                info["city"] = city.title()
+                info["state"] = "MN"
+                break
+    if city_match:
+        info["city"] = city_match.group(1).strip()
+        state = city_match.group(2)
+        info["state"] = {"Minnesota": "MN", "South Dakota": "SD", "Iowa": "IA"}.get(state, state)
+
+    # Business name: infer from filename if clean
+    fname_clean = filename.rsplit(".", 1)[0] if "." in filename else filename
+    # Remove common suffixes: "2x5", "3x10", size indicators
+    fname_clean = re.sub(r"\s*\d+x\d+\s*$", "", fname_clean).strip()
+    if fname_clean and len(fname_clean) > 3 and not fname_clean[0].isdigit():
+        info["name"] = fname_clean
+
+    return info
+
+
+def _upsert_directory_entry(
+    name: str,
+    biz_info: dict,
+    publisher: str | None = None,
+    ad_category: str | None = None,
+) -> None:
+    """Create or update a business directory entry from ad data.
+
+    If the business already exists (by slug), just updates last_advertised_at.
+    If new, creates the entry with extracted info and sets enrichment_status='pending'.
+    """
+    if not name or name in ("Unknown", ""):
+        return
+
+    from src.core.database import get_connection
+
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    if not slug:
+        return
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Check if exists
+    cursor.execute("SELECT id FROM organizations WHERE slug = ?", (slug,))
+    existing = cursor.fetchone()
+
+    if existing:
+        # Update last_advertised_at
+        cursor.execute(
+            "UPDATE organizations SET last_advertised_at = datetime('now'), updated_at = datetime('now') WHERE slug = ?",
+            (slug,),
+        )
+    else:
+        # Create new directory entry
+        cursor.execute(
+            """INSERT INTO organizations (name, slug, address, city, state, phone, category, publisher,
+               enrichment_status, last_advertised_at, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'), datetime('now'), datetime('now'))""",
+            (
+                name,
+                slug,
+                biz_info.get("address", ""),
+                biz_info.get("city", ""),
+                biz_info.get("state", ""),
+                biz_info.get("phone", ""),
+                ad_category or "",
+                publisher or "",
+            ),
+        )
+        logger.info(f"New business directory entry: {name} (slug={slug})")
+
+    conn.commit()
+    conn.close()
 
 
 def extract_text_from_pdf(pdf_path: Path) -> str:
@@ -358,6 +524,7 @@ class AdIngester:
         organization_id: int | None = None,
         publication_id: int | None = None,
         publisher: str | None = None,
+        ad_type: str | None = None,
     ) -> dict:
         """Ingest an ad from raw PDF bytes (for web uploads).
 
@@ -421,6 +588,13 @@ class AdIngester:
         )
 
         ad_id = str(uuid.uuid4())
+
+        # Save original file + generate web-optimized image
+        file_path, web_image_path, file_type = _save_ad_files(ad_id, data, filename)
+
+        # Extract business info for directory
+        biz_info = _extract_business_info(ocr_text or text, filename)
+
         insert_edition_advertisement(
             ad_id=ad_id,
             advertiser_name=advertiser,
@@ -434,6 +608,18 @@ class AdIngester:
             embedding_text=embedding_text,
             ad_category=ad_category,
             location=location,
+            ad_type=ad_type,
+            file_path=file_path,
+            web_image_path=web_image_path,
+            file_type=file_type,
+        )
+
+        # Auto-add to business directory if we got a name
+        _upsert_directory_entry(
+            name=advertiser,
+            biz_info=biz_info,
+            publisher=publisher,
+            ad_category=ad_category,
         )
 
         result["ad_id"] = ad_id
@@ -461,6 +647,9 @@ class AdIngester:
                         "location": location,
                         "subjects": ad_category,
                         "content_type": "advertisement",
+                        "publisher": publisher or "",
+                        "url": f"/ad/{ad_id}",
+                        "ad_type": ad_type or "",
                     }
                     for i in range(len(chunks))
                 ]
@@ -490,6 +679,7 @@ class AdIngester:
         organization_id: int | None = None,
         publication_id: int | None = None,
         publisher: str | None = None,
+        ad_type: str | None = None,
     ) -> dict:
         """Ingest an ad from a raw image file (PNG, JPG, etc.) via Vision API.
 
@@ -550,6 +740,13 @@ class AdIngester:
         )
 
         ad_id = str(uuid.uuid4())
+
+        # Save original file + generate web-optimized image
+        file_path, web_image_path, file_type = _save_ad_files(ad_id, data, filename)
+
+        # Extract business info for directory
+        biz_info = _extract_business_info(ocr_text, filename)
+
         insert_edition_advertisement(
             ad_id=ad_id,
             advertiser_name=advertiser,
@@ -563,6 +760,18 @@ class AdIngester:
             embedding_text=embedding_text,
             ad_category=ad_category,
             location=location,
+            ad_type=ad_type,
+            file_path=file_path,
+            web_image_path=web_image_path,
+            file_type=file_type,
+        )
+
+        # Auto-add to business directory if we got a name
+        _upsert_directory_entry(
+            name=advertiser,
+            biz_info=biz_info,
+            publisher=publisher,
+            ad_category=ad_category,
         )
 
         result["ad_id"] = ad_id
@@ -590,6 +799,9 @@ class AdIngester:
                         "location": location,
                         "subjects": ad_category,
                         "content_type": "advertisement",
+                        "publisher": publisher or "",
+                        "url": f"/ad/{ad_id}",
+                        "ad_type": ad_type or "",
                     }
                     for i in range(len(chunks))
                 ]
