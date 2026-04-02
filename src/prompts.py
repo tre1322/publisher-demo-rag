@@ -147,18 +147,9 @@ def format_context(
         author = metadata.get("author", "Unknown author")
         text = chunk.get("text", "")
 
-        # Get original URL and content info
-        original_url = metadata.get("url", "")
+        # Get story URL for citation links
         content_type = chunk.get("search_type", "article")
-        content_id = get_content_id(chunk)
-
-        # Create tracked URL if original URL exists
-        if original_url:
-            url = make_tracked_url(
-                original_url, content_type, content_id, conversation_id
-            )
-        else:
-            url = ""
+        url = metadata.get("url", "")
 
         # Format differently for ads vs articles/events
         if content_type == "advertisement":
