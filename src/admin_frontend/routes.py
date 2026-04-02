@@ -1755,10 +1755,25 @@ async def reset_data(
         except Exception as e:
             logger.warning(f"ChromaDB clear failed (may not exist yet): {e}")
 
+        # Clear legacy ChromaDB collection (old seeded data)
+        legacy_vectors_deleted = 0
+        try:
+            from src.core.vector_store import get_legacy_collection
+            legacy_col = get_legacy_collection()
+            if legacy_col:
+                legacy_count = legacy_col.count()
+                if legacy_count > 0:
+                    legacy_results = legacy_col.get()
+                    legacy_col.delete(ids=legacy_results["ids"])
+                    legacy_vectors_deleted = legacy_count
+        except Exception as e:
+            logger.warning(f"Legacy ChromaDB clear failed: {e}")
+
         logger.info(
             f"Reset complete: {articles_deleted} articles, "
             f"{content_items_deleted} content_items, {editions_deleted} editions, "
-            f"{vectors_deleted} article vectors, {ads_vectors_deleted} ad vectors"
+            f"{vectors_deleted} article vectors, {ads_vectors_deleted} ad vectors, "
+            f"{legacy_vectors_deleted} legacy vectors"
         )
 
         return JSONResponse(content={
