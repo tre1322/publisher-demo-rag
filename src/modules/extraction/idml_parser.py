@@ -652,14 +652,45 @@ def parse_idml(idml_path: str) -> list[dict]:
 
             articles.append(story)
 
+        # Collect classified listings from stories with Classified style
+        classifieds = []
+        for sid, story in all_stories.items():
+            if not story:
+                continue
+            styles_lower = [s.lower() for s in story.get("styles_used", [])]
+            has_classified = any("classified" in s or "minor category" in s for s in styles_lower)
+            if not has_classified:
+                continue
+            if story.get("char_count", 0) < 20:
+                continue
+
+            # Split into individual listings by blank lines
+            body = story.get("body_text", "")
+            current_category = "general"
+
+            for block in re.split(r"\n{2,}", body):
+                block = block.strip()
+                if not block or len(block) < 15:
+                    continue
+                # Detect category headers (short ALL CAPS or Title Case lines)
+                if len(block) < 40 and (block.isupper() or block.istitle()):
+                    current_category = block.lower().replace(" ", "_")
+                    continue
+                classifieds.append({
+                    "text": block,
+                    "category": current_category,
+                    "headline": current_category.replace("_", " ").title(),
+                })
+
         logger.info(
-            f"IDML parsed: {len(articles)} articles from {idml_path}"
+            f"IDML parsed: {len(articles)} articles, "
+            f"{len(classifieds)} classified listings from {idml_path}"
         )
 
         # Sort articles by text length (longest first = most prominent)
         articles.sort(key=lambda a: -a["char_count"])
 
-        return articles
+        return articles, classifieds
 
 
 def ingest_idml_edition(
@@ -689,8 +720,8 @@ def ingest_idml_edition(
     pub_record = get_publisher_by_name(publisher_name)
     publisher_id = pub_record["id"] if pub_record else None
 
-    # Parse IDML
-    raw_articles = parse_idml(idml_path)
+    # Parse IDML (returns articles + classified listings)
+    raw_articles, classifieds = parse_idml(idml_path)
 
     # Create edition record
     filename = os.path.basename(idml_path)
@@ -734,9 +765,35 @@ def ingest_idml_edition(
         source_filename=filename,
     )
 
+    # Process classified listings as individual ads
+    classifieds_ingested = 0
+    if classifieds:
+        try:
+            from src.ad_ingestion import AdIngester, _upsert_directory_entry
+            from src.modules.advertisements import insert_edition_advertisement
+
+            for listing in classifieds:
+                ad_id = str(uuid.uuid4())
+                text = listing["text"]
+                category = listing["category"]
+
+                insert_edition_advertisement(
+                    ad_id=ad_id,
+                    advertiser_name=listing["headline"],
+                    extracted_text=text,
+                    publisher=publisher_name,
+                    edition_id=edition_id,
+                    ad_type="classified",
+                    ad_category=category,
+                )
+                classifieds_ingested += 1
+        except Exception as e:
+            logger.error(f"Classified ingestion failed: {e}")
+
     logger.info(
         f"IDML ingestion complete: {write_result['articles_written']} articles, "
-        f"{write_result['chunks_indexed']} chunks from {filename}"
+        f"{write_result['chunks_indexed']} chunks, "
+        f"{classifieds_ingested} classifieds from {filename}"
     )
 
     return {
@@ -747,4 +804,5 @@ def ingest_idml_edition(
         "articles_inserted": write_result["articles_written"],
         "chunks_indexed": write_result["chunks_indexed"],
         "content_items_written": write_result["content_items_written"],
+        "classifieds_ingested": classifieds_ingested,
     }
