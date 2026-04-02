@@ -660,6 +660,65 @@ def create_app() -> FastAPI:
             "related": related,
         })
 
+    # ── Ad Serving Endpoints ──
+
+    @app.get("/ad/{ad_id}")
+    async def serve_ad_web_image(ad_id: str):
+        """Serve web-optimized ad image for modal display."""
+        from fastapi.responses import FileResponse
+        from src.modules.advertisements.database import get_advertisement_by_id as get_advertisement
+
+        ad = get_advertisement(ad_id)
+        if not ad or not ad.get("web_image_path"):
+            return HTMLResponse("<h1>Ad image not found</h1>", status_code=404)
+        web_path = Path(ad["web_image_path"])
+        if not web_path.exists():
+            return HTMLResponse("<h1>Ad image file missing</h1>", status_code=404)
+        return FileResponse(str(web_path), media_type="image/jpeg")
+
+    @app.get("/ad/{ad_id}/original")
+    async def serve_ad_original(ad_id: str):
+        """Serve original ad file for download/print."""
+        from fastapi.responses import FileResponse
+        from src.modules.advertisements.database import get_advertisement_by_id as get_advertisement
+
+        ad = get_advertisement(ad_id)
+        if not ad or not ad.get("file_path"):
+            return HTMLResponse("<h1>Ad file not found</h1>", status_code=404)
+        file_path = Path(ad["file_path"])
+        if not file_path.exists():
+            return HTMLResponse("<h1>Ad file missing</h1>", status_code=404)
+        media_types = {
+            "pdf": "application/pdf", "png": "image/png", "jpg": "image/jpeg",
+            "jpeg": "image/jpeg", "gif": "image/gif", "tiff": "image/tiff",
+            "tif": "image/tiff", "webp": "image/webp", "bmp": "image/bmp",
+        }
+        ft = ad.get("file_type", "pdf")
+        return FileResponse(
+            str(file_path),
+            media_type=media_types.get(ft, "application/octet-stream"),
+            filename=f"{ad.get('advertiser', 'ad')}.{ft}",
+        )
+
+    @app.get("/api/ads/{ad_id}")
+    async def get_ad_metadata(ad_id: str):
+        """Return ad metadata as JSON (for modal display)."""
+        from src.modules.advertisements.database import get_advertisement_by_id as get_advertisement
+
+        ad = get_advertisement(ad_id)
+        if not ad:
+            return JSONResponse(status_code=404, content={"error": "Ad not found"})
+        return {
+            "ad_id": ad.get("ad_id"),
+            "advertiser": ad.get("advertiser", ""),
+            "ad_type": ad.get("ad_type", ""),
+            "ad_category": ad.get("ad_category", ""),
+            "location": ad.get("location", ""),
+            "file_type": ad.get("file_type", ""),
+            "has_image": bool(ad.get("web_image_path")),
+            "has_original": bool(ad.get("file_path")),
+        }
+
     # ── Article Detail Pages ──
 
     @app.get("/api/articles/{doc_id}")
