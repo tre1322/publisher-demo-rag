@@ -155,6 +155,14 @@ def _extract_business_info(text: str, filename: str) -> dict:
     fname_clean = re.sub(r"\s+(HW|hw|RN|rn|FP|fp|BW|bw)\s*$", "", fname_clean).strip()
     # Remove trailing fractions
     fname_clean = re.sub(r"\s*[½¼¾]\s*$", "", fname_clean).strip()
+    # Remove job title suffixes — the business name is what comes before the position
+    job_titles = (
+        r"\s+(Executive Director|Director|Manager|Coordinator|Supervisor|"
+        r"Technician|Specialist|Assistant|Clerk|Driver|Operator|"
+        r"Food Service Manager|Maintenance|Custodian|Teacher|"
+        r"Nurse|CNA|LPN|RN|Aide|Cook|Housekeeper)\s*$"
+    )
+    fname_clean = re.sub(job_titles, "", fname_clean, flags=re.IGNORECASE).strip()
     if fname_clean and len(fname_clean) > 3 and not fname_clean[0].isdigit():
         info["name"] = fname_clean
 
