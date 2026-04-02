@@ -638,6 +638,62 @@ async def vision_job_status(
 # ── Ad upload endpoints (Track 1) ──
 
 
+@router.post("/api/ads/purge")
+async def purge_ads(
+    publisher: str = Form(""),
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Purge non-directory ads for a publisher (weekly cleanup).
+
+    Marks non-directory ads as 'expired' and removes them from ChromaDB.
+    Directory ads (ad_type='directory') are exempt.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # Get ad_ids to purge (non-directory, active, for this publisher)
+    where = "status = 'active' AND (ad_type IS NULL OR ad_type != 'directory')"
+    params: list = []
+    if publisher:
+        where += " AND publisher = ?"
+        params.append(publisher)
+
+    cur.execute(f"SELECT ad_id FROM advertisements WHERE {where}", params)
+    ad_ids = [r[0] for r in cur.fetchall()]
+
+    # Mark as expired
+    cur.execute(f"UPDATE advertisements SET status = 'expired' WHERE {where}", params)
+    purged_count = cur.rowcount
+    conn.commit()
+    conn.close()
+
+    # Remove from ChromaDB
+    vectors_removed = 0
+    if ad_ids:
+        try:
+            from src.core.vector_store import get_ads_collection
+            ads_col = get_ads_collection()
+            # ChromaDB IDs are {ad_id}_{chunk_index}
+            all_chunk_ids = []
+            for ad_id in ad_ids:
+                results = ads_col.get(where={"doc_id": ad_id})
+                if results and results["ids"]:
+                    all_chunk_ids.extend(results["ids"])
+            if all_chunk_ids:
+                ads_col.delete(ids=all_chunk_ids)
+                vectors_removed = len(all_chunk_ids)
+        except Exception as e:
+            logger.warning(f"ChromaDB ad purge failed: {e}")
+
+    logger.info(f"Ad purge: {purged_count} ads expired, {vectors_removed} vectors removed for publisher={publisher}")
+    return JSONResponse(content={
+        "success": True,
+        "purged": purged_count,
+        "vectors_removed": vectors_removed,
+        "publisher": publisher,
+    })
+
+
 @router.post("/api/ads/upload")
 async def upload_ads(
     files: list[UploadFile] = File(...),
@@ -645,11 +701,45 @@ async def upload_ads(
     organization_name: str = Form(""),
     publication_name: str = Form(""),
     ad_type: str = Form(""),
+    clear_previous: str = Form(""),
     _username: str = Depends(verify_credentials),
 ) -> JSONResponse:
     """Upload individual ad PDFs with checksum dedup."""
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
+
+    # If clear_previous is checked, purge non-directory ads first
+    purge_result = None
+    if clear_previous == "true":
+        conn = get_connection()
+        cur = conn.cursor()
+        where = "status = 'active' AND (ad_type IS NULL OR ad_type != 'directory')"
+        params_purge: list = []
+        if publisher:
+            where += " AND publisher = ?"
+            params_purge.append(publisher)
+        cur.execute(f"SELECT ad_id FROM advertisements WHERE {where}", params_purge)
+        ad_ids = [r[0] for r in cur.fetchall()]
+        cur.execute(f"UPDATE advertisements SET status = 'expired' WHERE {where}", params_purge)
+        purge_count = cur.rowcount
+        conn.commit()
+        conn.close()
+        # Remove from ChromaDB
+        if ad_ids:
+            try:
+                from src.core.vector_store import get_ads_collection
+                ads_col = get_ads_collection()
+                all_chunk_ids = []
+                for ad_id in ad_ids:
+                    results = ads_col.get(where={"doc_id": ad_id})
+                    if results and results["ids"]:
+                        all_chunk_ids.extend(results["ids"])
+                if all_chunk_ids:
+                    ads_col.delete(ids=all_chunk_ids)
+            except Exception as e:
+                logger.warning(f"ChromaDB purge during upload failed: {e}")
+        purge_result = purge_count
+        logger.info(f"Purged {purge_count} previous ads for {publisher} before upload")
 
     org_name = organization_name or publisher
     pub_name = publication_name or publisher
@@ -716,6 +806,7 @@ async def upload_ads(
         "duplicates_rejected": duplicates,
         "failures": failures,
         "indexing_warnings": warnings,
+        "purged_previous": purge_result,
         "details": results,
     })
 

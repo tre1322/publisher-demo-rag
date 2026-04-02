@@ -191,6 +191,12 @@
             <div class="form-row">
                 <div><label>Ad Files (PDF or image) *</label><input type="file" name="files" accept=".pdf,.png,.jpg,.jpeg,.gif,.bmp,.tiff,.tif,.webp" multiple required></div>
             </div>
+            <div class="form-row" style="margin-bottom:8px;">
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                    <input type="checkbox" id="clear-previous-ads" style="width:18px; height:18px;">
+                    Clear previous week's ads before uploading (directory ads will be kept)
+                </label>
+            </div>
             <button type="submit" class="btn btn-primary" id="ad-submit">Upload Ads</button>
             <div id="ad-status"></div>
         </form>
@@ -339,10 +345,15 @@
         statusEl.innerHTML = '';
 
         const formData = new FormData(form);
+        // Add clear_previous checkbox value
+        const clearPrev = document.getElementById('clear-previous-ads');
+        formData.set('clear_previous', clearPrev && clearPrev.checked ? 'true' : '');
         try {
             const res = await fetch('/admin/api/ads/upload', { method: 'POST', body: formData });
             const data = await res.json();
-            statusEl.innerHTML = '<div class="status-msg success">Ingested: ' + data.ingested + ', Duplicates rejected: ' + data.duplicates_rejected + ', Failures: ' + data.failures + '</div>';
+            let msg = 'Ingested: ' + data.ingested + ', Duplicates rejected: ' + data.duplicates_rejected + ', Failures: ' + data.failures;
+            if (data.purged_previous != null) msg = 'Purged ' + data.purged_previous + ' previous ads. ' + msg;
+            statusEl.innerHTML = '<div class="status-msg success">' + msg + '</div>';
         } catch (err) {
             statusEl.innerHTML = '<div class="status-msg error">Error: ' + err.message + '</div>';
         }
