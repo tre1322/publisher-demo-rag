@@ -104,7 +104,7 @@ def _format_ad_result(ad: dict, score: float = 1.0) -> dict:
             "ad_category": ad.get("ad_category", ""),
             "price": ad.get("price"),
             "discount_percent": ad.get("discount_percent"),
-            "url": ad.get("url", ""),
+            "url": f"/ad/{ad.get('ad_id', '')}" if ad.get("web_image_path") else ad.get("url", ""),
             "content_type": "advertisement",
             "location": ad.get("location", ""),
         },
