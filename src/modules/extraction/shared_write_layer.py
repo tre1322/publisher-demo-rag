@@ -14,6 +14,7 @@ admin_frontend/routes.py, scripts/process_edition.py, and idml_parser.py.
 """
 
 import logging
+import re
 import uuid
 
 from sentence_transformers import SentenceTransformer
@@ -28,17 +29,44 @@ from src.modules.extraction.publish import generate_homepage_batch
 logger = logging.getLogger(__name__)
 
 
-def _infer_content_type(headline: str) -> str:
-    """Infer content type from headline keywords."""
+def _infer_content_type(headline: str, body_text: str = "") -> str:
+    """Infer content type from headline and body text keywords."""
     hl = (headline or "").lower()
-    if any(w in hl for w in ("wrestling", "basketball", "hockey", "football",
-                              "athlete", "tourney", "volleyball", "track",
-                              "baseball", "softball", "golf", "tennis",
-                              "eagles", "cobras", "tournament")):
+    body_start = (body_text or "")[:500].lower()
+    combined = hl + " " + body_start
+
+    # Sports — check headline first, then body for strong signals
+    sports_headline_words = (
+        "wrestling", "basketball", "hockey", "football", "baseball",
+        "softball", "golf ", "golfers", "tennis", "volleyball", "track ",
+        "athlete", "tourney", "tournament", "cobras", "wolverines",
+        "falcons", "spartans", "indians", "chargers", "season opener",
+        "all-conference", "all-big south", "red rock boys", "red rock girls",
+        "medalist", "pitcher", "coaching", "playoff",
+        "sweep", "rally past", "inning", "opener monday",
+    )
+    if any(w in hl for w in sports_headline_words):
         return "sports"
+    # Body-level sports detection (for headlines like "Big test right off the bat")
+    # Use word-boundary regex to avoid "beginning" matching "inning" etc.
+    sports_body_patterns = (
+        r"\bscored\b", r"\binning\b", r"\bvarsity\b", r"\bpitcher\b",
+        r"\bquarterback\b", r"\bhalftime\b", r"\bfree throw\b",
+        r"\bthree-pointer\b", r"\btouchdown", r"\bhome run\b",
+        r"\bstrikeout\b", r"\bpar putt\b", r"\btee off\b",
+        r"\beagle softball\b", r"\beagle golf\b", r"\beagle baseball\b",
+        r"\bconference squad\b", r"\ball-conference\b", r"\bseason record\b",
+    )
+    if any(re.search(p, body_start) for p in sports_body_patterns):
+        return "sports"
+
+    # Also classify by page number if available (sports section is typically pages 9-12)
+    # This is handled at call site since we need start_page context
+
     if any(w in hl for w in ("sheriff", "police", "court", "arrest", "charged")):
         return "police"
-    if any(w in hl for w in ("obituar", "death", "funeral", "memorial")):
+    if any(w in combined for w in ("obituar", "passed away", "funeral", "memorial service",
+                                    "celebration of life")):
         return "obituary"
     if any(w in hl for w in ("editorial", "opinion", "letter to")):
         return "opinion"
@@ -103,7 +131,7 @@ def write_articles_to_all(
         doc_id = str(uuid.uuid4())
         start_page = art.get("start_page")
         jump_pages = art.get("jump_pages") or []
-        content_type = art.get("content_type") or _infer_content_type(headline)
+        content_type = art.get("content_type") or _infer_content_type(headline, body_text)
         subheadline = art.get("subheadline", "")
         is_stitched = art.get("is_stitched", False)
         confidence = art.get("extraction_confidence", 0.9)

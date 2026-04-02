@@ -274,10 +274,12 @@ def _match_headlines_to_bodies(
         ) and re.search(r"(monday|tuesday|wednesday|thursday|friday|saturday|sunday).*\d{4}", story_text))
         is_cutline = any("cutline" in s.lower() or "photo credit" in s.lower()
                          for s in story.get("styles_used", []))
+        is_whats_inside = any("what" in s.lower() and "inside" in s.lower()
+                              for s in story.get("styles_used", []))
         is_boilerplate = bool(re.search(
             r"pica deep|drop quotes in swiss|nick klisch|first name last", story_text))
 
-        if is_continuation or is_jump_ref or is_masthead or is_cutline or is_boilerplate:
+        if is_continuation or is_jump_ref or is_masthead or is_cutline or is_whats_inside or is_boilerplate:
             continue  # Skip — not a real headline or article
 
         if story["char_count"] < 150 and (has_headline_style or is_small_frame):
@@ -566,6 +568,22 @@ def parse_idml(idml_path: str) -> list[dict]:
             frame_positions,
         )
 
+        # Collect "what's inside" tease text to filter out tease-matched articles.
+        # Tease headlines on the front page duplicate actual article headlines
+        # on inner pages, causing false matches with nearby body stories.
+        whats_inside_texts = set()
+        for sid, story in all_stories.items():
+            if not story:
+                continue
+            if any("what" in s.lower() and "inside" in s.lower()
+                   for s in story.get("styles_used", [])):
+                # Grab the tease text (headline or body)
+                text = (story.get("headline") or story.get("body_text") or "").lower().strip()
+                # Split on "n Page" to get just the tease headline
+                text = re.split(r"\s*n\s*page\s*\d", text)[0].strip()
+                if text:
+                    whats_inside_texts.add(text)
+
         # Collect articles — filter boilerplate, furniture, and tiny fragments
         articles = []
         for sid, story in all_stories.items():
@@ -626,6 +644,10 @@ def parse_idml(idml_path: str) -> list[dict]:
                 continue
             # Photo captions that slipped through (very short, starts with ALL CAPS name)
             if story["char_count"] < 300 and re.match(r"^[A-Z]{2,}\s+[A-Z]{2,}", body.strip()):
+                continue
+            # "What's Inside" tease duplicates: headline matches a tease on the front page
+            # These are small frame headlines that got matched to wrong body stories
+            if hl and any(hl in tease or tease in hl for tease in whats_inside_texts):
                 continue
 
             articles.append(story)
@@ -694,7 +716,7 @@ def ingest_idml_edition(
             "subheadline": art.get("subheadline", ""),
             "byline": art.get("byline", ""),
             "body_text": art["body_text"],
-            "content_type": "news",  # inferred by shared write layer from headline
+            "content_type": None,  # inferred by shared write layer from headline
             "start_page": art.get("start_page"),
             "jump_pages": [],
             "is_stitched": False,  # no jumps in IDML — stories are already complete

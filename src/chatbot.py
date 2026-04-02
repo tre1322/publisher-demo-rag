@@ -572,9 +572,12 @@ def create_app() -> FastAPI:
 
         items = get_homepage_content(publisher_id, limit=limit, section=section)
 
-        # Filter to front-page stories only
+        # Filter to front-page stories only (start_page may be int or str)
         if front_page:
-            items = [i for i in items if i.get("start_page") == 1]
+            front_items = [i for i in items if str(i.get("start_page", "")) == "1"]
+            if front_items:
+                items = front_items
+            # else: fall back to all items (no front-page data available)
         stories = []
         for item in items:
             body = item.get("cleaned_web_text", "") or item.get("raw_text", "")
