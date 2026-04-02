@@ -132,27 +132,29 @@ def _extract_business_info(text: str, filename: str) -> dict:
         r"([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*)\s*,?\s*(MN|Minnesota|SD|South Dakota|IA|Iowa)\b",
         text,
     )
-    # Also try: city name on its own line near known MN cities
-    if not city_match:
+    if city_match:
+        info["city"] = city_match.group(1).strip()
+        state = city_match.group(2)
+        info["state"] = {"Minnesota": "MN", "South Dakota": "SD", "Iowa": "IA"}.get(state, state)
+    else:
+        # Fallback: check for known MN cities in the text
         mn_cities = ["windom", "pipestone", "mountain lake", "mt. lake", "slayton",
                      "jackson", "worthington", "marshall", "redwood falls", "lamberton",
                      "westbrook", "storden", "jeffers", "bingham lake", "butterfield"]
         text_lower = text.lower()
         for city in mn_cities:
             if city in text_lower:
-                city_match = True
                 info["city"] = city.title()
                 info["state"] = "MN"
                 break
-    if city_match:
-        info["city"] = city_match.group(1).strip()
-        state = city_match.group(2)
-        info["state"] = {"Minnesota": "MN", "South Dakota": "SD", "Iowa": "IA"}.get(state, state)
 
     # Business name: infer from filename if clean
     fname_clean = filename.rsplit(".", 1)[0] if "." in filename else filename
-    # Remove common suffixes: "2x5", "3x10", size indicators
-    fname_clean = re.sub(r"\s*\d+x\d+\s*$", "", fname_clean).strip()
+    # Remove common suffixes: size codes (2x5, 3x10, 3x3½), HW (help wanted), RN, etc.
+    fname_clean = re.sub(r"\s*\d+x\d+[½¼¾]?\s*$", "", fname_clean).strip()
+    fname_clean = re.sub(r"\s+(HW|hw|RN|rn|FP|fp|BW|bw)\s*$", "", fname_clean).strip()
+    # Remove trailing fractions
+    fname_clean = re.sub(r"\s*[½¼¾]\s*$", "", fname_clean).strip()
     if fname_clean and len(fname_clean) > 3 and not fname_clean[0].isdigit():
         info["name"] = fname_clean
 
