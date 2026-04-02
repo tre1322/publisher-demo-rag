@@ -529,6 +529,31 @@ def parse_idml(idml_path: str) -> list[dict]:
         # Get text frame positions from spreads
         frame_positions = _get_text_frame_positions(spreads_dir)
 
+        # Build spread → page number mapping from designmap.xml
+        # designmap.xml lists spreads in actual print order
+        spread_to_page: dict[str, int] = {}
+        designmap_path = os.path.join(tmp_dir, "designmap.xml")
+        if os.path.exists(designmap_path):
+            dm_tree = ET.parse(designmap_path)
+            ns = {"idPkg": "http://ns.adobe.com/AdobeInDesign/idml/1.0/packaging"}
+            page_num = 1
+            for sp in dm_tree.getroot().findall(".//idPkg:Spread", ns):
+                src = sp.get("src", "")
+                # src = "Spreads/Spread_uc4.xml" → spread_id = "Spread_uc4"
+                spread_id = src.replace("Spreads/", "").replace(".xml", "")
+                spread_to_page[spread_id] = page_num
+                page_num += 1
+
+        # Assign start_page to each story based on which spread its frames are on
+        for sid, story in all_stories.items():
+            if not story:
+                continue
+            sid_frames = frame_positions.get(sid, [])
+            if sid_frames:
+                # Use the earliest page any frame appears on
+                pages = [spread_to_page.get(f.get("spread", ""), 999) for f in sid_frames]
+                story["start_page"] = min(pages) if pages else None
+
         # Stitch jumped articles using keyword matching (before headline matching)
         _stitch_jumped_articles(
             {k: v for k, v in all_stories.items() if v},
@@ -670,7 +695,7 @@ def ingest_idml_edition(
             "byline": art.get("byline", ""),
             "body_text": art["body_text"],
             "content_type": "news",  # inferred by shared write layer from headline
-            "start_page": None,  # IDML doesn't track page numbers directly
+            "start_page": art.get("start_page"),
             "jump_pages": [],
             "is_stitched": False,  # no jumps in IDML — stories are already complete
             "extraction_confidence": 0.98,

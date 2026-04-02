@@ -855,7 +855,7 @@
     async function loadStories() {
         try {
             const [newsRes, sportsRes, regionalRes] = await Promise.all([
-                fetch('/api/homepage-stories?publisher=' + PUB + '&section=news&limit=5'),
+                fetch('/api/homepage-stories?publisher=' + PUB + '&section=news&limit=4&front_page=true'),
                 fetch('/api/homepage-stories?publisher=' + PUB + '&section=sports&limit=5'),
                 fetch('/api/homepage-stories?all_publishers=true&section=news&limit=6'),
             ]);

@@ -541,7 +541,13 @@ def create_app() -> FastAPI:
     # ── Homepage Stories API ──
 
     @app.get("/api/homepage-stories")
-    async def homepage_stories(publisher: str = "", limit: int = 6, section: str = "", all_publishers: bool = False):
+    async def homepage_stories(
+        publisher: str = "",
+        limit: int = 6,
+        section: str = "",
+        all_publishers: bool = False,
+        front_page: bool = False,
+    ):
         """Return top stories for a publisher's landing page.
 
         Args:
@@ -549,6 +555,7 @@ def create_app() -> FastAPI:
             limit: Max stories to return.
             section: Optional content_type filter (e.g. 'news', 'sports').
             all_publishers: If true, return stories from all publishers (for regional column).
+            front_page: If true, only return stories with start_page=1 (front page stories).
         """
         from src.modules.publishers.database import get_publisher_by_name
         from src.modules.content_items.database import get_homepage_content
@@ -564,6 +571,10 @@ def create_app() -> FastAPI:
             publisher_id = pub["id"]
 
         items = get_homepage_content(publisher_id, limit=limit, section=section)
+
+        # Filter to front-page stories only
+        if front_page:
+            items = [i for i in items if i.get("start_page") == 1]
         stories = []
         for item in items:
             body = item.get("cleaned_web_text", "") or item.get("raw_text", "")
