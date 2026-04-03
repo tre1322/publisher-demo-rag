@@ -1,6 +1,7 @@
 """Gradio chat interface for the Publisher RAG Demo."""
 
 import logging
+import os
 import sys
 import uuid
 from collections.abc import Iterator
@@ -25,8 +26,9 @@ from src.core.database import init_all_tables
 init_all_tables()
 
 # Seed quadd articles into the main database if available
+# Gated by SEED_QUADD_ON_STARTUP env var (same as init.sh)
 _quadd_db = Path(__file__).parent.parent / "data" / "quadd_articles.db"
-if _quadd_db.exists():
+if _quadd_db.exists() and os.environ.get("SEED_QUADD_ON_STARTUP") == "true":
     try:
         import sqlite3 as _sq3
         import uuid as _uuid
