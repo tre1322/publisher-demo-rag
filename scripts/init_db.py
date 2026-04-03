@@ -56,6 +56,7 @@ def main() -> None:
         ("category", "TEXT"),            # retail, dining, service, etc.
         ("description", "TEXT"),         # AI-generated business summary
         ("services", "TEXT"),            # what they offer
+        ("keywords", "TEXT"),            # specific products/brands for search matching
         ("publisher", "TEXT"),           # which paper's market area
         ("enrichment_status", "TEXT DEFAULT 'pending'"),  # pending, enriched, failed
         ("last_enriched_at", "TEXT"),

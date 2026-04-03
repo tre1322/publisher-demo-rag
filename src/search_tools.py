@@ -122,8 +122,8 @@ class SearchTools:
             sql += " AND category LIKE ?"
             params.append(f"%{category}%")
         if query:
-            sql += " AND (name LIKE ? OR description LIKE ? OR services LIKE ?)"
-            params.extend([f"%{query}%", f"%{query}%", f"%{query}%"])
+            sql += " AND (name LIKE ? OR description LIKE ? OR services LIKE ? OR keywords LIKE ?)"
+            params.extend([f"%{query}%", f"%{query}%", f"%{query}%", f"%{query}%"])
 
         sql += " ORDER BY last_advertised_at DESC NULLS LAST LIMIT 10"
         cursor.execute(sql, params)

@@ -709,6 +709,7 @@ def create_app() -> FastAPI:
             "hours": org.get("hours_json", ""),
             "description": org.get("description", ""),
             "services": org.get("services", ""),
+            "keywords": org.get("keywords", ""),
             "social": social,
             "is_active_advertiser": (active_count or {}).get("cnt", 0) > 0,
         }

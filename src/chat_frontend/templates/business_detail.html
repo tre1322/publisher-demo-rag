@@ -102,6 +102,17 @@
             </div>
             {% endif %}
 
+            {% if business.keywords %}
+            <div class="services">
+                <h3>Products & Brands</h3>
+                <div class="services-list">
+                    {% for kw in business.keywords.split(',') %}
+                    <span class="service-tag">{{ kw | trim }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
             {% if business.social %}
             <div class="social-links">
                 {% if business.social.facebook %}

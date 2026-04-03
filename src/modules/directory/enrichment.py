@@ -89,7 +89,8 @@ If a field is not found, use null. Do NOT make up information.
 Return ONLY valid JSON with these fields:
 {{
   "description": "1-2 sentence summary of what this business does",
-  "services": "comma-separated list of services/products they offer",
+  "services": "comma-separated list of main services or departments they offer",
+  "keywords": "comma-separated list of 15-30 specific products, brands, and items they sell or services they provide. Be very specific - e.g. for a hardware store: grills, Weber, tools, DeWalt, paint, Sherwin-Williams, lumber, plumbing supplies, electrical, lawn mowers, snow blowers, key cutting, screen repair, pipe fitting, garden supplies, fertilizer, mulch. For a grocery store: deli, bakery, pharmacy, organic produce, meat counter, catering, curbside pickup",
   "hours": "business hours if found, e.g. 'Mon-Fri 8am-5pm, Sat 9am-1pm'",
   "email": "contact email if found",
   "website": "website URL",
@@ -194,10 +195,13 @@ def enrich_business(org_id: int) -> bool:
     if profile.get("instagram"):
         social["instagram"] = profile["instagram"]
 
+    keywords = profile.get("keywords") or ""
+
     cursor.execute(
         """UPDATE organizations SET
             description = ?,
             services = ?,
+            keywords = ?,
             hours_json = ?,
             email = ?,
             website = ?,
@@ -209,6 +213,7 @@ def enrich_business(org_id: int) -> bool:
         (
             profile.get("description") or "",
             profile.get("services") or "",
+            keywords,
             profile.get("hours") or "",
             profile.get("email") or "",
             profile.get("website") or url,
