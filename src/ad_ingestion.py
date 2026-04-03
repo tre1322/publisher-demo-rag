@@ -183,6 +183,14 @@ def _upsert_directory_entry(
     if not name or name in ("Unknown", ""):
         return
 
+    # Skip publisher names — they're not businesses
+    skip_names = {
+        "cottonwood county citizen", "pipestone star", "pipestone county star",
+        "observer/advocate", "the shopper", "grand network",
+    }
+    if name.lower().strip() in skip_names:
+        return
+
     from src.core.database import get_connection
 
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
@@ -291,8 +299,19 @@ def _clean_filename_as_name(filename: str) -> str:
     import re
 
     stem = Path(filename).stem
-    # Remove dimension patterns like "3x6", "4x5", "half page", trailing "ad", etc.
-    stem = re.sub(r"\s*\d+x\d+\s*", " ", stem, flags=re.IGNORECASE)
+    # Remove dimension patterns like "3x6", "4x5", "3x3½", trailing fractions
+    stem = re.sub(r"\s*\d+x\d+[½¼¾]?\s*", " ", stem, flags=re.IGNORECASE)
+    stem = re.sub(r"\s*[½¼¾]\s*$", "", stem)
+    # Remove ad type suffixes: HW (help wanted), RN, FP, BW
+    stem = re.sub(r"\s+(HW|hw|RN|rn|FP|fp|BW|bw)\s*$", "", stem)
+    # Remove job title suffixes
+    stem = re.sub(
+        r"\s+(Executive Director|Director|Manager|Coordinator|Supervisor|"
+        r"Technician|Specialist|Assistant|Clerk|Driver|Operator|"
+        r"Food Service Manager|Maintenance|Custodian|Teacher|"
+        r"Nurse|CNA|LPN|Aide|Cook|Housekeeper)\s*$",
+        "", stem, flags=re.IGNORECASE,
+    )
     stem = re.sub(r"\s*(half|quarter|full)\s*page\s*", " ", stem, flags=re.IGNORECASE)
     stem = re.sub(r"\s+ad$", "", stem, flags=re.IGNORECASE)
     stem = stem.replace("_", " ").replace("-", " ").strip()

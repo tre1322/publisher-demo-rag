@@ -14,6 +14,7 @@ Cost: ~$0.004 per business (Brave Search free tier + Qwen3-32B token cost).
 import json
 import logging
 import os
+import re
 
 import httpx
 from bs4 import BeautifulSoup
@@ -107,9 +108,19 @@ Website content:
             messages=[{"role": "user", "content": prompt}],
         )
         raw = response.choices[0].message.content or ""
+        # Qwen3 may wrap output in <think>...</think> tags — strip them
+        if "<think>" in raw:
+            raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
         # Strip markdown fences
-        if raw.startswith("```"):
-            raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0]
+        if "```" in raw:
+            # Find JSON between fences
+            match = re.search(r"```(?:json)?\s*\n?(.*?)```", raw, re.DOTALL)
+            if match:
+                raw = match.group(1).strip()
+        # Try to find JSON object in the response
+        json_match = re.search(r"\{[^{}]*\}", raw, re.DOTALL)
+        if json_match:
+            raw = json_match.group(0)
         return json.loads(raw)
     except Exception as e:
         logger.error(f"LLM summarization failed for {business_name}: {e}")
