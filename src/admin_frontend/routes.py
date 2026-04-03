@@ -1081,6 +1081,128 @@ async def review_page(
     return templates.TemplateResponse(request=request, name="review.html")
 
 
+# ── Business Directory Admin ──
+
+
+@router.get("/directory", response_class=HTMLResponse)
+async def directory_admin(
+    request: Request,
+    _username: str = Depends(verify_credentials),
+) -> HTMLResponse:
+    """Render the business directory admin page."""
+    return templates.TemplateResponse(request=request, name="directory.html")
+
+
+@router.get("/api/directory")
+async def list_directory_admin(
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """List all business directory entries for admin."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """SELECT id, name, slug, address, city, state, phone, email, website,
+           category, description, services, keywords, hours_json, social_json,
+           publisher, enrichment_status, last_enriched_at, last_advertised_at,
+           created_at, updated_at
+        FROM organizations ORDER BY last_advertised_at DESC NULLS LAST"""
+    )
+    columns = [desc[0] for desc in cursor.description]
+    rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    conn.close()
+    return JSONResponse(content={"businesses": rows})
+
+
+@router.put("/api/directory/{org_id}")
+async def update_directory_entry(
+    org_id: int,
+    request: Request,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Update a business directory entry."""
+    data = await request.json()
+
+    # Allowed fields to update
+    allowed = {
+        "name", "address", "city", "state", "phone", "email", "website",
+        "category", "description", "services", "keywords", "hours_json",
+        "social_json", "publisher",
+    }
+    updates = {k: v for k, v in data.items() if k in allowed}
+
+    if not updates:
+        return JSONResponse(content={"success": False, "error": "No valid fields to update"})
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    params = list(updates.values()) + [org_id]
+
+    cursor.execute(
+        f"UPDATE organizations SET {set_clause}, updated_at = datetime('now') WHERE id = ?",
+        params,
+    )
+    conn.commit()
+
+    # Also update slug if name changed
+    if "name" in updates:
+        import re
+        slug = re.sub(r"[^a-z0-9]+", "-", updates["name"].lower()).strip("-")
+        cursor.execute("UPDATE organizations SET slug = ? WHERE id = ?", (slug, org_id))
+        conn.commit()
+
+    conn.close()
+    logger.info(f"Directory entry {org_id} updated: {list(updates.keys())}")
+    return JSONResponse(content={"success": True})
+
+
+@router.post("/api/directory/{org_id}/enrich")
+async def enrich_directory_entry(
+    org_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Re-trigger enrichment for a single business."""
+    try:
+        # Reset status to pending first
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE organizations SET enrichment_status = 'pending' WHERE id = ?",
+            (org_id,),
+        )
+        cursor.execute("SELECT name FROM organizations WHERE id = ?", (org_id,))
+        row = cursor.fetchone()
+        name = row[0] if row else "Unknown"
+        conn.commit()
+        conn.close()
+
+        from src.modules.directory.enrichment import enrich_business
+        success = enrich_business(org_id)
+
+        return JSONResponse(content={
+            "success": success,
+            "name": name,
+        })
+    except Exception as e:
+        logger.error(f"Enrichment failed for org {org_id}: {e}")
+        return JSONResponse(content={"success": False, "error": str(e)})
+
+
+@router.post("/api/directory/enrich-all")
+async def enrich_all_pending(
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Enrich all businesses with pending status."""
+    try:
+        from src.modules.directory.enrichment import enrich_pending_businesses
+        result = enrich_pending_businesses()
+        return JSONResponse(content=result)
+    except Exception as e:
+        logger.error(f"Bulk enrichment failed: {e}")
+        return JSONResponse(content={"success": False, "error": str(e)})
+
+
 # ── Phase 1: Extraction endpoints ──
 
 
