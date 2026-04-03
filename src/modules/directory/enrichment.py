@@ -106,9 +106,10 @@ Website content:
             max_tokens=512,
             temperature=0.1,
             messages=[
-                {"role": "system", "content": "/no_think\nYou are a data extraction assistant. Return ONLY valid JSON. No explanation."},
-                {"role": "user", "content": prompt},
+                {"role": "system", "content": "You are a data extraction assistant. Return ONLY valid JSON. No explanation. No thinking."},
+                {"role": "user", "content": prompt + "\n\nReturn ONLY the JSON object, nothing else:"},
             ],
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
         raw = response.choices[0].message.content or ""
         logger.info(f"LLM raw response for {business_name}: {raw[:200]}")
