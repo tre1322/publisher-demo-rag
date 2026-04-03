@@ -258,7 +258,7 @@ def get_ad_by_checksum(checksum: str) -> dict | None:
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "SELECT * FROM advertisements WHERE checksum = ?", (checksum,)
+            "SELECT * FROM advertisements WHERE checksum = ? AND status = 'active'", (checksum,)
         )
     except Exception as e:
         conn.close()
