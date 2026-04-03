@@ -663,6 +663,84 @@ def create_app() -> FastAPI:
 
     # ── Ad Serving Endpoints ──
 
+    # ── Business Profile Page ──
+
+    @app.get("/business/{org_id}", response_class=HTMLResponse)
+    async def business_profile_page(request: Request, org_id: int):
+        """Render business directory profile page."""
+        import json as _json
+        from src.core.database import get_connection
+
+        conn = get_connection()
+        conn.row_factory = lambda c, r: dict(zip([col[0] for col in c.description], r))
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM organizations WHERE id = ?", (org_id,))
+        org = cursor.fetchone()
+
+        if not org:
+            conn.close()
+            return HTMLResponse("<h1>Business not found</h1>", status_code=404)
+
+        # Check if currently advertising (has active ads)
+        cursor.execute(
+            "SELECT COUNT(*) as cnt FROM advertisements WHERE advertiser = ? AND status = 'active'",
+            (org.get("name", ""),),
+        )
+        active_count = cursor.fetchone()
+        conn.close()
+
+        # Parse social JSON
+        social = {}
+        if org.get("social_json"):
+            try:
+                social = _json.loads(org["social_json"])
+            except Exception:
+                pass
+
+        business = {
+            "name": org.get("name", ""),
+            "category": org.get("category", ""),
+            "address": org.get("address", ""),
+            "city": org.get("city", ""),
+            "state": org.get("state", ""),
+            "phone": org.get("phone", ""),
+            "email": org.get("email", ""),
+            "website": org.get("website", ""),
+            "hours": org.get("hours_json", ""),
+            "description": org.get("description", ""),
+            "services": org.get("services", ""),
+            "social": social,
+            "is_active_advertiser": (active_count or {}).get("cnt", 0) > 0,
+        }
+
+        return landing_templates.TemplateResponse(
+            request=request, name="business_detail.html",
+            context={"business": business},
+        )
+
+    @app.get("/api/directory")
+    async def list_directory(publisher: str = ""):
+        """List all business directory entries."""
+        from src.core.database import get_connection as _get_conn
+
+        conn = _get_conn()
+        conn.row_factory = lambda c, r: dict(zip([col[0] for col in c.description], r))
+        cursor = conn.cursor()
+
+        sql = "SELECT id, name, city, state, phone, category, website, description, enrichment_status, last_advertised_at FROM organizations"
+        params: list = []
+        if publisher:
+            sql += " WHERE publisher = ?"
+            params.append(publisher)
+        sql += " ORDER BY last_advertised_at DESC NULLS LAST"
+
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
+        conn.close()
+        return {"businesses": rows, "total": len(rows)}
+
+    # ── Ad Serving Endpoints ──
+
     @app.get("/ad/{ad_id}")
     async def serve_ad_web_image(ad_id: str):
         """Serve web-optimized ad image for modal display."""
