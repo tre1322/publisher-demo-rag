@@ -105,22 +105,35 @@ Website content:
             model=GRADIENT_MODEL,
             max_tokens=512,
             temperature=0.1,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": "/no_think\nYou are a data extraction assistant. Return ONLY valid JSON. No explanation."},
+                {"role": "user", "content": prompt},
+            ],
         )
         raw = response.choices[0].message.content or ""
+        logger.info(f"LLM raw response for {business_name}: {raw[:200]}")
+
         # Qwen3 may wrap output in <think>...</think> tags — strip them
         if "<think>" in raw:
             raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
         # Strip markdown fences
         if "```" in raw:
-            # Find JSON between fences
             match = re.search(r"```(?:json)?\s*\n?(.*?)```", raw, re.DOTALL)
             if match:
                 raw = match.group(1).strip()
-        # Try to find JSON object in the response
-        json_match = re.search(r"\{[^{}]*\}", raw, re.DOTALL)
-        if json_match:
-            raw = json_match.group(0)
+        # Find the outermost JSON object (handles nested braces)
+        depth = 0
+        start = -1
+        for i, ch in enumerate(raw):
+            if ch == "{":
+                if depth == 0:
+                    start = i
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0 and start >= 0:
+                    raw = raw[start : i + 1]
+                    break
         return json.loads(raw)
     except Exception as e:
         logger.error(f"LLM summarization failed for {business_name}: {e}")
