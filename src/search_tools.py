@@ -95,6 +95,80 @@ class SearchTools:
             publisher=publisher,
         )
 
+    def search_directory(
+        self,
+        query: str | None = None,
+        category: str | None = None,
+        publisher: str | None = None,
+    ) -> list[dict]:
+        """Search the business directory for local businesses.
+
+        Returns businesses from the organizations table, scored lower
+        than active ads so advertisers get priority.
+        """
+        from src.core.database import get_connection
+
+        conn = get_connection()
+        conn.row_factory = lambda c, r: dict(zip([col[0] for col in c.description], r))
+        cursor = conn.cursor()
+
+        sql = "SELECT * FROM organizations WHERE 1=1"
+        params: list = []
+
+        if publisher:
+            sql += " AND publisher = ?"
+            params.append(publisher)
+        if category:
+            sql += " AND category LIKE ?"
+            params.append(f"%{category}%")
+        if query:
+            sql += " AND (name LIKE ? OR description LIKE ? OR services LIKE ?)"
+            params.extend([f"%{query}%", f"%{query}%", f"%{query}%"])
+
+        sql += " ORDER BY last_advertised_at DESC NULLS LAST LIMIT 10"
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
+        conn.close()
+
+        results = []
+        for org in rows:
+            name = org.get("name", "")
+            city = org.get("city", "")
+            state = org.get("state", "")
+            phone = org.get("phone", "")
+            website = org.get("website", "")
+            desc = org.get("description", "")
+            services = org.get("services", "")
+
+            text_parts = [f"Local Business: {name}"]
+            if desc:
+                text_parts.append(desc)
+            if services:
+                text_parts.append(f"Services: {services}")
+            if city:
+                text_parts.append(f"Location: {city}, {state}")
+            if phone:
+                text_parts.append(f"Phone: {phone}")
+            if website:
+                text_parts.append(f"Website: {website}")
+
+            results.append({
+                "text": "\n".join(text_parts),
+                "metadata": {
+                    "doc_id": f"dir_{org.get('id', '')}",
+                    "title": name,
+                    "advertiser": name,
+                    "category": org.get("category", ""),
+                    "location": f"{city}, {state}" if city else "",
+                    "url": f"/business/{org.get('id', '')}",
+                    "content_type": "directory",
+                },
+                "score": 0.5,  # Lower than active ads (which get 1.0+)
+                "search_type": "directory",
+            })
+
+        return results
+
     # Event search methods
     def search_events(
         self,
@@ -142,6 +216,25 @@ DATABASE_INFO_SCHEMA = {
 }
 
 
+DIRECTORY_SEARCH_SCHEMA = {
+    "name": "search_directory",
+    "description": "Search the local business directory for businesses by name, services, or category. Returns businesses that have advertised in the newspaper. Use this for questions about local services, stores, restaurants, etc.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Search query — business name, service type, or product",
+            },
+            "category": {
+                "type": "string",
+                "description": "Business category filter (e.g., retail, dining, healthcare, automotive)",
+            },
+        },
+    },
+}
+
+
 def get_search_tools_schema() -> list[dict]:
     """Get combined search tools schema with dynamic categories.
 
@@ -151,6 +244,7 @@ def get_search_tools_schema() -> list[dict]:
     return (
         get_article_tools_schema()
         + get_ad_tools_schema()
+        + [DIRECTORY_SEARCH_SCHEMA]
         + get_event_tools_schema()
         + [DATABASE_INFO_SCHEMA]
     )

@@ -18,24 +18,29 @@ from src.search_tools import SearchTools, get_search_tools_schema
 
 logger = logging.getLogger(__name__)
 
-AGENT_SYSTEM_PROMPT = """You are a search agent for a local newspaper database containing news articles, advertisements, and events. Your job is to find ALL relevant content for user queries.
+AGENT_SYSTEM_PROMPT = """You are a search agent for a local newspaper database containing news articles, advertisements, events, and a business directory. Your job is to find ALL relevant content for user queries.
 
-You have access to six search tools:
+You have access to seven search tools:
 1. semantic_search - Find articles by meaning/concepts
 2. metadata_search - Filter articles by date, author, location, subject
 3. hybrid_search - Combine semantic search with metadata filters (PREFERRED for articles)
 4. search_advertisements - Find ads for local businesses, products, and services
-5. search_events - Find local events like concerts, sports, arts, and community gatherings
-6. get_database_info - Get info about publishers/newspapers and content counts
+5. search_directory - Find local businesses in the directory (name, services, location, phone)
+6. search_events - Find local events like concerts, sports, arts, and community gatherings
+7. get_database_info - Get info about publishers/newspapers and content counts
 
-CRITICAL: For EVERY query, you MUST call ALL THREE of these tools:
+CRITICAL: For EVERY query, you MUST call ALL FOUR of these tools:
 1. hybrid_search (or semantic_search) - to find relevant news articles
 2. search_advertisements - to find relevant ads and local business services
-3. search_events - to find relevant events
+3. search_directory - to find local businesses that may offer what the user needs
+4. search_events - to find relevant events
 
-This ensures users see all relevant content. For example, a query about "roofing" should return:
+Active advertisers (from search_advertisements) should be prioritized over directory-only listings (from search_directory). This ensures paying advertisers get top placement while still showing all relevant businesses.
+
+For example, a query about "roofing" should return:
 - News articles about roofing/construction
-- Ads from local roofing companies
+- Ads from local roofing companies (PRIORITY)
+- Directory listings for hardware/building supply stores
 - Any related events (home improvement shows, etc.)
 
 Use appropriate filters based on the query:
@@ -151,6 +156,13 @@ class SearchAgent:
                 category=tool_input.get("category"),
                 max_price=tool_input.get("max_price"),
                 on_sale_only=tool_input.get("on_sale_only", False),
+                publisher=pub,
+            )
+        elif tool_name == "search_directory":
+            pub = getattr(self, "_current_publisher", None)
+            return self.search_tools.search_directory(
+                query=tool_input.get("query"),
+                category=tool_input.get("category"),
                 publisher=pub,
             )
         elif tool_name == "search_events":

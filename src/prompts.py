@@ -192,6 +192,17 @@ def format_context(
                 f"URL: {url}\n"
                 f"Content: {text}\n"
             )
+        elif content_type == "directory":
+            biz_name = metadata.get("advertiser") or title
+            location = metadata.get("location", "")
+            context_parts.append(
+                f"[Local Business {i}]\n"
+                f"Business: {biz_name}\n"
+                f"Category: {metadata.get('category', '')}\n"
+                f"Location: {location}\n"
+                f"URL: {url}\n"
+                f"Info: {text}\n"
+            )
         else:
             context_parts.append(
                 f"[Article {i}]\n"
