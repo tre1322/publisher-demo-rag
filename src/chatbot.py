@@ -526,17 +526,17 @@ def create_app() -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     async def landing_page(request: Request) -> HTMLResponse:
         """Render the Observer/Advocate landing page with AI chat hero."""
-        return landing_templates.TemplateResponse("landing.html", {"request": request})
+        return landing_templates.TemplateResponse(request=request, name="landing.html")
 
     @app.get("/windom", response_class=HTMLResponse)
     async def windom_landing(request: Request) -> HTMLResponse:
         """Render the Windom / Cottonwood County Citizen landing page."""
-        return landing_templates.TemplateResponse("landing.html", {"request": request})
+        return landing_templates.TemplateResponse(request=request, name="landing.html")
 
     @app.get("/pipestone", response_class=HTMLResponse)
     async def pipestone_landing(request: Request) -> HTMLResponse:
         """Render the Pipestone County Star landing page (green theme)."""
-        return landing_templates.TemplateResponse("landing_pipestone.html", {"request": request})
+        return landing_templates.TemplateResponse(request=request, name="landing_pipestone.html")
 
     # ── Homepage Stories API ──
 
@@ -654,11 +654,10 @@ def create_app() -> FastAPI:
                     if len(related) >= 4:
                         break
 
-        return landing_templates.TemplateResponse("article_detail.html", {
-            "request": request,
-            "article": article,
-            "related": related,
-        })
+        return landing_templates.TemplateResponse(
+            request=request, name="article_detail.html",
+            context={"article": article, "related": related},
+        )
 
     # ── Ad Serving Endpoints ──
 
@@ -769,11 +768,10 @@ def create_app() -> FastAPI:
         article = dict(row)
         related_list = [dict(r) for r in related]
 
-        return landing_templates.TemplateResponse("article_detail.html", {
-            "request": request,
-            "article": article,
-            "related": related_list,
-        })
+        return landing_templates.TemplateResponse(
+            request=request, name="article_detail.html",
+            context={"article": article, "related": related_list},
+        )
 
     @app.get("/health")
     def health_check():

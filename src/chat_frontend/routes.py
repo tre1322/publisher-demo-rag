@@ -42,7 +42,7 @@ def get_engine() -> QueryEngine:
 @router.get("", response_class=HTMLResponse)
 async def chat_page(request: Request) -> HTMLResponse:
     """Render the chat page."""
-    return templates.TemplateResponse("chat.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="chat.html")
 
 
 @router.get("/history")

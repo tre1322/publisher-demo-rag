@@ -117,7 +117,7 @@ async def admin_page(
     request: Request, _username: str = Depends(verify_credentials)
 ) -> HTMLResponse:
     """Render admin dashboard page."""
-    return templates.TemplateResponse("admin.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="admin.html")
 
 
 # API routes
@@ -1078,7 +1078,7 @@ async def review_page(
     request: Request, _username: str = Depends(verify_credentials)
 ) -> HTMLResponse:
     """Render the article review page."""
-    return templates.TemplateResponse("review.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="review.html")
 
 
 # ── Phase 1: Extraction endpoints ──
@@ -1609,11 +1609,10 @@ async def jump_review_page(
     edition = get_edition(edition_id)
     if not edition:
         raise HTTPException(status_code=404, detail=f"Edition {edition_id} not found")
-    return templates.TemplateResponse("jump_review.html", {
-        "request": request,
-        "edition_id": edition_id,
-        "edition": edition,
-    })
+    return templates.TemplateResponse(
+        request=request, name="jump_review.html",
+        context={"edition_id": edition_id, "edition": edition},
+    )
 
 
 @router.get("/api/editions/{edition_id}/jump-review")
