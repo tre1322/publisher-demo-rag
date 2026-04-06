@@ -55,9 +55,15 @@ def _brave_search(query: str) -> tuple[str | None, str | None]:
         results = data.get("web", {}).get("results", [])
         if results:
             # Prefer the business's own website over directories
+            # Skip directory/aggregator sites that are JS-rendered or unhelpful
+            skip_domains = [
+                "facebook.com", "yelp.com", "mapquest.com", "yellowpages.com",
+                "bbb.org", "manta.com", "chamberofcommerce.com", "buzzfile.com",
+                "dandb.com", "superpages.com", "whitepages.com", "angi.com",
+            ]
             for r in results:
                 url = r.get("url", "")
-                if "facebook.com" not in url and "yelp.com" not in url:
+                if not any(d in url for d in skip_domains):
                     return url, None
             return results[0].get("url"), None
         return None, f"Brave Search returned 0 results for: {query}"
@@ -76,8 +82,12 @@ def _fetch_page_text(url: str, max_chars: int = 3000) -> tuple[str, str | None]:
 
     Returns (text, error_reason). text is empty string on failure.
     """
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
     try:
-        resp = httpx.get(url, timeout=10.0, follow_redirects=True)
+        resp = httpx.get(url, timeout=10.0, follow_redirects=True, headers=headers)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
         # Remove scripts, styles, nav, footer
