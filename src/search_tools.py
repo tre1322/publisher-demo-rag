@@ -122,8 +122,27 @@ class SearchTools:
             sql += " AND category LIKE ?"
             params.append(f"%{category}%")
         if query:
-            sql += " AND (name LIKE ? OR description LIKE ? OR services LIKE ? OR keywords LIKE ?)"
-            params.extend([f"%{query}%", f"%{query}%", f"%{query}%", f"%{query}%"])
+            # Extract meaningful words from the query (skip common stop words)
+            stop_words = {
+                "i", "me", "my", "we", "our", "you", "your", "a", "an", "the",
+                "is", "are", "was", "were", "be", "been", "being", "have", "has",
+                "had", "do", "does", "did", "will", "would", "could", "should",
+                "can", "may", "might", "shall", "need", "want", "like", "get",
+                "got", "some", "any", "where", "what", "which", "who", "how",
+                "that", "this", "those", "these", "there", "here", "to", "for",
+                "of", "in", "on", "at", "by", "with", "from", "about", "into",
+                "and", "or", "but", "not", "no", "so", "if", "then", "than",
+                "very", "just", "also", "too", "up", "out", "it", "its",
+            }
+            import re as _re
+            words = [w for w in _re.findall(r"[a-zA-Z]+", query.lower()) if w not in stop_words and len(w) > 2]
+            if words:
+                # Match ANY keyword against name, description, services, or keywords
+                word_clauses = []
+                for word in words:
+                    word_clauses.append("(name LIKE ? OR description LIKE ? OR services LIKE ? OR keywords LIKE ?)")
+                    params.extend([f"%{word}%"] * 4)
+                sql += " AND (" + " OR ".join(word_clauses) + ")"
 
         sql += " ORDER BY last_advertised_at DESC NULLS LAST LIMIT 10"
         cursor.execute(sql, params)
