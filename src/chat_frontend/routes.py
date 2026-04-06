@@ -134,12 +134,15 @@ async def stream_response(
                     logger.info(f"Cross-network search triggered: '{message}' (was: {publisher})")
 
             chunks = engine.retrieve(message, publisher=effective_publisher)
-            # Supplement with ads and events
+            # Supplement with ads, directory, and events
             try:
                 from src.modules.advertisements.search import AdvertisementSearch
                 from src.modules.events.search import EventSearch
+                from src.search_tools import SearchTools
                 ad_results = AdvertisementSearch().search(message, publisher=effective_publisher)
                 chunks.extend(ad_results)
+                dir_results = SearchTools().search_directory(query=message, publisher=effective_publisher)
+                chunks.extend(dir_results)
                 event_results = EventSearch().search(message)
                 chunks.extend(event_results)
             except Exception as sup_err:
