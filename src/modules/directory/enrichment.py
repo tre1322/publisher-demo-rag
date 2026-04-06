@@ -26,6 +26,22 @@ logger = logging.getLogger(__name__)
 
 BRAVE_API_KEY = os.getenv("BRAVE_SEARCH_API_KEY", "")
 
+# Pattern to strip ad metadata from business names before searching
+# Matches: "Double", "Single", "Half", "Quarter", "Full", "Spec", "(Campaign Name 2026)", etc.
+_AD_METADATA_RE = re.compile(
+    r"\b(?:Single|Double|Half|Quarter|Full|Spec)\b"   # ad size keywords
+    r"|\((?:[^)]*\d{4})\)"                            # (Campaign Name YYYY)
+    , re.IGNORECASE
+)
+
+
+def _clean_business_name(raw_name: str) -> str:
+    """Strip ad metadata (size, campaign) from business name for search queries."""
+    cleaned = _AD_METADATA_RE.sub("", raw_name)
+    # Collapse multiple spaces
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+    return cleaned
+
 
 def _brave_search(query: str) -> tuple[str | None, str | None]:
     """Search Brave and return (top_result_url, error_reason).
@@ -65,7 +81,9 @@ def _brave_search(query: str) -> tuple[str | None, str | None]:
                 url = r.get("url", "")
                 if not any(d in url for d in skip_domains):
                     return url, None
-            return results[0].get("url"), None
+            # All results were directory sites — don't use them
+            domains_found = [r.get("url", "")[:60] for r in results]
+            return None, f"All {len(results)} Brave results were directory sites: {domains_found}"
         return None, f"Brave Search returned 0 results for: {query}"
     except httpx.HTTPStatusError as e:
         msg = f"Brave Search HTTP {e.response.status_code}: {e.response.text[:200]}"
@@ -205,8 +223,9 @@ def enrich_business(org_id: int) -> bool:
     name = org.get("name", "")
     city = org.get("city", "")
     state = org.get("state", "MN")
+    clean_name = _clean_business_name(name)
 
-    logger.info(f"Enriching business: {name} ({city}, {state})")
+    logger.info(f"Enriching business: {name} → search as: {clean_name} ({city}, {state})")
 
     # Ensure enrichment_error column exists (safe migration)
     try:
@@ -214,8 +233,8 @@ def enrich_business(org_id: int) -> bool:
     except Exception:
         cursor.execute("ALTER TABLE organizations ADD COLUMN enrichment_error TEXT")
 
-    # Step 1: Brave Search
-    search_query = f"{name} {city} {state}".strip()
+    # Step 1: Brave Search (use cleaned name without ad metadata)
+    search_query = f"{clean_name} {city} {state}".strip()
     url, search_err = _brave_search(search_query)
     if not url:
         cursor.execute(
@@ -239,8 +258,8 @@ def enrich_business(org_id: int) -> bool:
         logger.warning(f"Enrichment failed for {name}: {fetch_err}")
         return False
 
-    # Step 3: LLM summarize
-    profile = _llm_summarize(name, page_text)
+    # Step 3: LLM summarize (use cleaned name so LLM doesn't echo ad metadata)
+    profile = _llm_summarize(clean_name, page_text)
 
     # Step 4: Update organizations table
     social = {}
