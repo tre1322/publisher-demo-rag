@@ -40,8 +40,11 @@ def init_all_tables() -> None:
     from src.modules.conversations import database as conversations_db
     from src.modules.editions import database as editions_db
     from src.modules.events import database as events_db
+    from src.modules.costs.tracker import init_cost_table
     from src.modules.organizations import database as orgs_db
     from src.modules.publishers import database as publishers_db
+
+    init_cost_table()
 
     orgs_db.init_table()
     publishers_db.init_table()

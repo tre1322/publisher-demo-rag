@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Costs — Admin</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #f5f5f5; color: #333; }
+        .header { background: #1a1f36; color: white; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { font-size: 20px; font-weight: 600; }
+        .header a { color: #93c5fd; text-decoration: none; font-size: 14px; }
+        .container { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+
+        .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .stat-card .label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-card .value { font-size: 32px; font-weight: 700; margin-top: 4px; }
+        .stat-card .value::before { content: '$'; font-size: 20px; color: #888; }
+        .stat-card.highlight { border-left: 4px solid #2563eb; }
+
+        .section { background: white; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 24px; overflow: hidden; }
+        .section-header { padding: 16px 20px; border-bottom: 1px solid #f0f0f0; font-weight: 600; font-size: 16px; display: flex; justify-content: space-between; align-items: center; }
+        .section-body { padding: 0; }
+
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 10px 20px; background: #f9fafb; font-size: 12px; text-transform: uppercase; color: #888; letter-spacing: 0.3px; font-weight: 600; }
+        td { padding: 10px 20px; border-top: 1px solid #f0f0f0; font-size: 14px; }
+        tr:hover td { background: #f9fafb; }
+        .cost-cell { font-weight: 600; color: #059669; }
+        .calls-cell { color: #2563eb; font-weight: 500; }
+        .tokens-cell { color: #888; font-size: 13px; }
+
+        .badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+        .badge-anthropic { background: #fef3c7; color: #92400e; }
+        .badge-gradient { background: #dbeafe; color: #1e40af; }
+        .badge-brave { background: #fce7f3; color: #9d174d; }
+
+        .bar { height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; min-width: 100px; }
+        .bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
+        .bar-fill.anthropic { background: #f59e0b; }
+        .bar-fill.gradient { background: #3b82f6; }
+        .bar-fill.brave { background: #ec4899; }
+
+        .empty { text-align: center; padding: 40px; color: #999; font-size: 15px; }
+
+        @media (max-width: 768px) {
+            .stats { grid-template-columns: 1fr 1fr; }
+            th, td { padding: 8px 12px; font-size: 13px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>💰 API Costs</h1>
+        <a href="/admin">← Back to Dashboard</a>
+    </div>
+
+    <div class="container">
+        <div class="stats" id="stats">
+            <div class="stat-card highlight"><div class="label">Total All-Time</div><div class="value" id="stat-total">0.00</div></div>
+            <div class="stat-card"><div class="label">Today</div><div class="value" id="stat-today">0.00</div></div>
+            <div class="stat-card"><div class="label">This Week</div><div class="value" id="stat-week">0.00</div></div>
+            <div class="stat-card"><div class="label">This Month</div><div class="value" id="stat-month">0.00</div></div>
+        </div>
+
+        <div class="section">
+            <div class="section-header">Cost by Provider</div>
+            <div class="section-body">
+                <table>
+                    <thead><tr><th>Provider</th><th>API Calls</th><th>Input Tokens</th><th>Output Tokens</th><th>Cost</th><th>Share</th></tr></thead>
+                    <tbody id="by-provider"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-header">Cost by Purpose</div>
+            <div class="section-body">
+                <table>
+                    <thead><tr><th>Purpose</th><th>API Calls</th><th>Cost</th><th>Share</th></tr></thead>
+                    <tbody id="by-purpose"><tr><td colspan="4" class="empty">Loading...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-header">
+                <span>Daily History</span>
+                <span style="font-size:13px;color:#888;font-weight:400">Last 30 days</span>
+            </div>
+            <div class="section-body">
+                <table>
+                    <thead><tr><th>Date</th><th>Provider</th><th>Purpose</th><th>Calls</th><th>Tokens</th><th>Cost</th></tr></thead>
+                    <tbody id="history"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+<script>
+    function fmt(n) { return (n || 0).toFixed(4); }
+    function fmtK(n) { return n >= 1000 ? (n/1000).toFixed(1) + 'K' : (n || 0).toString(); }
+
+    function providerBadge(p) {
+        const cls = p === 'anthropic' ? 'anthropic' : p === 'gradient' ? 'gradient' : 'brave';
+        return '<span class="badge badge-' + cls + '">' + p + '</span>';
+    }
+
+    function purposeLabel(p) {
+        const labels = {
+            chatbot_response: '💬 Chatbot Response',
+            search_agent: '🔍 Search Agent',
+            ad_ocr_pdf: '📄 Ad OCR (PDF)',
+            ad_ocr_image: '🖼 Ad OCR (Image)',
+            vision_extraction: '👁 Vision Extraction',
+            directory_enrichment: '🏪 Directory Enrichment',
+        };
+        return labels[p] || p;
+    }
+
+    async function loadCosts() {
+        try {
+            const [summaryRes, historyRes] = await Promise.all([
+                fetch('/admin/api/costs/summary'),
+                fetch('/admin/api/costs/history'),
+            ]);
+            const summary = await summaryRes.json();
+            const history = await historyRes.json();
+
+            // Stats
+            document.getElementById('stat-total').textContent = fmt(summary.total_cost);
+            document.getElementById('stat-today').textContent = fmt(summary.today_cost);
+            document.getElementById('stat-week').textContent = fmt(summary.week_cost);
+            document.getElementById('stat-month').textContent = fmt(summary.month_cost);
+
+            // By provider
+            const provEl = document.getElementById('by-provider');
+            if (!summary.by_provider || !summary.by_provider.length) {
+                provEl.innerHTML = '<tr><td colspan="6" class="empty">No API calls recorded yet</td></tr>';
+            } else {
+                const maxCost = Math.max(...summary.by_provider.map(p => p.cost));
+                provEl.innerHTML = summary.by_provider.map(p => `
+                    <tr>
+                        <td>${providerBadge(p.provider)}</td>
+                        <td class="calls-cell">${p.calls}</td>
+                        <td class="tokens-cell">${fmtK(p.input_tokens)}</td>
+                        <td class="tokens-cell">${fmtK(p.output_tokens)}</td>
+                        <td class="cost-cell">$${fmt(p.cost)}</td>
+                        <td><div class="bar"><div class="bar-fill ${p.provider}" style="width:${maxCost ? (p.cost/maxCost*100) : 0}%"></div></div></td>
+                    </tr>
+                `).join('');
+            }
+
+            // By purpose
+            const purpEl = document.getElementById('by-purpose');
+            if (!summary.by_purpose || !summary.by_purpose.length) {
+                purpEl.innerHTML = '<tr><td colspan="4" class="empty">No API calls recorded yet</td></tr>';
+            } else {
+                const maxPurp = Math.max(...summary.by_purpose.map(p => p.cost));
+                purpEl.innerHTML = summary.by_purpose.map(p => `
+                    <tr>
+                        <td>${purposeLabel(p.purpose)}</td>
+                        <td class="calls-cell">${p.calls}</td>
+                        <td class="cost-cell">$${fmt(p.cost)}</td>
+                        <td><div class="bar"><div class="bar-fill anthropic" style="width:${maxPurp ? (p.cost/maxPurp*100) : 0}%"></div></div></td>
+                    </tr>
+                `).join('');
+            }
+
+            // History
+            const histEl = document.getElementById('history');
+            if (!history.history || !history.history.length) {
+                histEl.innerHTML = '<tr><td colspan="6" class="empty">No history yet</td></tr>';
+            } else {
+                histEl.innerHTML = history.history.map(h => `
+                    <tr>
+                        <td>${h.date}</td>
+                        <td>${providerBadge(h.provider)}</td>
+                        <td>${purposeLabel(h.purpose)}</td>
+                        <td class="calls-cell">${h.calls}</td>
+                        <td class="tokens-cell">${fmtK(h.input_tokens + h.output_tokens)}</td>
+                        <td class="cost-cell">$${fmt(h.cost)}</td>
+                    </tr>
+                `).join('');
+            }
+        } catch (e) {
+            console.error('Failed to load costs:', e);
+        }
+    }
+
+    loadCosts();
+</script>
+</body>
+</html>

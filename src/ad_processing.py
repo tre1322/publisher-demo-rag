@@ -146,6 +146,16 @@ def ocr_pdf_bytes(data: bytes, filename: str = "ad.pdf") -> str:
             messages=[{"role": "user", "content": content}],
         )
 
+        # Log cost
+        try:
+            from src.modules.costs.tracker import log_api_call
+            usage = getattr(response, "usage", None)
+            log_api_call("anthropic", "claude-haiku-4-5-20251001", "ad_ocr_pdf",
+                input_tokens=getattr(usage, "input_tokens", 0) if usage else 0,
+                output_tokens=getattr(usage, "output_tokens", 0) if usage else 0)
+        except Exception:
+            pass
+
         ocr_text = ""
         for block in response.content:
             if hasattr(block, "text"):

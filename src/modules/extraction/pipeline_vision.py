@@ -185,6 +185,16 @@ def _extract_page_vision(
         }],
     )
 
+    # Log cost
+    try:
+        from src.modules.costs.tracker import log_api_call
+        usage = getattr(response, "usage", None)
+        log_api_call("anthropic", VISION_MODEL, "vision_extraction",
+            input_tokens=getattr(usage, "input_tokens", 0) if usage else 0,
+            output_tokens=getattr(usage, "output_tokens", 0) if usage else 0)
+    except Exception:
+        pass
+
     raw_text = response.content[0].text.strip()
 
     # Strip markdown code fences if present

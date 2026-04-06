@@ -41,6 +41,13 @@ def _brave_search(query: str) -> str | None:
             timeout=10.0,
         )
         resp.raise_for_status()
+        # Log Brave Search cost
+        try:
+            from src.modules.costs.tracker import log_api_call
+            log_api_call("brave", "brave_search", "directory_enrichment",
+                cost_usd=0.003)  # ~$0.003 per query
+        except Exception:
+            pass
         data = resp.json()
         results = data.get("web", {}).get("results", [])
         if results:
@@ -114,6 +121,16 @@ Website content:
         )
         raw = response.choices[0].message.content or ""
         logger.info(f"LLM raw response for {business_name}: {raw[:200]}")
+
+        # Log cost
+        try:
+            from src.modules.costs.tracker import log_api_call
+            usage = getattr(response, "usage", None)
+            log_api_call("gradient", GRADIENT_MODEL, "directory_enrichment",
+                input_tokens=getattr(usage, "prompt_tokens", 0) if usage else 0,
+                output_tokens=getattr(usage, "completion_tokens", 0) if usage else 0)
+        except Exception:
+            pass
 
         # Qwen3 may wrap output in <think>...</think> tags — strip them
         if "<think>" in raw:

@@ -276,6 +276,15 @@ class QueryEngine:
                 messages=oai_messages,
             )
             logger.info("Received response from Gradient")
+            # Log cost
+            try:
+                from src.modules.costs.tracker import log_api_call
+                usage = getattr(response, "usage", None)
+                log_api_call("gradient", GRADIENT_MODEL, "chatbot_response",
+                    input_tokens=getattr(usage, "prompt_tokens", 0) if usage else 0,
+                    output_tokens=getattr(usage, "completion_tokens", 0) if usage else 0)
+            except Exception:
+                pass
             return response.choices[0].message.content or ""
         else:
             logger.info(f"Calling Claude API ({LLM_MODEL})...")
@@ -287,6 +296,15 @@ class QueryEngine:
                 messages=messages,  # type: ignore[arg-type]
             )
             logger.info("Received response from Claude")
+            # Log cost
+            try:
+                from src.modules.costs.tracker import log_api_call
+                usage = getattr(response, "usage", None)
+                log_api_call("anthropic", LLM_MODEL, "chatbot_response",
+                    input_tokens=getattr(usage, "input_tokens", 0) if usage else 0,
+                    output_tokens=getattr(usage, "output_tokens", 0) if usage else 0)
+            except Exception:
+                pass
             content_block = response.content[0]
             if hasattr(content_block, "text"):
                 return content_block.text  # type: ignore[union-attr]

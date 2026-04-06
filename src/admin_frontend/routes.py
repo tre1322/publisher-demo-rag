@@ -1081,6 +1081,36 @@ async def review_page(
     return templates.TemplateResponse(request=request, name="review.html")
 
 
+# ── API Costs Admin ──
+
+
+@router.get("/costs", response_class=HTMLResponse)
+async def costs_admin(
+    request: Request,
+    _username: str = Depends(verify_credentials),
+) -> HTMLResponse:
+    """Render the API costs dashboard."""
+    return templates.TemplateResponse(request=request, name="costs.html")
+
+
+@router.get("/api/costs/summary")
+async def costs_summary(
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Get cost summary grouped by provider and purpose."""
+    from src.modules.costs.tracker import get_cost_summary
+    return JSONResponse(content=get_cost_summary())
+
+
+@router.get("/api/costs/history")
+async def costs_history(
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Get daily cost history for the last 30 days."""
+    from src.modules.costs.tracker import get_cost_history
+    return JSONResponse(content={"history": get_cost_history(30)})
+
+
 # ── Business Directory Admin ──
 
 
