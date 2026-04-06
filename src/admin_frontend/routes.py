@@ -1130,11 +1130,18 @@ async def list_directory_admin(
     """List all business directory entries for admin."""
     conn = get_connection()
     cursor = conn.cursor()
+    # Ensure enrichment_error column exists (safe migration)
+    cursor.execute("PRAGMA table_info(organizations)")
+    existing_cols = {row[1] for row in cursor.fetchall()}
+    if "enrichment_error" not in existing_cols:
+        cursor.execute("ALTER TABLE organizations ADD COLUMN enrichment_error TEXT")
+        conn.commit()
+
     cursor.execute(
         """SELECT id, name, slug, address, city, state, phone, email, website,
            category, description, services, keywords, hours_json, social_json,
            publisher, enrichment_status, last_enriched_at, last_advertised_at,
-           created_at, updated_at
+           enrichment_error, created_at, updated_at
         FROM organizations ORDER BY last_advertised_at DESC NULLS LAST"""
     )
     columns = [desc[0] for desc in cursor.description]
@@ -1230,6 +1237,32 @@ async def enrich_all_pending(
         return JSONResponse(content=result)
     except Exception as e:
         logger.error(f"Bulk enrichment failed: {e}")
+        return JSONResponse(content={"success": False, "error": str(e)})
+
+
+@router.post("/api/directory/retry-failed")
+async def retry_failed_enrichments(
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Reset all failed businesses to pending and re-enrich them."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE organizations SET enrichment_status = 'pending', enrichment_error = NULL WHERE enrichment_status = 'failed'"
+        )
+        reset_count = cursor.rowcount
+        conn.commit()
+        conn.close()
+
+        if reset_count == 0:
+            return JSONResponse(content={"total": 0, "enriched": 0, "failed": 0})
+
+        from src.modules.directory.enrichment import enrich_pending_businesses
+        result = enrich_pending_businesses()
+        return JSONResponse(content=result)
+    except Exception as e:
+        logger.error(f"Retry failed enrichments error: {e}")
         return JSONResponse(content={"success": False, "error": str(e)})
 
 

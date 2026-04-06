@@ -61,6 +61,7 @@ def main() -> None:
         ("enrichment_status", "TEXT DEFAULT 'pending'"),  # pending, enriched, failed
         ("last_enriched_at", "TEXT"),
         ("last_advertised_at", "TEXT"),  # tracks recency for tiered search
+        ("enrichment_error", "TEXT"),    # why enrichment failed (for debugging)
     ]:
         _add_column_if_missing(cur, "organizations", col, coltype)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_orgs_publisher ON organizations(publisher)")

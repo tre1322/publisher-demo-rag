@@ -27,11 +27,14 @@ logger = logging.getLogger(__name__)
 BRAVE_API_KEY = os.getenv("BRAVE_SEARCH_API_KEY", "")
 
 
-def _brave_search(query: str) -> str | None:
-    """Search Brave and return the top result URL."""
+def _brave_search(query: str) -> tuple[str | None, str | None]:
+    """Search Brave and return (top_result_url, error_reason).
+
+    Returns (url, None) on success, (None, reason) on failure.
+    """
     if not BRAVE_API_KEY:
         logger.warning("BRAVE_SEARCH_API_KEY not set — skipping web enrichment")
-        return None
+        return None, "BRAVE_SEARCH_API_KEY not configured"
 
     try:
         resp = httpx.get(
@@ -55,15 +58,24 @@ def _brave_search(query: str) -> str | None:
             for r in results:
                 url = r.get("url", "")
                 if "facebook.com" not in url and "yelp.com" not in url:
-                    return url
-            return results[0].get("url")
+                    return url, None
+            return results[0].get("url"), None
+        return None, f"Brave Search returned 0 results for: {query}"
+    except httpx.HTTPStatusError as e:
+        msg = f"Brave Search HTTP {e.response.status_code}: {e.response.text[:200]}"
+        logger.error(msg)
+        return None, msg
     except Exception as e:
-        logger.error(f"Brave Search failed: {e}")
-    return None
+        msg = f"Brave Search error: {e}"
+        logger.error(msg)
+        return None, msg
 
 
-def _fetch_page_text(url: str, max_chars: int = 3000) -> str:
-    """Fetch a URL and extract text content."""
+def _fetch_page_text(url: str, max_chars: int = 3000) -> tuple[str, str | None]:
+    """Fetch a URL and extract text content.
+
+    Returns (text, error_reason). text is empty string on failure.
+    """
     try:
         resp = httpx.get(url, timeout=10.0, follow_redirects=True)
         resp.raise_for_status()
@@ -72,10 +84,17 @@ def _fetch_page_text(url: str, max_chars: int = 3000) -> str:
         for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
             tag.decompose()
         text = soup.get_text(separator="\n", strip=True)
-        return text[:max_chars]
+        if not text.strip():
+            return "", f"Page at {url} returned no text content"
+        return text[:max_chars], None
+    except httpx.HTTPStatusError as e:
+        msg = f"Page fetch HTTP {e.response.status_code} for {url}"
+        logger.error(msg)
+        return "", msg
     except Exception as e:
-        logger.error(f"Failed to fetch {url}: {e}")
-        return ""
+        msg = f"Page fetch failed for {url}: {e}"
+        logger.error(msg)
+        return "", msg
 
 
 def _llm_summarize(business_name: str, page_text: str) -> dict:
@@ -179,27 +198,35 @@ def enrich_business(org_id: int) -> bool:
 
     logger.info(f"Enriching business: {name} ({city}, {state})")
 
+    # Ensure enrichment_error column exists (safe migration)
+    try:
+        cursor.execute("SELECT enrichment_error FROM organizations LIMIT 0")
+    except Exception:
+        cursor.execute("ALTER TABLE organizations ADD COLUMN enrichment_error TEXT")
+
     # Step 1: Brave Search
     search_query = f"{name} {city} {state}".strip()
-    url = _brave_search(search_query)
+    url, search_err = _brave_search(search_query)
     if not url:
         cursor.execute(
-            "UPDATE organizations SET enrichment_status = 'failed', updated_at = datetime('now') WHERE id = ?",
-            (org_id,),
+            "UPDATE organizations SET enrichment_status = 'failed', enrichment_error = ?, updated_at = datetime('now') WHERE id = ?",
+            (search_err, org_id),
         )
         conn.commit()
         conn.close()
+        logger.warning(f"Enrichment failed for {name}: {search_err}")
         return False
 
     # Step 2: Fetch page
-    page_text = _fetch_page_text(url)
+    page_text, fetch_err = _fetch_page_text(url)
     if not page_text:
         cursor.execute(
-            "UPDATE organizations SET enrichment_status = 'failed', website = ?, updated_at = datetime('now') WHERE id = ?",
-            (url, org_id),
+            "UPDATE organizations SET enrichment_status = 'failed', enrichment_error = ?, website = ?, updated_at = datetime('now') WHERE id = ?",
+            (fetch_err, url, org_id),
         )
         conn.commit()
         conn.close()
+        logger.warning(f"Enrichment failed for {name}: {fetch_err}")
         return False
 
     # Step 3: LLM summarize
@@ -224,6 +251,7 @@ def enrich_business(org_id: int) -> bool:
             website = ?,
             social_json = ?,
             enrichment_status = 'enriched',
+            enrichment_error = NULL,
             last_enriched_at = datetime('now'),
             updated_at = datetime('now')
         WHERE id = ?""",

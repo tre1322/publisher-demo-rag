@@ -79,6 +79,7 @@
         <div class="toolbar">
             <input type="text" id="search-input" placeholder="Search businesses..." oninput="filterList()">
             <button class="btn-green" onclick="enrichAll()">🔄 Enrich All Pending</button>
+            <button class="btn-blue" onclick="retryFailed()">🔁 Retry All Failed</button>
             <button class="btn-gray" onclick="loadDirectory()">↻ Refresh</button>
         </div>
 
@@ -146,6 +147,7 @@
                     </div>
                 </div>
                 <div class="biz-card-body">
+                    ${b.enrichment_error ? '<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#991b1b;"><strong>Failure reason:</strong> ' + esc(b.enrichment_error) + '</div>' : ''}
                     <div class="field-grid">
                         <div class="field"><label>Business Name</label><input value="${esc(b.name || '')}" data-id="${b.id}" data-field="name"></div>
                         <div class="field"><label>Category</label><input value="${esc(b.category || '')}" data-id="${b.id}" data-field="category"></div>
@@ -232,6 +234,22 @@
             loadDirectory();
         } catch (e) {
             showToast('Bulk enrichment failed: ' + e.message, true);
+        }
+    }
+
+    async function retryFailed() {
+        showToast('Retrying all failed businesses...');
+        try {
+            const res = await fetch('/admin/api/directory/retry-failed', { method: 'POST' });
+            const data = await res.json();
+            if (data.total === 0) {
+                showToast('No failed businesses to retry');
+            } else {
+                showToast(`Retried: ${data.enriched}/${data.total} succeeded, ${data.failed} still failed`);
+            }
+            loadDirectory();
+        } catch (e) {
+            showToast('Retry failed: ' + e.message, true);
         }
     }
 
