@@ -383,11 +383,20 @@ async def list_tables(_username: str = Depends(verify_credentials)) -> JSONRespo
 
 @router.get("/api/editions")
 async def get_editions_list(
+    publisher: str | None = None,
     _username: str = Depends(verify_credentials),
 ) -> JSONResponse:
-    """Get all editions with their status."""
+    """Get all editions with their status, optionally filtered by publisher."""
     editions = get_all_editions(limit=50)
-    return JSONResponse(content={"editions": editions, "total": get_edition_count()})
+    if publisher:
+        # Filter by publisher name → publisher_id
+        from src.modules.publishers.database import get_publisher_by_name
+        pub = get_publisher_by_name(publisher)
+        if pub:
+            editions = [e for e in editions if e.get("publisher_id") == pub["id"]]
+        else:
+            editions = []
+    return JSONResponse(content={"editions": editions, "total": len(editions)})
 
 
 @router.post("/api/editions/upload")
@@ -911,6 +920,7 @@ async def upload_publisher_edition(
 async def list_articles(
     edition_id: int | None = None,
     needs_review: bool | None = None,
+    publisher: str | None = None,
     limit: int = 50,
     _username: str = Depends(verify_credentials),
 ) -> JSONResponse:
@@ -921,6 +931,11 @@ async def list_articles(
         articles = get_articles_needing_review(limit=limit)
     else:
         articles = get_articles_needing_review(limit=limit)
+
+    # Filter by publisher if specified
+    if publisher and articles:
+        articles = [a for a in articles if a.get("publisher") == publisher]
+
     return JSONResponse(content={"articles": articles})
 
 

@@ -120,10 +120,13 @@ async def stream_response(
             # Grand Network: default to this publisher's content, but if the user
             # explicitly asks about another city/paper, search across ALL publishers.
             effective_publisher = publisher
+            cross_network = False
             if publisher:
                 cross_ref_keywords = [
                     "windom", "pipestone", "mountain lake", "mt. lake", "mt lake",
                     "butterfield", "cottonwood", "jackson", "murray",
+                    "worthington", "nobles", "luverne", "rock county",
+                    "marshall", "southwest", "slayton",
                     "observer", "advocate", "pipestone star", "county star",
                     "other papers", "other newspapers", "regional", "network",
                     "across", "all papers", "all publications",
@@ -131,22 +134,68 @@ async def stream_response(
                 msg_lower = message.lower()
                 if any(kw in msg_lower for kw in cross_ref_keywords):
                     effective_publisher = None  # Search all publishers
+                    cross_network = True
                     logger.info(f"Cross-network search triggered: '{message}' (was: {publisher})")
 
+            # Primary search: this publisher's content
             chunks = engine.retrieve(message, publisher=effective_publisher)
+
+            # Secondary search: network content from other publishers (lower priority)
+            # Only when we searched a specific publisher (not already cross-network)
+            if effective_publisher and not cross_network:
+                try:
+                    network_chunks = engine.retrieve(message, publisher=None)
+                    seen_ids = set()
+                    for c in chunks:
+                        doc_id = c.get("metadata", {}).get("doc_id")
+                        if doc_id:
+                            seen_ids.add(doc_id)
+                    for c in network_chunks:
+                        doc_id = c.get("metadata", {}).get("doc_id")
+                        if doc_id and doc_id not in seen_ids:
+                            c["score"] = c.get("score", 0.5) * 0.6  # Lower priority
+                            chunks.append(c)
+                            seen_ids.add(doc_id)
+                except Exception as net_err:
+                    logger.warning(f"Secondary network search error: {net_err}")
+
             # Supplement with ads, directory, and events
             try:
                 from src.modules.advertisements.search import AdvertisementSearch
                 from src.modules.events.search import EventSearch
                 from src.search_tools import SearchTools
+
+                # Primary: this publisher's ads/directory
                 ad_results = AdvertisementSearch().search(message, publisher=effective_publisher)
                 chunks.extend(ad_results)
                 dir_results = SearchTools().search_directory(query=message, publisher=effective_publisher)
                 chunks.extend(dir_results)
+
+                # Secondary: network ads/directory (lower priority)
+                if effective_publisher and not cross_network:
+                    net_ad_results = AdvertisementSearch().search(message, publisher=None)
+                    seen_ad_ids = {c.get("metadata", {}).get("doc_id") for c in ad_results}
+                    for ad in net_ad_results:
+                        ad_id = ad.get("metadata", {}).get("doc_id")
+                        if ad_id and ad_id not in seen_ad_ids:
+                            ad["score"] = ad.get("score", 0.5) * 0.6
+                            chunks.append(ad)
+
+                    net_dir_results = SearchTools().search_directory(query=message, publisher=None)
+                    seen_dir_ids = {c.get("metadata", {}).get("doc_id") for c in dir_results}
+                    for d in net_dir_results:
+                        d_id = d.get("metadata", {}).get("doc_id")
+                        if d_id and d_id not in seen_dir_ids:
+                            d["score"] = d.get("score", 0.5) * 0.6
+                            chunks.append(d)
+
                 event_results = EventSearch().search(message)
                 chunks.extend(event_results)
             except Exception as sup_err:
                 logger.warning(f"Supplemental search error: {sup_err}")
+
+            # Re-sort all results by score (publisher's own content first)
+            chunks.sort(key=lambda c: c.get("score", 0), reverse=True)
 
             # Send thinking status
             yield b'{"type": "status", "content": "Thinking..."}\n'

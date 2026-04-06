@@ -123,12 +123,22 @@
 </div>
 
 <div class="container">
-    <!-- Tabs -->
-    <div class="tabs">
-        <button class="tab active" data-panel="review-panel">Review Articles</button>
-        <button class="tab" data-panel="edition-upload-panel">Upload Editions</button>
-        <button class="tab" data-panel="ad-upload-panel">Upload Ads</button>
-        <button class="tab" data-panel="editions-panel">Editions</button>
+    <!-- Publisher filter + Tabs -->
+    <div style="display:flex; align-items:center; gap:16px; margin-bottom:20px;">
+        <div class="tabs" style="margin-bottom:0;">
+            <button class="tab active" data-panel="review-panel">Review Articles</button>
+            <button class="tab" data-panel="edition-upload-panel">Upload Editions</button>
+            <button class="tab" data-panel="ad-upload-panel">Upload Ads</button>
+            <button class="tab" data-panel="editions-panel">Editions</button>
+        </div>
+        <div style="margin-left:auto; display:flex; align-items:center; gap:8px;">
+            <label style="font-size:0.8rem; font-weight:500; color:#666;">Filter:</label>
+            <select id="publisher-filter" style="padding:6px 10px; border:1px solid #d1d5db; border-radius:8px; font-size:0.85rem; font-family:inherit;">
+                <option value="">All Publishers</option>
+                <option value="Cottonwood County Citizen">Cottonwood County Citizen</option>
+                <option value="Pipestone Star">Pipestone Star</option>
+            </select>
+        </div>
     </div>
 
     <!-- Edition upload panel -->
@@ -361,11 +371,21 @@
         btn.textContent = 'Upload Ads';
     });
 
+    // Publisher filter change reloads current view
+    document.getElementById('publisher-filter').addEventListener('change', () => {
+        const activePanel = document.querySelector('.upload-panel.active');
+        if (activePanel && activePanel.id === 'review-panel') loadArticles();
+        if (activePanel && activePanel.id === 'editions-panel') loadEditions();
+    });
+
     // Load articles
     async function loadArticles() {
         const el = document.getElementById('article-list');
+        const pubFilter = document.getElementById('publisher-filter').value;
         try {
-            const res = await fetch('/admin/api/articles?needs_review=true');
+            let url = '/admin/api/articles?needs_review=true';
+            if (pubFilter) url += '&publisher=' + encodeURIComponent(pubFilter);
+            const res = await fetch(url);
             const data = await res.json();
             if (!data.articles || data.articles.length === 0) {
                 el.innerHTML = '<div class="empty-state">No articles to review</div>';
@@ -392,8 +412,11 @@
     // Load editions
     async function loadEditions() {
         const el = document.getElementById('editions-list');
+        const pubFilter = document.getElementById('publisher-filter').value;
         try {
-            const res = await fetch('/admin/api/editions');
+            let url = '/admin/api/editions';
+            if (pubFilter) url += '?publisher=' + encodeURIComponent(pubFilter);
+            const res = await fetch(url);
             const data = await res.json();
             if (!data.editions || data.editions.length === 0) {
                 el.innerHTML = '<div class="empty-state">No editions yet</div>';
