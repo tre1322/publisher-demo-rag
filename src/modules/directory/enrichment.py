@@ -27,9 +27,11 @@ logger = logging.getLogger(__name__)
 BRAVE_API_KEY = os.getenv("BRAVE_SEARCH_API_KEY", "")
 
 # Pattern to strip ad metadata from business names before searching
-# Matches: "Double", "Single", "Half", "Quarter", "Full", "Spec", "(Campaign Name 2026)", etc.
+# Matches: "Double", "Single", "Half", "Quarter", "Full", "Spec", fraction chars,
+# and "(Campaign Name 2026)" style parentheticals.
 _AD_METADATA_RE = re.compile(
     r"\b(?:Single|Double|Half|Quarter|Full|Spec)\b"   # ad size keywords
+    r"|[½¼¾⅓⅔]"                                       # fraction characters (½ page ads)
     r"|\((?:[^)]*\d{4})\)"                            # (Campaign Name YYYY)
     , re.IGNORECASE
 )
@@ -38,24 +40,36 @@ _AD_METADATA_RE = re.compile(
 def _clean_business_name(raw_name: str) -> str:
     """Strip ad metadata (size, campaign) from business name for search queries."""
     cleaned = _AD_METADATA_RE.sub("", raw_name)
-    # Collapse multiple spaces
-    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+    # Collapse multiple spaces and newlines
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned
 
 
-def _brave_search(query: str) -> tuple[str | None, str | None]:
-    """Search Brave and return (top_result_url, error_reason).
+# Domains to skip in Brave Search results (aggregator/directory sites)
+_SKIP_DOMAINS = [
+    "facebook.com", "yelp.com", "mapquest.com", "yellowpages.com",
+    "bbb.org", "manta.com", "chamberofcommerce.com", "buzzfile.com",
+    "dandb.com", "superpages.com", "whitepages.com", "angi.com",
+    "indeed.com", "reddit.com", "linkedin.com", "nextdoor.com",
+    "justia.com", "tripadvisor.com",
+]
 
-    Returns (url, None) on success, (None, reason) on failure.
+
+def _brave_search(query: str) -> tuple[str | None, str | None, str]:
+    """Search Brave and return (top_result_url, error_reason, snippet_text).
+
+    Returns (url, None, snippet) on success, (None, reason, snippet) on failure.
+    The snippet is a concat of search result descriptions — useful as fallback
+    text for LLM summarization when the actual page can't be fetched.
     """
     if not BRAVE_API_KEY:
         logger.warning("BRAVE_SEARCH_API_KEY not set — skipping web enrichment")
-        return None, "BRAVE_SEARCH_API_KEY not configured"
+        return None, "BRAVE_SEARCH_API_KEY not configured", ""
 
     try:
         resp = httpx.get(
             "https://api.search.brave.com/res/v1/web/search",
-            params={"q": query, "count": 3},
+            params={"q": query, "count": 5},
             headers={"X-Subscription-Token": BRAVE_API_KEY, "Accept": "application/json"},
             timeout=10.0,
         )
@@ -69,30 +83,33 @@ def _brave_search(query: str) -> tuple[str | None, str | None]:
             pass
         data = resp.json()
         results = data.get("web", {}).get("results", [])
+
+        # Collect snippet text from all results as fallback
+        snippets = []
+        for r in results:
+            title = r.get("title", "")
+            desc = r.get("description", "")
+            if title or desc:
+                snippets.append(f"{title}: {desc}")
+        snippet_text = "\n".join(snippets)
+
         if results:
-            # Prefer the business's own website over directories
-            # Skip directory/aggregator sites that are JS-rendered or unhelpful
-            skip_domains = [
-                "facebook.com", "yelp.com", "mapquest.com", "yellowpages.com",
-                "bbb.org", "manta.com", "chamberofcommerce.com", "buzzfile.com",
-                "dandb.com", "superpages.com", "whitepages.com", "angi.com",
-            ]
             for r in results:
                 url = r.get("url", "")
-                if not any(d in url for d in skip_domains):
-                    return url, None
-            # All results were directory sites — don't use them
+                if not any(d in url for d in _SKIP_DOMAINS):
+                    return url, None, snippet_text
+            # All results were directory sites — return snippets for fallback
             domains_found = [r.get("url", "")[:60] for r in results]
-            return None, f"All {len(results)} Brave results were directory sites: {domains_found}"
-        return None, f"Brave Search returned 0 results for: {query}"
+            return None, f"All {len(results)} Brave results were directory sites: {domains_found}", snippet_text
+        return None, f"Brave Search returned 0 results for: {query}", ""
     except httpx.HTTPStatusError as e:
         msg = f"Brave Search HTTP {e.response.status_code}: {e.response.text[:200]}"
         logger.error(msg)
-        return None, msg
+        return None, msg, ""
     except Exception as e:
         msg = f"Brave Search error: {e}"
         logger.error(msg)
-        return None, msg
+        return None, msg, ""
 
 
 def _fetch_page_text(url: str, max_chars: int = 3000) -> tuple[str, str | None]:
@@ -104,23 +121,38 @@ def _fetch_page_text(url: str, max_chars: int = 3000) -> tuple[str, str | None]:
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
-    try:
-        resp = httpx.get(url, timeout=10.0, follow_redirects=True, headers=headers)
+
+    def _try_fetch(verify_ssl: bool = True) -> tuple[str, str | None]:
+        resp = httpx.get(url, timeout=10.0, follow_redirects=True, headers=headers, verify=verify_ssl)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
-        # Remove scripts, styles, nav, footer
         for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
             tag.decompose()
         text = soup.get_text(separator="\n", strip=True)
         if not text.strip():
-            return "", f"Page at {url} returned no text content"
+            return "", f"Page at {url} returned no text content (HTTP {resp.status_code})"
         return text[:max_chars], None
-    except httpx.HTTPStatusError as e:
-        msg = f"Page fetch HTTP {e.response.status_code} for {url}"
-        logger.error(msg)
-        return "", msg
+
+    try:
+        return _try_fetch(verify_ssl=True)
     except Exception as e:
-        msg = f"Page fetch failed for {url}: {e}"
+        # Retry with SSL verification disabled for sites with bad certs
+        if "CERTIFICATE_VERIFY_FAILED" in str(e) or "SSL" in str(e):
+            try:
+                logger.info(f"Retrying {url} with SSL verification disabled")
+                return _try_fetch(verify_ssl=False)
+            except httpx.HTTPStatusError as e2:
+                msg = f"Page fetch HTTP {e2.response.status_code} for {url} (SSL-retry)"
+                logger.error(msg)
+                return "", msg
+            except Exception as e2:
+                msg = f"Page fetch failed for {url} (SSL-retry): {e2}"
+                logger.error(msg)
+                return "", msg
+        if isinstance(e, httpx.HTTPStatusError):
+            msg = f"Page fetch HTTP {e.response.status_code} for {url}"
+        else:
+            msg = f"Page fetch failed for {url}: {e}"
         logger.error(msg)
         return "", msg
 
@@ -221,9 +253,13 @@ def enrich_business(org_id: int) -> bool:
 
     org = dict(row)
     name = org.get("name", "")
-    city = org.get("city", "")
-    state = org.get("state", "MN")
+    city = org.get("city", "") or ""
+    state = org.get("state", "") or ""
     clean_name = _clean_business_name(name)
+
+    # Sanitize city/state: strip newlines and whitespace
+    city = " ".join(city.split()).strip()
+    state = " ".join(state.split()).strip()
 
     logger.info(f"Enriching business: {name} → search as: {clean_name} ({city}, {state})")
 
@@ -234,29 +270,46 @@ def enrich_business(org_id: int) -> bool:
         cursor.execute("ALTER TABLE organizations ADD COLUMN enrichment_error TEXT")
 
     # Step 1: Brave Search (use cleaned name without ad metadata)
-    search_query = f"{clean_name} {city} {state}".strip()
-    url, search_err = _brave_search(search_query)
-    if not url:
+    search_parts = [clean_name]
+    if city:
+        search_parts.append(city)
+    if state:
+        search_parts.append(state)
+    search_query = " ".join(search_parts)
+    url, search_err, snippet_text = _brave_search(search_query)
+
+    if not url and not snippet_text:
+        # No URL and no snippets — total failure
         cursor.execute(
             "UPDATE organizations SET enrichment_status = 'failed', enrichment_error = ?, updated_at = datetime('now') WHERE id = ?",
             (search_err, org_id),
         )
         conn.commit()
         conn.close()
-        logger.warning(f"Enrichment failed for {name}: {search_err}")
+        logger.warning(f"Enrichment failed for {clean_name}: {search_err}")
         return False
 
-    # Step 2: Fetch page
-    page_text, fetch_err = _fetch_page_text(url)
-    if not page_text:
-        cursor.execute(
-            "UPDATE organizations SET enrichment_status = 'failed', enrichment_error = ?, website = ?, updated_at = datetime('now') WHERE id = ?",
-            (fetch_err, url, org_id),
-        )
-        conn.commit()
-        conn.close()
-        logger.warning(f"Enrichment failed for {name}: {fetch_err}")
-        return False
+    # Step 2: Fetch page (or use snippet fallback)
+    page_text = ""
+    if url:
+        page_text, fetch_err = _fetch_page_text(url)
+        if not page_text and snippet_text:
+            # Page fetch failed but we have search snippets — use those
+            logger.info(f"Using Brave snippet fallback for {clean_name} (page fetch failed: {fetch_err})")
+            page_text = snippet_text
+        elif not page_text:
+            cursor.execute(
+                "UPDATE organizations SET enrichment_status = 'failed', enrichment_error = ?, website = ?, updated_at = datetime('now') WHERE id = ?",
+                (fetch_err, url, org_id),
+            )
+            conn.commit()
+            conn.close()
+            logger.warning(f"Enrichment failed for {clean_name}: {fetch_err}")
+            return False
+    elif snippet_text:
+        # No direct URL but have snippets from directory sites — use them
+        logger.info(f"Using Brave snippet fallback for {clean_name} (all results were directory sites)")
+        page_text = snippet_text
 
     # Step 3: LLM summarize (use cleaned name so LLM doesn't echo ad metadata)
     profile = _llm_summarize(clean_name, page_text)
