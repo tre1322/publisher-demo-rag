@@ -802,6 +802,12 @@ def ingest_idml_edition(
             "source_pipeline": "idml",
         })
 
+    # Clear old content_items for this edition (idempotent re-run)
+    from src.modules.content_items.database import delete_content_items_for_edition
+    deleted = delete_content_items_for_edition(edition_id)
+    if deleted > 0:
+        logger.info(f"Cleared {deleted} old content items for edition {edition_id}")
+
     # Write to all destinations via shared layer
     write_result = write_articles_to_all(
         articles=standard_articles,
