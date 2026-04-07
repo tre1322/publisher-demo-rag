@@ -314,6 +314,29 @@ def _extract_story_text(story_path: str) -> dict | None:
     # Collapse multiple blank lines
     body_text = re.sub(r"\n{3,}", "\n\n", body_text).strip()
 
+    # Final byline validation: only keep if it looks like a person's name or attribution
+    if byline:
+        byline_clean = re.sub(r"\s*Word\s*count:\s*\d+", "", byline).strip()
+        byline_clean = re.sub(r"\S+@\S+\.\S+", "", byline_clean).strip()
+        # Valid byline patterns: "Kyle Kuphal", "Staff reports", "Submitted by the Sheriff"
+        is_valid_byline = bool(
+            re.match(r"^[A-Z][a-z]+ [A-Z][a-z]+", byline_clean)  # "Kyle Kuphal"
+            or re.match(r"(?i)^(staff|submitted|from|by|associated press)", byline_clean)
+        )
+        if is_valid_byline:
+            byline = byline_clean
+        else:
+            byline = ""
+
+    # Strip embedded byline/email from start of body if still present
+    if body_text:
+        # "Staff reports\nsports@pipestonestar.com\n..." → strip both lines
+        body_text = re.sub(r"^Staff reports\s*\n?\s*\S+@\S+\.\S+\s*\n?", "", body_text, flags=re.IGNORECASE).strip()
+        # "Name | Title\nemail@domain.com\n..." → strip
+        body_text = re.sub(r"^[A-Z][a-z]+ [A-Z][a-z]+\s*\|[^\n]*\n?\s*\S+@\S+\.\S+\s*\n?", "", body_text).strip()
+        # Lone email at start
+        body_text = re.sub(r"^\S+@\S+\.\S+\s*\n?", "", body_text).strip()
+
     # Skip very short content (labels, page numbers, etc.)
     # But keep jump references — they're needed by the stitcher
     total_text = headline + body_text
@@ -927,6 +950,16 @@ def parse_idml(idml_path: str) -> list[dict]:
             # FTP credentials and upload instructions
             if re.search(r"(?i)ftp\.\w+|password:|user name:", combined[:200]):
                 continue
+
+            # Final headline fallback: if still no headline, extract from first body sentence
+            if not story.get("headline"):
+                body_for_hl = story.get("body_text", "")
+                if body_for_hl:
+                    first_line = body_for_hl.split("\n")[0].strip()
+                    if ". " in first_line:
+                        story["headline"] = first_line[:first_line.index(". ") + 1]
+                    elif len(first_line) < 100:
+                        story["headline"] = first_line
 
             articles.append(story)
 
