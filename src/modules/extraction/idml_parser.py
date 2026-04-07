@@ -289,8 +289,12 @@ def _extract_story_text(story_path: str) -> dict | None:
     body_text = re.sub(r"\n{3,}", "\n\n", body_text).strip()
 
     # Skip very short content (labels, page numbers, etc.)
+    # But keep jump references — they're needed by the stitcher
     total_text = headline + body_text
-    if len(total_text) < 20:
+    is_jump_ref = bool(re.search(
+        r"(?i)(page\s*\d|from\s*page|[•·]\s*page|PagE\s*\d)", total_text
+    ))
+    if len(total_text) < 20 and not is_jump_ref:
         return None
 
     # Determine content type from styles and content
@@ -528,18 +532,58 @@ def _stitch_jumped_articles(
     for sid, story in stories.items():
         if not story:
             continue
-        full_text = (story.get("body_text") or story.get("headline") or "").strip()
+        # Combine headline + body for pattern matching (jump references may be split)
+        headline_text = (story.get("headline") or "").strip()
+        body_text_raw = (story.get("body_text") or "").strip()
+        full_text = (body_text_raw + "\n" + headline_text).strip() if body_text_raw else headline_text
+        # Also check the combined form (keyword in body, "from page" in headline)
+        combined_text = (headline_text + " " + body_text_raw).strip()
         lower = full_text.lower()
 
-        # Jump out: "See KEYWORD •Page" or "See KEYWORD •BACK Page"
+        # Jump out patterns:
+        # 1. "See KEYWORD •Page" or "See KEYWORD •BACK Page" (Cottonwood)
+        # 2. "KEYWORD • Page N" (Pipestone Star)
+        # 3. "KEYWORD PagE N" (Pipestone Star classifieds)
         m = re.search(r"[Ss]ee\s+(\w+)\s*[•·]", lower)
         if m:
             jump_outs[m.group(1).lower()] = sid
+        else:
+            m = re.match(r"^(\w+)\s*[•·]\s*[Pp]age\s*\d", full_text)
+            if m:
+                jump_outs[m.group(1).lower()] = sid
+            else:
+                m = re.match(r"^(.+?)\s+[Pp]ag[eE]\s*\d", full_text)
+                if m and len(full_text) < 150:
+                    # Short text with "PagE N" at end — extract keyword
+                    kw = re.sub(r"\s+", "", m.group(1).strip().split(",")[0]).lower()
+                    if kw and len(kw) < 30:
+                        jump_outs[kw] = sid
 
-        # Jump in: "KEYWORD/ ... From page N" (may have newlines between)
-        m = re.search(r"^(\w+)/\s*.*[Ff]rom\s+page", full_text, re.DOTALL)
-        if m:
-            jump_ins[m.group(1).lower()] = sid
+        # Jump in patterns:
+        # 1. "KEYWORD/ ... From page N" (Cottonwood)
+        # 2. "KEYWORDfrom Page 1" or "KEYWORD from Page 1" (Pipestone Star)
+        # 3. "KEYWORDFROM PAGE 1" (Pipestone Star all-caps)
+        # Check all text forms: full_text, combined_text (headline + body)
+        jump_in_found = False
+        for check_text in [full_text, combined_text]:
+            if jump_in_found:
+                break
+            m = re.search(r"^(\w+)/\s*.*[Ff]rom\s+page", check_text, re.DOTALL)
+            if m:
+                jump_ins[m.group(1).lower()] = sid
+                jump_in_found = True
+            else:
+                m = re.match(r"^(.*?)from\s*page\s*\d", check_text, re.IGNORECASE | re.DOTALL)
+                if m:
+                    kw = re.sub(r"\s+", "", m.group(1).strip()).lower()
+                    if kw and len(kw) < 30:
+                        jump_ins[kw] = sid
+                        jump_in_found = True
+
+    logger.info(f"Jump stitching: {len(jump_outs)} jump-outs, {len(jump_ins)} jump-ins")
+    for kw in jump_outs:
+        if kw in jump_ins:
+            logger.info(f"  Matched jump keyword: {kw}")
 
     if not jump_outs or not jump_ins:
         return
