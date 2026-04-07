@@ -8,9 +8,9 @@
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         :root {
-            --nav-bg: {% if article.publisher == 'Pipestone County Star' %}#1a472a{% else %}#1e293b{% endif %};
-            --accent: {% if article.publisher == 'Pipestone County Star' %}#16a34a{% else %}#dc2626{% endif %};
-            --accent-light: {% if article.publisher == 'Pipestone County Star' %}#bbf7d0{% else %}#fecaca{% endif %};
+            --nav-bg: {% if article.publisher == 'Pipestone Star' %}#1a472a{% else %}#1e293b{% endif %};
+            --accent: {% if article.publisher == 'Pipestone Star' %}#16a34a{% else %}#dc2626{% endif %};
+            --accent-light: {% if article.publisher == 'Pipestone Star' %}#bbf7d0{% else %}#fecaca{% endif %};
             --text: #1e293b;
             --text-muted: #64748b;
             --bg: #f8fafc;
@@ -355,13 +355,13 @@
 <body>
     <!-- Nav -->
     <nav class="nav">
-        <a class="nav-brand" href="{% if article.publisher == 'Pipestone County Star' %}/pipestone{% else %}/{% endif %}">
-            <div class="nav-logo">{% if article.publisher == 'Pipestone County Star' %}P{% else %}O{% endif %}</div>
+        <a class="nav-brand" href="{% if article.publisher == 'Pipestone Star' %}/pipestone{% else %}/{% endif %}">
+            <div class="nav-logo">{% if article.publisher == 'Pipestone Star' %}P{% else %}O{% endif %}</div>
             <span class="nav-title">{{ article.publisher or 'Observer/Advocate' }}</span>
             <span class="nav-badge">Grand Network</span>
         </a>
         <ul class="nav-links">
-            <li><a href="{% if article.publisher == 'Pipestone County Star' %}/pipestone{% else %}/{% endif %}">Home</a></li>
+            <li><a href="{% if article.publisher == 'Pipestone Star' %}/pipestone{% else %}/{% endif %}">Home</a></li>
             <li><a href="/pipestone">Nearby Papers</a></li>
         </ul>
     </nav>
@@ -370,7 +370,7 @@
     <div class="page-layout">
         <!-- Article Column -->
         <div>
-            <a class="back-link" href="{% if article.publisher == 'Pipestone County Star' %}/pipestone{% else %}/{% endif %}">
+            <a class="back-link" href="{% if article.publisher == 'Pipestone Star' %}/pipestone{% else %}/{% endif %}">
                 &larr; Back to {{ article.publisher or 'Home' }}
             </a>
 

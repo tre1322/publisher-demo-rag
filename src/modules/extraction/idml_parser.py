@@ -125,10 +125,11 @@ def _extract_story_text(story_path: str) -> dict | None:
     # These are paragraphs with boilerplate text left in the InDesign template.
     _PLACEHOLDER_PATTERNS = [
         re.compile(r"^(Headline)+$", re.IGNORECASE),           # "HeadlineHeadline"
-        re.compile(r"^(Body)+$", re.IGNORECASE),               # "BodyBody"
+        re.compile(r"^(Body)+\s*$", re.IGNORECASE),            # "BodyBody", "BodyBodyBody"
         re.compile(r"^(Subhead)+$", re.IGNORECASE),            # "SubheadSubhead"
         re.compile(r"Pipestone County has highest 14-day"),     # template placeholder text
-        re.compile(r"^By \w+ Word count:", re.IGNORECASE),     # template byline stub
+        re.compile(r"^By \w+\s*\w*\s*Word count:", re.IGNORECASE),  # "By Kyle Word count:" or "By KyleWord count:"
+        re.compile(r"Word count:\s*\d+\s*$", re.IGNORECASE),  # standalone "Word count: 847"
     ]
 
     filtered_paragraphs = []
@@ -185,7 +186,9 @@ def _extract_story_text(story_path: str) -> dict | None:
             has_body = True
             # Check first paragraph for byline pattern (with word count stripped)
             first_line = text.strip().split("\n")[0]
-            byline_match = re.match(r"^[Bb]y\s+(.+?)(?:\s*Word count:\s*\d+)?$", first_line)
+            # Strip word count from anywhere in the line before matching
+            first_line_clean = re.sub(r"(?i)\s*Word\s*count:\s*\d+", "", first_line).strip()
+            byline_match = re.match(r"^[Bb]y\s+(.+)$", first_line_clean)
             if not byline and not body_parts and byline_match:
                 byline = byline_match.group(1).strip()
                 remainder = "\n".join(text.strip().split("\n")[1:]).strip()
@@ -202,6 +205,8 @@ def _extract_story_text(story_path: str) -> dict | None:
         elif role == "furniture":
             pass  # Skip furniture
 
+    # Filter orphan body fragments (< 15 chars and not a meaningful word)
+    body_parts = [p for p in body_parts if len(p.strip()) >= 15 or re.match(r"^[A-Z]", p.strip())]
     body_text = "\n\n".join(body_parts).strip()
 
     # Post-extraction cleanup: strip IDML artifacts
@@ -391,7 +396,7 @@ def _match_headlines_to_bodies(
         # Filter out continuation headers and jump references
         story_text = (story.get("body_text") or story.get("headline") or "").lower()
         is_continuation = bool(re.search(r"from\s+page\s*\d|^\w+/\s", story_text))
-        is_jump_ref = bool(re.search(r"see\s+\w+\s*[•·]|continued\s+on", story_text))
+        is_jump_ref = bool(re.search(r"see\s+\w+\s*[•·]|continued\s+on|page\s*\d+\s*$", story_text))
         # Masthead: only short text that looks like a newspaper header
         # (e.g. "Cottonwood County Citizen WEDNESDAY, April 1, 2026")
         is_masthead = story["char_count"] < 200 and bool(re.search(
@@ -784,6 +789,16 @@ def parse_idml(idml_path: str) -> list[dict]:
             # "What's Inside" tease duplicates: headline matches a tease on the front page
             # These are small frame headlines that got matched to wrong body stories
             if hl and any(hl in tease or tease in hl for tease in whats_inside_texts):
+                continue
+            # Production/editorial notes (internal InDesign comments)
+            if re.search(r"(?i)(print off|art bucket|PDF proof|kyle\s*$|\* front page|\* complete story|\* jumps match|\* by line|\* cutline|\* obits)", combined):
+                continue
+            # Pipestone Star staff/contact boilerplate
+            if re.search(r"@pipestonestar\.com|pipestone\s*star\s*staff|507-825-3333", combined):
+                if story["char_count"] < 800:
+                    continue
+            # FTP credentials and upload instructions
+            if re.search(r"(?i)ftp\.\w+|password:|user name:", combined[:200]):
                 continue
 
             articles.append(story)
