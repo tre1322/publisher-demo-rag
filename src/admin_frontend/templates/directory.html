@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Business Directory — Admin</title>
+    <title>{% if publisher %}{{ publisher }} — {% endif %}Business Directory — Admin</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: system-ui, -apple-system, sans-serif; background: #f5f5f5; color: #333; }
@@ -64,8 +64,8 @@
 </head>
 <body>
     <div class="header">
-        <h1>🏪 Business Directory</h1>
-        <a href="/admin">← Back to Dashboard</a>
+        <h1>🏪 {% if publisher %}{{ publisher }} — {% endif %}Business Directory</h1>
+        <a href="/admin/{% if publisher_slug %}{{ publisher_slug }}{% endif %}">← Back to Dashboard</a>
     </div>
 
     <div class="container">
@@ -92,6 +92,8 @@
 
 <script>
     let allBusinesses = [];
+    const DIR_PUBLISHER = '{{ publisher }}';
+    const dirPubParam = DIR_PUBLISHER ? '?publisher=' + encodeURIComponent(DIR_PUBLISHER) : '';
 
     function showToast(msg, isError) {
         const t = document.getElementById('toast');
@@ -102,7 +104,7 @@
 
     async function loadDirectory() {
         try {
-            const res = await fetch('/admin/api/directory');
+            const res = await fetch('/admin/api/directory' + dirPubParam);
             const data = await res.json();
             allBusinesses = data.businesses || [];
             updateStats();

@@ -111,21 +111,36 @@ def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)) ->
     return credentials.username
 
 
+# Publisher slug → name mapping for scoped admin routes
+_PUBLISHER_SLUGS = {
+    "cottonwood": "Cottonwood County Citizen",
+    "pipestone": "Pipestone Star",
+}
+
+
 # Page route
 @router.get("", response_class=HTMLResponse)
 async def admin_page(
     request: Request, _username: str = Depends(verify_credentials)
 ) -> HTMLResponse:
-    """Render admin dashboard page."""
-    return templates.TemplateResponse(request=request, name="admin.html")
+    """Render admin dashboard page (network-wide)."""
+    return templates.TemplateResponse(request=request, name="admin.html", context={"request": request, "publisher": "", "publisher_slug": ""})
+
+
+def _publisher_context(request: Request, publisher_slug: str) -> dict:
+    """Build template context for publisher-scoped pages."""
+    pub_name = _PUBLISHER_SLUGS.get(publisher_slug, "")
+    return {"request": request, "publisher": pub_name, "publisher_slug": publisher_slug}
 
 
 # API routes
 @router.get("/api/stats")
-async def get_stats(_username: str = Depends(verify_credentials)) -> JSONResponse:
-    """Get conversation statistics."""
+async def get_stats(
+    publisher: str | None = None, _username: str = Depends(verify_credentials)
+) -> JSONResponse:
+    """Get conversation statistics, optionally filtered by publisher."""
     try:
-        stats = get_conversation_stats()
+        stats = get_conversation_stats(publisher=publisher)
         return JSONResponse(content=stats)
     except Exception as e:
         logger.error(f"Failed to get stats: {e}")
@@ -137,10 +152,11 @@ async def get_stats(_username: str = Depends(verify_credentials)) -> JSONRespons
 
 @router.get("/api/queries")
 async def get_queries(
-    limit: int = 100, top_n: int = 20, _username: str = Depends(verify_credentials)
+    limit: int = 100, top_n: int = 20, publisher: str | None = None,
+    _username: str = Depends(verify_credentials),
 ) -> JSONResponse:
-    """Get most common queries."""
-    conversations = get_all_conversations(limit=limit)
+    """Get most common queries, optionally filtered by publisher."""
+    conversations = get_all_conversations(limit=limit, publisher=publisher)
     all_queries = []
 
     for conv in conversations:
@@ -159,10 +175,11 @@ async def get_queries(
 
 @router.get("/api/words")
 async def get_words(
-    limit: int = 100, top_n: int = 30, _username: str = Depends(verify_credentials)
+    limit: int = 100, top_n: int = 30, publisher: str | None = None,
+    _username: str = Depends(verify_credentials),
 ) -> JSONResponse:
-    """Get most common words in queries."""
-    conversations = get_all_conversations(limit=limit)
+    """Get most common words in queries, optionally filtered by publisher."""
+    conversations = get_all_conversations(limit=limit, publisher=publisher)
     all_words = []
 
     stop_words = {
@@ -213,10 +230,11 @@ def _calculate_duration(started_at: str, ended_at: str | None) -> str:
 
 @router.get("/api/conversations")
 async def get_conversations_list(
-    limit: int = 10, _username: str = Depends(verify_credentials)
+    limit: int = 10, publisher: str | None = None,
+    _username: str = Depends(verify_credentials),
 ) -> JSONResponse:
-    """Get recent conversations with details."""
-    conversations = get_all_conversations(limit=limit)
+    """Get recent conversations with details, optionally filtered by publisher."""
+    conversations = get_all_conversations(limit=limit, publisher=publisher)
     results = []
 
     for conv in conversations:
@@ -1104,26 +1122,28 @@ async def costs_admin(
     request: Request,
     _username: str = Depends(verify_credentials),
 ) -> HTMLResponse:
-    """Render the API costs dashboard."""
-    return templates.TemplateResponse(request=request, name="costs.html")
+    """Render the API costs dashboard (network-wide)."""
+    return templates.TemplateResponse(request=request, name="costs.html", context={"request": request, "publisher": "", "publisher_slug": ""})
 
 
 @router.get("/api/costs/summary")
 async def costs_summary(
+    publisher: str | None = None,
     _username: str = Depends(verify_credentials),
 ) -> JSONResponse:
-    """Get cost summary grouped by provider and purpose."""
+    """Get cost summary grouped by provider and purpose, optionally filtered by publisher."""
     from src.modules.costs.tracker import get_cost_summary
-    return JSONResponse(content=get_cost_summary())
+    return JSONResponse(content=get_cost_summary(publisher=publisher))
 
 
 @router.get("/api/costs/history")
 async def costs_history(
+    publisher: str | None = None,
     _username: str = Depends(verify_credentials),
 ) -> JSONResponse:
-    """Get daily cost history for the last 30 days."""
+    """Get daily cost history for the last 30 days, optionally filtered by publisher."""
     from src.modules.costs.tracker import get_cost_history
-    return JSONResponse(content={"history": get_cost_history(30)})
+    return JSONResponse(content={"history": get_cost_history(30, publisher=publisher)})
 
 
 # ── Business Directory Admin ──
@@ -1134,15 +1154,16 @@ async def directory_admin(
     request: Request,
     _username: str = Depends(verify_credentials),
 ) -> HTMLResponse:
-    """Render the business directory admin page."""
-    return templates.TemplateResponse(request=request, name="directory.html")
+    """Render the business directory admin page (network-wide)."""
+    return templates.TemplateResponse(request=request, name="directory.html", context={"request": request, "publisher": "", "publisher_slug": ""})
 
 
 @router.get("/api/directory")
 async def list_directory_admin(
+    publisher: str | None = None,
     _username: str = Depends(verify_credentials),
 ) -> JSONResponse:
-    """List all business directory entries for admin."""
+    """List all business directory entries for admin, optionally filtered by publisher."""
     conn = get_connection()
     cursor = conn.cursor()
     # Ensure enrichment_error column exists (safe migration)
@@ -1152,13 +1173,23 @@ async def list_directory_admin(
         cursor.execute("ALTER TABLE organizations ADD COLUMN enrichment_error TEXT")
         conn.commit()
 
-    cursor.execute(
-        """SELECT id, name, slug, address, city, state, phone, email, website,
-           category, description, services, keywords, hours_json, social_json,
-           publisher, enrichment_status, last_enriched_at, last_advertised_at,
-           enrichment_error, created_at, updated_at
-        FROM organizations ORDER BY last_advertised_at DESC NULLS LAST"""
-    )
+    if publisher:
+        cursor.execute(
+            """SELECT id, name, slug, address, city, state, phone, email, website,
+               category, description, services, keywords, hours_json, social_json,
+               publisher, enrichment_status, last_enriched_at, last_advertised_at,
+               enrichment_error, created_at, updated_at
+            FROM organizations WHERE publisher = ? ORDER BY last_advertised_at DESC NULLS LAST""",
+            (publisher,),
+        )
+    else:
+        cursor.execute(
+            """SELECT id, name, slug, address, city, state, phone, email, website,
+               category, description, services, keywords, hours_json, social_json,
+               publisher, enrichment_status, last_enriched_at, last_advertised_at,
+               enrichment_error, created_at, updated_at
+            FROM organizations ORDER BY last_advertised_at DESC NULLS LAST"""
+        )
     columns = [desc[0] for desc in cursor.description]
     rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
     conn.close()
@@ -2096,3 +2127,37 @@ async def reset_data(
     except Exception as e:
         logger.error(f"Reset failed: {e}", exc_info=True)
         return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
+
+
+# ── Publisher-scoped admin page routes ──
+# These MUST be at the bottom so they don't shadow specific routes like /review, /costs, /directory, /api/*
+
+
+@router.get("/{publisher_slug}", response_class=HTMLResponse)
+async def admin_publisher_dashboard(
+    request: Request, publisher_slug: str, _username: str = Depends(verify_credentials)
+) -> HTMLResponse:
+    """Render publisher-scoped admin dashboard."""
+    if publisher_slug not in _PUBLISHER_SLUGS:
+        return templates.TemplateResponse(request=request, name="admin.html", context={"request": request, "publisher": "", "publisher_slug": ""})
+    return templates.TemplateResponse(request=request, name="admin.html", context=_publisher_context(request, publisher_slug))
+
+
+@router.get("/{publisher_slug}/directory", response_class=HTMLResponse)
+async def admin_publisher_directory(
+    request: Request, publisher_slug: str, _username: str = Depends(verify_credentials)
+) -> HTMLResponse:
+    """Render publisher-scoped business directory."""
+    if publisher_slug not in _PUBLISHER_SLUGS:
+        return templates.TemplateResponse(request=request, name="directory.html", context={"request": request, "publisher": "", "publisher_slug": ""})
+    return templates.TemplateResponse(request=request, name="directory.html", context=_publisher_context(request, publisher_slug))
+
+
+@router.get("/{publisher_slug}/costs", response_class=HTMLResponse)
+async def admin_publisher_costs(
+    request: Request, publisher_slug: str, _username: str = Depends(verify_credentials)
+) -> HTMLResponse:
+    """Render publisher-scoped API costs dashboard."""
+    if publisher_slug not in _PUBLISHER_SLUGS:
+        return templates.TemplateResponse(request=request, name="costs.html", context={"request": request, "publisher": "", "publisher_slug": ""})
+    return templates.TemplateResponse(request=request, name="costs.html", context=_publisher_context(request, publisher_slug))

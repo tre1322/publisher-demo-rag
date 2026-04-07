@@ -227,7 +227,8 @@ class SearchAgent:
             usage = getattr(response, "usage", None)
             log_api_call("anthropic", LLM_MODEL, "search_agent",
                 input_tokens=getattr(usage, "input_tokens", 0) if usage else 0,
-                output_tokens=getattr(usage, "output_tokens", 0) if usage else 0)
+                output_tokens=getattr(usage, "output_tokens", 0) if usage else 0,
+                publisher=getattr(self, "_current_publisher", None))
         except Exception:
             pass
 

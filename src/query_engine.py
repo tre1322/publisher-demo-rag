@@ -282,7 +282,8 @@ class QueryEngine:
                 usage = getattr(response, "usage", None)
                 log_api_call("gradient", GRADIENT_MODEL, "chatbot_response",
                     input_tokens=getattr(usage, "prompt_tokens", 0) if usage else 0,
-                    output_tokens=getattr(usage, "completion_tokens", 0) if usage else 0)
+                    output_tokens=getattr(usage, "completion_tokens", 0) if usage else 0,
+                    publisher=getattr(self, "_current_publisher", None))
             except Exception:
                 pass
             return response.choices[0].message.content or ""
@@ -302,7 +303,8 @@ class QueryEngine:
                 usage = getattr(response, "usage", None)
                 log_api_call("anthropic", LLM_MODEL, "chatbot_response",
                     input_tokens=getattr(usage, "input_tokens", 0) if usage else 0,
-                    output_tokens=getattr(usage, "output_tokens", 0) if usage else 0)
+                    output_tokens=getattr(usage, "output_tokens", 0) if usage else 0,
+                    publisher=getattr(self, "_current_publisher", None))
             except Exception:
                 pass
             content_block = response.content[0]

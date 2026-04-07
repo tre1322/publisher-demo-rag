@@ -44,12 +44,19 @@ def init_cost_table() -> None:
             output_tokens INTEGER DEFAULT 0,
             cost_usd REAL DEFAULT 0,
             metadata_json TEXT,
+            publisher TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    # Migration: add publisher column if missing
+    cursor.execute("PRAGMA table_info(api_costs)")
+    existing = {row[1] for row in cursor.fetchall()}
+    if "publisher" not in existing:
+        cursor.execute("ALTER TABLE api_costs ADD COLUMN publisher TEXT")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_costs_timestamp ON api_costs(timestamp)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_costs_provider ON api_costs(provider)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_costs_purpose ON api_costs(purpose)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_costs_publisher ON api_costs(publisher)")
     conn.commit()
     conn.close()
 
@@ -76,6 +83,7 @@ def log_api_call(
     output_tokens: int = 0,
     cost_usd: float | None = None,
     metadata: str | None = None,
+    publisher: str | None = None,
 ) -> None:
     """Log a paid API call to the database.
 
@@ -87,6 +95,7 @@ def log_api_call(
         output_tokens: output token count
         cost_usd: explicit cost override (e.g., for Brave Search flat cost)
         metadata: optional JSON string with extra info
+        publisher: optional publisher name for scoped cost tracking
     """
     if cost_usd is None:
         cost_usd = _calculate_cost(model, input_tokens, output_tokens)
@@ -95,9 +104,9 @@ def log_api_call(
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute(
-            """INSERT INTO api_costs (provider, model, purpose, input_tokens, output_tokens, cost_usd, metadata_json)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (provider, model, purpose, input_tokens, output_tokens, cost_usd, metadata),
+            """INSERT INTO api_costs (provider, model, purpose, input_tokens, output_tokens, cost_usd, metadata_json, publisher)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (provider, model, purpose, input_tokens, output_tokens, cost_usd, metadata, publisher),
         )
         conn.commit()
         conn.close()
@@ -105,49 +114,52 @@ def log_api_call(
         logger.warning(f"Failed to log API cost: {e}")
 
 
-def get_cost_summary() -> dict:
-    """Get cost summary grouped by provider and purpose."""
+def get_cost_summary(publisher: str | None = None) -> dict:
+    """Get cost summary grouped by provider and purpose, optionally filtered by publisher."""
     conn = get_connection()
     cursor = conn.cursor()
 
     # Ensure table exists
     init_cost_table()
 
+    pub_clause = " AND publisher = ?" if publisher else ""
+    pub_params: tuple = (publisher,) if publisher else ()
+
     # Total costs
-    cursor.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM api_costs")
+    cursor.execute(f"SELECT COALESCE(SUM(cost_usd), 0) FROM api_costs WHERE 1=1{pub_clause}", pub_params)
     total = cursor.fetchone()[0]
 
     # By provider
-    cursor.execute("""
+    cursor.execute(f"""
         SELECT provider, COUNT(*) as calls, SUM(input_tokens) as input_tok,
                SUM(output_tokens) as output_tok, SUM(cost_usd) as cost
-        FROM api_costs GROUP BY provider ORDER BY cost DESC
-    """)
+        FROM api_costs WHERE 1=1{pub_clause} GROUP BY provider ORDER BY cost DESC
+    """, pub_params)
     by_provider = [
         {"provider": r[0], "calls": r[1], "input_tokens": r[2], "output_tokens": r[3], "cost": round(r[4], 4)}
         for r in cursor.fetchall()
     ]
 
     # By purpose
-    cursor.execute("""
+    cursor.execute(f"""
         SELECT purpose, COUNT(*) as calls, SUM(cost_usd) as cost
-        FROM api_costs GROUP BY purpose ORDER BY cost DESC
-    """)
+        FROM api_costs WHERE 1=1{pub_clause} GROUP BY purpose ORDER BY cost DESC
+    """, pub_params)
     by_purpose = [
         {"purpose": r[0], "calls": r[1], "cost": round(r[2], 4)}
         for r in cursor.fetchall()
     ]
 
     # Today's costs
-    cursor.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM api_costs WHERE date(timestamp) = date('now')")
+    cursor.execute(f"SELECT COALESCE(SUM(cost_usd), 0) FROM api_costs WHERE date(timestamp) = date('now'){pub_clause}", pub_params)
     today = cursor.fetchone()[0]
 
     # This week
-    cursor.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM api_costs WHERE timestamp >= datetime('now', '-7 days')")
+    cursor.execute(f"SELECT COALESCE(SUM(cost_usd), 0) FROM api_costs WHERE timestamp >= datetime('now', '-7 days'){pub_clause}", pub_params)
     week = cursor.fetchone()[0]
 
     # This month
-    cursor.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM api_costs WHERE timestamp >= datetime('now', 'start of month')")
+    cursor.execute(f"SELECT COALESCE(SUM(cost_usd), 0) FROM api_costs WHERE timestamp >= datetime('now', 'start of month'){pub_clause}", pub_params)
     month = cursor.fetchone()[0]
 
     conn.close()
@@ -162,21 +174,26 @@ def get_cost_summary() -> dict:
     }
 
 
-def get_cost_history(days: int = 30) -> list[dict]:
-    """Get daily cost breakdown for the last N days."""
+def get_cost_history(days: int = 30, publisher: str | None = None) -> list[dict]:
+    """Get daily cost breakdown for the last N days, optionally filtered by publisher."""
     conn = get_connection()
     cursor = conn.cursor()
     init_cost_table()
 
-    cursor.execute("""
+    pub_clause = " AND publisher = ?" if publisher else ""
+    params: list = [f"-{days} days"]
+    if publisher:
+        params.append(publisher)
+
+    cursor.execute(f"""
         SELECT date(timestamp) as day, provider, purpose,
                COUNT(*) as calls, SUM(input_tokens) as input_tok,
                SUM(output_tokens) as output_tok, SUM(cost_usd) as cost
         FROM api_costs
-        WHERE timestamp >= datetime('now', ?)
+        WHERE timestamp >= datetime('now', ?){pub_clause}
         GROUP BY day, provider, purpose
         ORDER BY day DESC, cost DESC
-    """, (f"-{days} days",))
+    """, params)
 
     history = [
         {"date": r[0], "provider": r[1], "purpose": r[2], "calls": r[3],

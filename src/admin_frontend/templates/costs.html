@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>API Costs — Admin</title>
+    <title>{% if publisher %}{{ publisher }} — {% endif %}API Costs — Admin</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: system-ui, -apple-system, sans-serif; background: #f5f5f5; color: #333; }
@@ -52,8 +52,8 @@
 </head>
 <body>
     <div class="header">
-        <h1>💰 API Costs</h1>
-        <a href="/admin">← Back to Dashboard</a>
+        <h1>💰 {% if publisher %}{{ publisher }} — {% endif %}API Costs</h1>
+        <a href="/admin/{% if publisher_slug %}{{ publisher_slug }}{% endif %}">← Back to Dashboard</a>
     </div>
 
     <div class="container">
@@ -119,11 +119,14 @@
         return labels[p] || p;
     }
 
+    const COSTS_PUBLISHER = '{{ publisher }}';
+    const pubParam = COSTS_PUBLISHER ? '?publisher=' + encodeURIComponent(COSTS_PUBLISHER) : '';
+
     async function loadCosts() {
         try {
             const [summaryRes, historyRes] = await Promise.all([
-                fetch('/admin/api/costs/summary'),
-                fetch('/admin/api/costs/history'),
+                fetch('/admin/api/costs/summary' + pubParam),
+                fetch('/admin/api/costs/history' + pubParam),
             ]);
             const summary = await summaryRes.json();
             const history = await historyRes.json();

@@ -261,6 +261,7 @@ def main() -> None:
             message_count INTEGER DEFAULT 0
         )
     """)
+    _add_column_if_missing(cur, "conversations", "publisher", "TEXT")
     cur.execute("""
         CREATE TABLE IF NOT EXISTS conversation_messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard - Publisher RAG Demo</title>
+    <title>{% if publisher %}{{ publisher }} — {% endif %}Admin Dashboard</title>
 
     <!-- Tabler CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0/dist/css/tabler.min.css">
@@ -22,7 +22,7 @@
                     <span class="navbar-toggler-icon"></span>
                 </button>
                 <h1 class="navbar-brand navbar-brand-autodark">
-                    <span class="text-white">📊 Admin</span>
+                    <span class="text-white">📊 {% if publisher %}{{ publisher }}{% else %}Network{% endif %}</span>
                 </h1>
                 <div class="collapse navbar-collapse" id="sidebar-menu">
                     <ul class="navbar-nav pt-lg-3">
@@ -57,17 +57,44 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="/admin/directory">
+                            <a class="nav-link" href="/admin/{% if publisher_slug %}{{ publisher_slug }}/{% endif %}directory">
                                 <span class="nav-link-icon d-md-none d-lg-inline-block">🏪</span>
                                 <span class="nav-link-title">Business Directory</span>
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="/admin/costs">
+                            <a class="nav-link" href="/admin/{% if publisher_slug %}{{ publisher_slug }}/{% endif %}costs">
                                 <span class="nav-link-icon d-md-none d-lg-inline-block">💰</span>
                                 <span class="nav-link-title">API Costs</span>
                             </a>
                         </li>
+                        <li class="nav-item mt-3">
+                            <a class="nav-link" href="/admin/review">
+                                <span class="nav-link-icon d-md-none d-lg-inline-block">📝</span>
+                                <span class="nav-link-title">Upload / Review</span>
+                            </a>
+                        </li>
+                        {% if publisher_slug %}
+                        <li class="nav-item mt-3">
+                            <a class="nav-link" href="/admin">
+                                <span class="nav-link-icon d-md-none d-lg-inline-block">🌐</span>
+                                <span class="nav-link-title">Network View</span>
+                            </a>
+                        </li>
+                        {% else %}
+                        <li class="nav-item mt-3">
+                            <a class="nav-link" href="/admin/cottonwood">
+                                <span class="nav-link-icon d-md-none d-lg-inline-block">🔴</span>
+                                <span class="nav-link-title">Cottonwood Citizen</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/admin/pipestone">
+                                <span class="nav-link-icon d-md-none d-lg-inline-block">🟢</span>
+                                <span class="nav-link-title">Pipestone Star</span>
+                            </a>
+                        </li>
+                        {% endif %}
                     </ul>
                 </div>
             </div>
@@ -443,11 +470,20 @@
             container.innerHTML = html;
         }
 
+        // Publisher scope — injected by Jinja2 (empty string = network-wide)
+        const ADMIN_PUBLISHER = '{{ publisher }}';
+
         // Helper: authenticated fetch (works even when page URL has credentials)
+        // Automatically appends publisher filter when scoped
         function authFetch(url, options = {}) {
             // Strip credentials from page URL to build clean base
             const loc = window.location;
             const cleanOrigin = loc.protocol + '//' + loc.hostname + (loc.port ? ':' + loc.port : '');
+            // Append publisher filter if scoped
+            if (ADMIN_PUBLISHER && url.includes('/api/')) {
+                const sep = url.includes('?') ? '&' : '?';
+                url = url + sep + 'publisher=' + encodeURIComponent(ADMIN_PUBLISHER);
+            }
             const fullUrl = url.startsWith('/') ? cleanOrigin + url : url;
             return fetch(fullUrl, { credentials: 'include', ...options });
         }

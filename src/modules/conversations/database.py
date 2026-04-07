@@ -80,11 +80,12 @@ def init_table() -> None:
     conn.close()
 
 
-def insert_conversation(session_id: str) -> int:
+def insert_conversation(session_id: str, publisher: str | None = None) -> int:
     """Create a new conversation session.
 
     Args:
         session_id: Unique identifier for the session.
+        publisher: Optional publisher name for scoped tracking.
 
     Returns:
         Database ID of the created conversation.
@@ -92,14 +93,20 @@ def insert_conversation(session_id: str) -> int:
     conn = get_connection()
     cursor = conn.cursor()
 
+    # Ensure publisher column exists (safe migration)
+    cursor.execute("PRAGMA table_info(conversations)")
+    existing = {row[1] for row in cursor.fetchall()}
+    if "publisher" not in existing:
+        cursor.execute("ALTER TABLE conversations ADD COLUMN publisher TEXT")
+
     started_at = datetime.now().isoformat()
 
     cursor.execute(
         """
-        INSERT INTO conversations (session_id, started_at)
-        VALUES (?, ?)
+        INSERT INTO conversations (session_id, started_at, publisher)
+        VALUES (?, ?, ?)
         """,
-        (session_id, started_at),
+        (session_id, started_at, publisher),
     )
 
     conversation_id = cursor.lastrowid
@@ -247,11 +254,12 @@ def get_conversation_messages(conversation_id: int) -> list[dict]:
     return messages
 
 
-def get_all_conversations(limit: int = 100) -> list[dict]:
-    """Get all conversations, most recent first.
+def get_all_conversations(limit: int = 100, publisher: str | None = None) -> list[dict]:
+    """Get all conversations, most recent first, optionally filtered by publisher.
 
     Args:
         limit: Maximum number of conversations to return.
+        publisher: Optional publisher name to filter by.
 
     Returns:
         List of conversations.
@@ -259,15 +267,18 @@ def get_all_conversations(limit: int = 100) -> list[dict]:
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT id, session_id, started_at, ended_at, message_count
-        FROM conversations
-        ORDER BY started_at DESC
-        LIMIT ?
-        """,
-        (limit,),
-    )
+    if publisher:
+        cursor.execute(
+            "SELECT id, session_id, started_at, ended_at, message_count, publisher "
+            "FROM conversations WHERE publisher = ? ORDER BY started_at DESC LIMIT ?",
+            (publisher, limit),
+        )
+    else:
+        cursor.execute(
+            "SELECT id, session_id, started_at, ended_at, message_count, publisher "
+            "FROM conversations ORDER BY started_at DESC LIMIT ?",
+            (limit,),
+        )
 
     rows = cursor.fetchall()
     conn.close()
@@ -275,8 +286,8 @@ def get_all_conversations(limit: int = 100) -> list[dict]:
     return [dict(row) for row in rows]
 
 
-def get_conversation_stats() -> dict:
-    """Get statistics about conversations.
+def get_conversation_stats(publisher: str | None = None) -> dict:
+    """Get statistics about conversations, optionally filtered by publisher.
 
     Returns:
         Dictionary with conversation statistics.
@@ -284,30 +295,36 @@ def get_conversation_stats() -> dict:
     conn = get_connection()
     cursor = conn.cursor()
 
+    pub_clause = " WHERE publisher = ?" if publisher else ""
+    pub_params: tuple = (publisher,) if publisher else ()
+
     # Total conversations
-    cursor.execute("SELECT COUNT(*) FROM conversations")
+    cursor.execute(f"SELECT COUNT(*) FROM conversations{pub_clause}", pub_params)
     total_conversations = cursor.fetchone()[0]
 
-    # Total messages
-    cursor.execute("SELECT COUNT(*) FROM conversation_messages")
+    # Total messages (join through conversations for publisher filter)
+    if publisher:
+        cursor.execute(
+            "SELECT COUNT(*) FROM conversation_messages cm "
+            "JOIN conversations c ON cm.conversation_id = c.id WHERE c.publisher = ?",
+            (publisher,),
+        )
+    else:
+        cursor.execute("SELECT COUNT(*) FROM conversation_messages")
     total_messages = cursor.fetchone()[0]
 
     # Average messages per conversation
     cursor.execute(
-        """
-        SELECT AVG(message_count) FROM conversations
-        WHERE message_count > 0
-        """
+        f"SELECT AVG(message_count) FROM conversations WHERE message_count > 0"
+        + (" AND publisher = ?" if publisher else ""),
+        pub_params,
     )
     avg_messages = cursor.fetchone()[0] or 0
 
     # Most recent conversation
     cursor.execute(
-        """
-        SELECT started_at FROM conversations
-        ORDER BY started_at DESC
-        LIMIT 1
-        """
+        f"SELECT started_at FROM conversations{pub_clause} ORDER BY started_at DESC LIMIT 1",
+        pub_params,
     )
     most_recent = cursor.fetchone()
     most_recent_time = most_recent[0] if most_recent else None

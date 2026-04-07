@@ -95,8 +95,8 @@ async def stream_response(
             if conversation:
                 conversation_id = int(conversation["id"])
             else:
-                conversation_id = insert_conversation(session_id)
-                logger.info(f"Created new conversation for session: {session_id}")
+                conversation_id = insert_conversation(session_id, publisher=publisher)
+                logger.info(f"Created new conversation for session: {session_id} (publisher: {publisher})")
 
             # Log user message
             insert_message(conversation_id, "user", message)
