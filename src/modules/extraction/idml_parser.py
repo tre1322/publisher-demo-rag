@@ -121,6 +121,42 @@ def _extract_story_text(story_path: str) -> dict | None:
     if not paragraphs:
         return None
 
+    # Pre-filter: remove template placeholders common in Pipestone Star IDML files.
+    # These are paragraphs with boilerplate text left in the InDesign template.
+    _PLACEHOLDER_PATTERNS = [
+        re.compile(r"^(Headline)+$", re.IGNORECASE),           # "HeadlineHeadline"
+        re.compile(r"^(Body)+$", re.IGNORECASE),               # "BodyBody"
+        re.compile(r"^(Subhead)+$", re.IGNORECASE),            # "SubheadSubhead"
+        re.compile(r"Pipestone County has highest 14-day"),     # template placeholder text
+        re.compile(r"^By \w+ Word count:", re.IGNORECASE),     # template byline stub
+    ]
+
+    filtered_paragraphs = []
+    for role, style, text in paragraphs:
+        clean = text.strip()
+        # Check if this is a template placeholder
+        is_placeholder = False
+        for pat in _PLACEHOLDER_PATTERNS:
+            if pat.search(clean):
+                is_placeholder = True
+                break
+        if is_placeholder:
+            # Special case: headline style may have real text with "Headline" suffix
+            # e.g. "County proceeds with paving of CSAH 25 Headline"
+            if role == "headline" and len(clean) > 30:
+                # Strip trailing "Headline" label and keep the real part
+                stripped = re.sub(r"\s*Headline\s*$", "", clean, flags=re.IGNORECASE).strip()
+                if stripped and len(stripped) > 10:
+                    filtered_paragraphs.append((role, style, stripped))
+                    continue
+            logger.debug(f"Skipping template placeholder: [{style}] {clean[:60]}")
+            continue
+        filtered_paragraphs.append((role, style, text))
+
+    paragraphs = filtered_paragraphs
+    if not paragraphs:
+        return None
+
     # Assemble article components from paragraph roles
     headline = ""
     subheadline = ""
@@ -147,9 +183,11 @@ def _extract_story_text(story_path: str) -> dict | None:
             byline = re.sub(r"^[Bb]y\s+", "", text.replace("\n", " ").strip())
         elif role == "body":
             has_body = True
-            # Check first paragraph for byline pattern
-            if not byline and not body_parts and re.match(r"^[Bb]y\s+[A-Z]", text.strip()):
-                byline = re.sub(r"^[Bb]y\s+", "", text.strip().split("\n")[0])
+            # Check first paragraph for byline pattern (with word count stripped)
+            first_line = text.strip().split("\n")[0]
+            byline_match = re.match(r"^[Bb]y\s+(.+?)(?:\s*Word count:\s*\d+)?$", first_line)
+            if not byline and not body_parts and byline_match:
+                byline = byline_match.group(1).strip()
                 remainder = "\n".join(text.strip().split("\n")[1:]).strip()
                 if remainder:
                     body_parts.append(remainder)
@@ -189,17 +227,58 @@ def _extract_story_text(story_path: str) -> dict | None:
                 byline = " ".join(w for w in words if w)
     # Clean headline: remove trailing "Headline" label
     headline = re.sub(r"(?i)\s*Headline\s*$", "", headline).strip()
-    # If headline looks like a byline (contains @ or "staff reporter"), swap
-    if headline and ("@" in headline or re.search(r"(?i)staff|reporter|editor|correspondent", headline)):
-        if not byline:
-            byline = headline
+    # If headline looks like a byline, swap it
+    # Patterns: "Name | Title", contains @, "staff reporter", "from staff reports", URL
+    def _looks_like_byline(text: str) -> bool:
+        """Check if text looks like a byline rather than a headline."""
+        return bool(
+            "@" in text
+            or re.search(r"(?i)\b(staff|reporter|editor|correspondent|publisher)\b", text)
+            or re.match(r"^[A-Z][a-z]+ [A-Z][a-z]+ \|", text)
+            or re.match(r"(?i)^from\s+(staff|wire)", text)
+            or re.match(r"(?i)^(https?://|www\.)", text)
+        )
+    _BYLINE_IN_HEADLINE = _looks_like_byline(headline)
+    if headline and _BYLINE_IN_HEADLINE:
+        if not byline and not re.match(r"(?i)^(https?://|www\.)", headline):
+            byline = re.sub(r"\s*\|.*", "", headline).strip()  # "Eric Viccaro | Sports editor" → "Eric Viccaro"
         headline = ""
-    # If no headline, try to use the first sentence of body as headline
+    # If no headline, try to use the first non-byline sentence of body as headline
     if not headline and body_text:
-        first_line = body_text.split("\n")[0].strip()
-        if 10 < len(first_line) < 150:
-            headline = first_line
-            body_text = body_text[len(first_line):].strip()
+        lines = body_text.split("\n")
+        for i, line in enumerate(lines):
+            candidate = line.strip()
+            if not candidate or len(candidate) < 10:
+                continue
+            # Skip byline-like lines, emails, URLs
+            if _looks_like_byline(candidate) or re.match(r"(?i)^by\s", candidate):
+                # This is a byline — extract it and skip
+                if not byline:
+                    byline = re.sub(r"\s*\|.*", "", candidate).strip()
+                    byline = re.sub(r"\S+@\S+\.\S+", "", byline).strip()
+                continue
+            if len(candidate) < 150:
+                headline = candidate
+                # Remove this line from body
+                lines[i] = ""
+                body_text = "\n".join(lines).strip()
+                break
+    # Final byline-in-headline check (catches cases set by the fallback)
+    if headline and _looks_like_byline(headline):
+        if not byline:
+            byline = re.sub(r"\s*\|.*", "", headline).strip()
+            byline = re.sub(r"\S+@\S+\.\S+", "", byline).strip()
+        headline = ""
+        # Try one more time to find a real headline from body
+        if body_text:
+            for line in body_text.split("\n"):
+                candidate = line.strip()
+                if candidate and len(candidate) > 10 and not _looks_like_byline(candidate) and not re.match(r"(?i)^by\s", candidate):
+                    if len(candidate) < 150:
+                        headline = candidate
+                        body_text = body_text.replace(line, "", 1).strip()
+                    break
+
     # Collapse multiple blank lines
     body_text = re.sub(r"\n{3,}", "\n\n", body_text).strip()
 
@@ -326,7 +405,17 @@ def _match_headlines_to_bodies(
         is_boilerplate = bool(re.search(
             r"pica deep|drop quotes in swiss|nick klisch|first name last", story_text))
 
-        if is_continuation or is_jump_ref or is_masthead or is_cutline or is_whats_inside or is_boilerplate:
+        # Byline text frames: "Eric Viccaro | Sports editor" etc.
+        is_byline_frame = bool(
+            re.search(r"@", story_text)
+            or re.search(r"(?i)\b(reporter|editor|publisher|correspondent)\b", story_text)
+            or re.match(r"^[a-z]+ [a-z]+ \|", story_text)  # "name name |"
+            or re.match(r"(?i)^from\s+(staff|wire)", story_text)
+            or re.match(r"(?i)^(https?://|www\.)", story_text)
+            or re.match(r"(?i)^by\s+[a-z]", story_text)
+        )
+
+        if is_continuation or is_jump_ref or is_masthead or is_cutline or is_whats_inside or is_boilerplate or is_byline_frame:
             continue  # Skip — not a real headline or article
 
         if story["char_count"] < 150 and (has_headline_style or is_small_frame):
