@@ -489,13 +489,24 @@ def _match_headlines_to_bodies(
                             best_hl_sid = hl_sid
 
         if best_headline:
-            body_story["headline"] = best_headline
-            if best_hl_sid:
-                used_headlines.add(best_hl_sid)
+            # Don't overwrite a good headline with a worse one
+            existing_hl = (body_story.get("headline") or "").strip()
+            existing_is_bad = (
+                not existing_hl
+                or re.search(r"(?i)^from\s*page|^page\s*\d|^FROM PAGE", existing_hl)
+                or len(existing_hl) < 5
+            )
+            if existing_is_bad or not existing_hl:
+                body_story["headline"] = best_headline
+                if best_hl_sid:
+                    used_headlines.add(best_hl_sid)
 
-    # For remaining stories without headlines, use subheadline or first sentence
+    # For remaining stories without headlines (or with bad jump-reference headlines),
+    # use subheadline or first sentence
     for body_story in body_stories.values():
-        if not body_story["headline"]:
+        hl = (body_story.get("headline") or "").strip()
+        has_bad_headline = bool(re.search(r"(?i)^from\s*page|^page\s*\d|^FROM PAGE", hl))
+        if not hl or has_bad_headline:
             if body_story.get("subheadline"):
                 body_story["headline"] = body_story["subheadline"]
             elif body_story["body_text"]:
