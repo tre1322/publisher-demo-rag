@@ -915,6 +915,12 @@ def parse_idml(idml_path: str) -> list[dict]:
             # Weather data tables
             if re.search(r"a look back.*[HLPT].*tues|mon\.\s+\d+\s+\d+", body[:100]):
                 continue
+            # Photo cutlines/captions (short text ending with photo credit)
+            if story["char_count"] < 400 and re.search(
+                r"(?i)(file photo|photo by|contributed photo|courtesy photo|staff photo|file image)",
+                body,
+            ):
+                continue
             # Poll quotes (very short, just a quote)
             if story["char_count"] < 200 and body.startswith('"'):
                 continue
