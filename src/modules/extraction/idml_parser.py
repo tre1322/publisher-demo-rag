@@ -664,16 +664,51 @@ def _stitch_jumped_articles(
                             best_cont_dist = dist
                             best_cont_sid = sid
 
-        # Step 3: Merge continuation into front story
+        # Step 3: Merge continuation into front story (with relevance check)
         if best_front_sid and best_cont_sid:
             front_story = stories[best_front_sid]
             cont_story = stories[best_cont_sid]
             if front_story and cont_story:
                 cont_text = cont_story.get("body_text", "").strip()
-                if cont_text:
-                    front_story["body_text"] = (
-                        front_story.get("body_text", "") + "\n\n" + cont_text
-                    )
+                front_text = front_story.get("body_text", "").strip()
+
+                # Relevance check: verify the continuation is actually about the
+                # same topic. The jump keyword (e.g., "paving") should appear in the
+                # continuation text. If the front story already has substantial body
+                # from Change elements, also check that the continuation's first 200
+                # chars share topic-specific words (not just generic ones).
+                should_merge = True
+
+                # Check 1: does the continuation mention the keyword at all?
+                if keyword not in cont_text.lower():
+                    # Also check the continuation's headline
+                    cont_hl = (cont_story.get("headline") or "").lower()
+                    if keyword not in cont_hl:
+                        logger.info(
+                            f"Skipping stitch '{keyword}': continuation doesn't mention keyword"
+                        )
+                        should_merge = False
+
+                # Check 2: if front story is already substantial, the continuation
+                # should share topic words (not just generic newspaper words)
+                if should_merge and len(front_text) > 1000 and len(cont_text) > 200:
+                    generic_words = {
+                        "county", "meeting", "march", "april", "during", "approved",
+                        "pipestone", "board", "said", "would", "commissioner",
+                        "school", "state", "about", "their", "could", "other",
+                    }
+                    front_words = set(w.lower() for w in re.findall(r"[A-Za-z]{5,}", front_text[:1000])) - generic_words
+                    cont_words = set(w.lower() for w in re.findall(r"[A-Za-z]{5,}", cont_text[:500])) - generic_words
+                    overlap = front_words & cont_words
+                    if len(overlap) < 2:
+                        logger.info(
+                            f"Skipping stitch '{keyword}': {best_front_sid} + {best_cont_sid} "
+                            f"— only {len(overlap)} topic words overlap: {list(overlap)[:5]}"
+                        )
+                        should_merge = False
+
+                if should_merge and cont_text:
+                    front_story["body_text"] = front_text + "\n\n" + cont_text
                     front_story["char_count"] = len(front_story["body_text"])
                     front_story["is_stitched"] = True
                     # Mark continuation as consumed so it doesn't appear as separate article
