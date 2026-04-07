@@ -98,11 +98,21 @@ def _extract_story_text(story_path: str) -> dict | None:
         role = _classify_style(style)
 
         text_parts = []
-        for elem in psr.iter():
-            if elem.tag == "Content":
-                text_parts.append(elem.text or "")
-            elif elem.tag == "Br":
+        # Walk direct children (CharacterStyleRange) then their Content children.
+        # Using psr.iter() would recurse into all descendants and duplicate text
+        # when multiple CharacterStyleRanges exist within one ParagraphStyleRange.
+        for child in psr:
+            if child.tag == "Content":
+                text_parts.append(child.text or "")
+            elif child.tag == "Br":
                 text_parts.append("\n")
+            else:
+                # CharacterStyleRange or other wrapper — get Content from children
+                for subchild in child:
+                    if subchild.tag == "Content":
+                        text_parts.append(subchild.text or "")
+                    elif subchild.tag == "Br":
+                        text_parts.append("\n")
 
         text = "".join(text_parts).strip()
         if text:
@@ -155,6 +165,43 @@ def _extract_story_text(story_path: str) -> dict | None:
             pass  # Skip furniture
 
     body_text = "\n\n".join(body_parts).strip()
+
+    # Post-extraction cleanup: strip IDML artifacts
+    # Remove embedded word counts like "Word count: 847"
+    body_text = re.sub(r"(?i)\bword count:\s*\d+\b", "", body_text)
+    # Remove trailing style labels like "BodyBody", "HeadlineHeadline", "Headline"
+    body_text = re.sub(r"(?i)\b(Body|Headline|Subhead|Byline|Caption)\1*\b", "", body_text)
+    # Remove trailing "Headline" or "Body" labels on their own lines
+    body_text = re.sub(r"(?im)^\s*(Body|Headline|Subhead|Byline|Caption)\s*$", "", body_text)
+    # Clean byline: remove email duplicated into name, fix "Kyle KuphalKyle" pattern
+    if byline:
+        # Remove email addresses from byline display name
+        byline = re.sub(r"\S+@\S+\.\S+", "", byline).strip()
+        # Fix doubled names: "Kyle KuphalKyle" → "Kyle Kuphal"
+        # Detect when last word starts repeating the first name
+        words = byline.split()
+        if len(words) >= 2:
+            first = words[0].lower()
+            last = words[-1].lower()
+            if len(last) > len(first) and last.startswith(first):
+                # "KuphalKyle" — the last word has the first name appended
+                words[-1] = words[-1][:len(words[-1]) - len(words[0])]
+                byline = " ".join(w for w in words if w)
+    # Clean headline: remove trailing "Headline" label
+    headline = re.sub(r"(?i)\s*Headline\s*$", "", headline).strip()
+    # If headline looks like a byline (contains @ or "staff reporter"), swap
+    if headline and ("@" in headline or re.search(r"(?i)staff|reporter|editor|correspondent", headline)):
+        if not byline:
+            byline = headline
+        headline = ""
+    # If no headline, try to use the first sentence of body as headline
+    if not headline and body_text:
+        first_line = body_text.split("\n")[0].strip()
+        if 10 < len(first_line) < 150:
+            headline = first_line
+            body_text = body_text[len(first_line):].strip()
+    # Collapse multiple blank lines
+    body_text = re.sub(r"\n{3,}", "\n\n", body_text).strip()
 
     # Skip very short content (labels, page numbers, etc.)
     total_text = headline + body_text
