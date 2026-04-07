@@ -185,18 +185,44 @@ def _extract_story_text(story_path: str) -> dict | None:
             byline = re.sub(r"^[Bb]y\s+", "", text.replace("\n", " ").strip())
         elif role == "body":
             has_body = True
-            # Check first paragraph for byline pattern (with word count stripped)
-            first_line = text.strip().split("\n")[0]
-            # Strip word count from anywhere in the line before matching
+            text_stripped = text.strip()
+
+            # Strip byline from start of body text (multiple formats)
+            # Format 1: "By Name..." or "By Name Word count: NNN"
+            first_line = text_stripped.split("\n")[0]
             first_line_clean = re.sub(r"(?i)\s*Word\s*count:\s*\d+", "", first_line).strip()
             byline_match = re.match(r"^[Bb]y\s+(.+)$", first_line_clean)
+
+            # Format 2: "Name | Title\nemail@domain.com" (Pipestone Star)
+            name_title_match = re.match(
+                r"^([A-Z][a-z]+ [A-Z][a-z]+(?:\s*\|\s*\w[^@\n]*)?)[\s\n]*(\S+@\S+\.\S+)?",
+                text_stripped,
+            )
+            is_name_title_byline = name_title_match and (
+                "|" in (name_title_match.group(0) or "")
+                or (name_title_match.group(2) and "@" in name_title_match.group(2))
+            )
+
             if not byline and not body_parts and byline_match:
                 byline = byline_match.group(1).strip()
-                remainder = "\n".join(text.strip().split("\n")[1:]).strip()
+                # Clean doubled names
+                byline = re.sub(r"\S+@\S+\.\S+", "", byline).strip()
+                remainder = "\n".join(text_stripped.split("\n")[1:]).strip()
                 if remainder:
                     body_parts.append(remainder)
+            elif is_name_title_byline and not body_parts:
+                # Extract byline from "Name | Title" format
+                if not byline:
+                    byline = re.sub(r"\s*\|.*", "", name_title_match.group(1)).strip()
+                # Strip the byline + email from body
+                byline_end = name_title_match.end()
+                # Also strip trailing email on next line
+                remaining = text_stripped[byline_end:].strip()
+                remaining = re.sub(r"^\S+@\S+\.\S+\s*", "", remaining).strip()
+                if remaining:
+                    body_parts.append(remaining)
             else:
-                body_parts.append(text.strip())
+                body_parts.append(text_stripped)
         elif role == "caption":
             content_type = "caption"
             body_parts.append(text.strip())
@@ -637,32 +663,52 @@ def _stitch_jumped_articles(
                 best_front_sid = sid
 
         # Find continuation body story: positioned near the jump-in header
-        # on the same spread (similar coordinates)
+        # on the same spread. Collect multiple candidates sorted by distance,
+        # then pick the first one that mentions the keyword (relevance check).
         in_frames = frame_positions.get(in_sid, [])
-        best_cont_sid = None
-        best_cont_dist = float("inf")
+        cont_candidates: list[tuple[float, str]] = []  # (distance, sid)
 
         if in_frames:
             in_f = in_frames[0]
             for sid, story in stories.items():
                 if not story or sid == out_sid or sid == in_sid or sid == best_front_sid:
                     continue
+                if sid in consumed_sids:
+                    continue
                 if story.get("char_count", 0) < 50:
                     continue
-                # Skip other jump-in headers
+                # Skip other jump-in/out headers and consumed stories
                 st = (story.get("body_text") or "").strip()
-                if re.search(r"^\w+/\s*.*[Ff]rom\s+page", st, re.DOTALL):
+                if re.search(r"(?i)^\w+\s*/?\s*(from\s+page|[•·]\s*page)", st):
+                    continue
+                if story.get("content_type") in ("furniture", "consumed_continuation"):
                     continue
                 sid_frames = frame_positions.get(sid, [])
                 for sf in sid_frames:
                     x_dist = abs(sf["x"] - in_f["x"])
                     y_diff = sf["y"] - in_f["y"]
-                    # Same spread = similar coordinate range
-                    if x_dist < 300 and -20 < y_diff < 500:
+                    if x_dist < 400 and -30 < y_diff < 600:
                         dist = x_dist + abs(y_diff)
-                        if dist < best_cont_dist:
-                            best_cont_dist = dist
-                            best_cont_sid = sid
+                        cont_candidates.append((dist, sid))
+
+        # Sort by distance and pick the first candidate that mentions the keyword
+        cont_candidates.sort(key=lambda x: x[0])
+        best_cont_sid = None
+        for dist, sid in cont_candidates:
+            story = stories[sid]
+            story_text = ((story.get("body_text") or "") + " " + (story.get("headline") or "")).lower()
+            if keyword in story_text:
+                best_cont_sid = sid
+                break
+        # Fallback: if no candidate mentions keyword, use closest (for short keywords)
+        if not best_cont_sid and cont_candidates and len(keyword) <= 3:
+            best_cont_sid = cont_candidates[0][1]
+
+        if best_cont_sid:
+            logger.info(
+                f"  Jump '{keyword}': front={best_front_sid}, cont={best_cont_sid} "
+                f"(cont text: {(stories.get(best_cont_sid, {}) or {}).get('body_text', '')[:60]})"
+            )
 
         # Step 3: Merge continuation into front story (with relevance check)
         if best_front_sid and best_cont_sid:
@@ -679,19 +725,9 @@ def _stitch_jumped_articles(
                 # chars share topic-specific words (not just generic ones).
                 should_merge = True
 
-                # Check 1: does the continuation mention the keyword at all?
-                if keyword not in cont_text.lower():
-                    # Also check the continuation's headline
-                    cont_hl = (cont_story.get("headline") or "").lower()
-                    if keyword not in cont_hl:
-                        logger.info(
-                            f"Skipping stitch '{keyword}': continuation doesn't mention keyword"
-                        )
-                        should_merge = False
-
-                # Check 2: if front story is already substantial, the continuation
+                # Check: if front story is already substantial, the continuation
                 # should share topic words (not just generic newspaper words)
-                if should_merge and len(front_text) > 1000 and len(cont_text) > 200:
+                if len(front_text) > 1000 and len(cont_text) > 200:
                     generic_words = {
                         "county", "meeting", "march", "april", "during", "approved",
                         "pipestone", "board", "said", "would", "commissioner",
