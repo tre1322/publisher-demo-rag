@@ -428,7 +428,7 @@
                     '<span class="title" style="flex:1;">' + escapeHtml(e.source_filename || e.source_pdf_path || 'Unknown') + '</span>' +
                     '<span class="meta">' + (e.edition_date || '') + ' | ' + (e.article_count || 0) + ' articles, ' + (e.ad_count || 0) + ' ads</span>' +
                     (e.id ? '<a href="/admin/editions/' + e.id + '/jumps" class="btn" style="padding:4px 10px;font-size:0.75rem;background:#3b82f6;color:white;border-radius:6px;text-decoration:none" onclick="event.stopPropagation()">Review Jumps</a>' : '') +
-                    (e.id ? '<button class="btn btn-danger" style="padding:4px 10px;font-size:0.75rem;" onclick="event.stopPropagation();deleteEdition(' + e.id + ',\'' + escapeHtml(e.source_filename || 'this edition') + '\')">Delete</button>' : '') +
+                    (e.id ? '<button class="btn btn-danger" style="padding:4px 10px;font-size:0.75rem;" onclick="deleteEdition(' + e.id + ',\'' + escapeHtml(e.source_filename || 'this edition').replace(/'/g, "\\'") + '\');return false;">Delete</button>' : '') +
                 '</div>';
             }).join('') + '</div>';
         } catch (err) {
