@@ -396,7 +396,78 @@ async def list_tables(_username: str = Depends(verify_credentials)) -> JSONRespo
     return JSONResponse(content={"tables": BROWSABLE_TABLES})
 
 
-# ── Edition upload endpoints ──
+# ── Edition management endpoints ──
+
+
+@router.delete("/api/editions/{edition_id}")
+async def delete_edition(
+    edition_id: int,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Delete an edition and all associated data (articles, content_items, ChromaDB vectors)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Check edition exists
+    cursor.execute("SELECT id, source_filename FROM editions WHERE id = ?", (edition_id,))
+    edition = cursor.fetchone()
+    if not edition:
+        conn.close()
+        return JSONResponse(content={"success": False, "error": "Edition not found"}, status_code=404)
+
+    deleted = {}
+
+    # Delete content_items
+    cursor.execute("DELETE FROM content_items WHERE edition_id = ?", (edition_id,))
+    deleted["content_items"] = cursor.rowcount
+
+    # Delete articles
+    cursor.execute("DELETE FROM articles WHERE edition_id = ?", (edition_id,))
+    deleted["articles"] = cursor.rowcount
+
+    # Delete page_regions
+    cursor.execute("DELETE FROM page_regions WHERE edition_id = ?", (edition_id,))
+    deleted["page_regions"] = cursor.rowcount
+
+    # Delete review_actions for articles in this edition
+    # (already deleted articles, so just clean up orphans)
+    try:
+        cursor.execute("DELETE FROM review_actions WHERE article_id NOT IN (SELECT doc_id FROM articles)")
+        deleted["review_actions"] = cursor.rowcount
+    except Exception:
+        pass
+
+    # Delete jump overrides and fragment edits
+    try:
+        cursor.execute("DELETE FROM jump_overrides WHERE edition_id = ?", (edition_id,))
+    except Exception:
+        pass
+    try:
+        cursor.execute("DELETE FROM fragment_edits WHERE edition_id = ?", (edition_id,))
+    except Exception:
+        pass
+
+    # Delete the edition itself
+    cursor.execute("DELETE FROM editions WHERE id = ?", (edition_id,))
+    deleted["editions"] = cursor.rowcount
+
+    conn.commit()
+    conn.close()
+
+    # Delete ChromaDB vectors for this edition
+    try:
+        from src.modules.extraction.shared_write_layer import get_articles_collection
+        collection = get_articles_collection()
+        if collection and collection.count() > 0:
+            results = collection.get(where={"edition_id": str(edition_id)})
+            if results and results["ids"]:
+                collection.delete(ids=results["ids"])
+                deleted["vectors"] = len(results["ids"])
+    except Exception as e:
+        logger.warning(f"ChromaDB cleanup for edition {edition_id}: {e}")
+
+    logger.info(f"Deleted edition {edition_id}: {deleted}")
+    return JSONResponse(content={"success": True, "deleted": deleted})
 
 
 @router.get("/api/editions")
@@ -1100,6 +1171,37 @@ async def edit_advertisement(
         cleaned_text=body.get("cleaned_text"),
         status=body.get("status"),
     )
+    return JSONResponse(content={"success": True})
+
+
+@router.delete("/api/advertisements/{ad_id}")
+async def delete_advertisement(
+    ad_id: str,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Delete a single advertisement and its ChromaDB vectors."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT ad_id FROM advertisements WHERE ad_id = ?", (ad_id,))
+    if not cursor.fetchone():
+        conn.close()
+        return JSONResponse(content={"success": False, "error": "Ad not found"}, status_code=404)
+
+    cursor.execute("DELETE FROM advertisements WHERE ad_id = ?", (ad_id,))
+    conn.commit()
+    conn.close()
+
+    # Remove from ChromaDB ads collection
+    try:
+        from src.modules.extraction.shared_write_layer import get_ads_collection
+        ads_col = get_ads_collection()
+        if ads_col:
+            results = ads_col.get(where={"doc_id": ad_id})
+            if results and results["ids"]:
+                ads_col.delete(ids=results["ids"])
+    except Exception as e:
+        logger.warning(f"ChromaDB ad cleanup for {ad_id}: {e}")
+
     return JSONResponse(content={"success": True})
 
 

@@ -423,11 +423,12 @@
                 return;
             }
             el.innerHTML = '<div class="article-list">' + data.editions.map(e => {
-                return '<div class="article-row">' +
+                return '<div class="article-row" style="display:flex;align-items:center;gap:8px;">' +
                     '<span class="badge badge-' + (e.processing_status === 'completed' ? 'approved' : e.processing_status === 'failed' ? 'flagged' : 'review') + '">' + e.processing_status + '</span>' +
-                    '<span class="title">' + escapeHtml(e.source_filename || e.source_pdf_path || 'Unknown') + '</span>' +
+                    '<span class="title" style="flex:1;">' + escapeHtml(e.source_filename || e.source_pdf_path || 'Unknown') + '</span>' +
                     '<span class="meta">' + (e.edition_date || '') + ' | ' + (e.article_count || 0) + ' articles, ' + (e.ad_count || 0) + ' ads</span>' +
-                    (e.id ? '<a href="/admin/editions/' + e.id + '/jumps" class="btn" style="padding:4px 10px;font-size:0.75rem;background:#3b82f6;color:white;border-radius:6px;text-decoration:none;margin-left:8px" onclick="event.stopPropagation()">Review Jumps</a>' : '') +
+                    (e.id ? '<a href="/admin/editions/' + e.id + '/jumps" class="btn" style="padding:4px 10px;font-size:0.75rem;background:#3b82f6;color:white;border-radius:6px;text-decoration:none" onclick="event.stopPropagation()">Review Jumps</a>' : '') +
+                    (e.id ? '<button class="btn btn-danger" style="padding:4px 10px;font-size:0.75rem;" onclick="event.stopPropagation();deleteEdition(' + e.id + ',\'' + escapeHtml(e.source_filename || 'this edition') + '\')">Delete</button>' : '') +
                 '</div>';
             }).join('') + '</div>';
         } catch (err) {
@@ -512,6 +513,25 @@
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // Delete edition with confirmation
+    async function deleteEdition(editionId, filename) {
+        if (!confirm('Delete edition "' + filename + '" and all its articles, content items, and vectors? This cannot be undone.')) return;
+        try {
+            const res = await fetch('/admin/api/editions/' + editionId, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) {
+                const d = data.deleted;
+                alert('Deleted: ' + (d.articles || 0) + ' articles, ' + (d.content_items || 0) + ' content items, ' + (d.vectors || 0) + ' vectors');
+                loadEditions();
+                loadArticles();
+            } else {
+                alert('Delete failed: ' + (data.error || 'Unknown error'));
+            }
+        } catch (err) {
+            alert('Delete failed: ' + err.message);
+        }
     }
 
     // Initial load
