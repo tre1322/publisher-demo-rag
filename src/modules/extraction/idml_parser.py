@@ -98,21 +98,22 @@ def _extract_story_text(story_path: str) -> dict | None:
         role = _classify_style(style)
 
         text_parts = []
-        # Walk direct children (CharacterStyleRange) then their Content children.
-        # Using psr.iter() would recurse into all descendants and duplicate text
-        # when multiple CharacterStyleRanges exist within one ParagraphStyleRange.
-        for child in psr:
-            if child.tag == "Content":
-                text_parts.append(child.text or "")
-            elif child.tag == "Br":
-                text_parts.append("\n")
-            else:
-                # CharacterStyleRange or other wrapper — get Content from children
-                for subchild in child:
-                    if subchild.tag == "Content":
-                        text_parts.append(subchild.text or "")
-                    elif subchild.tag == "Br":
-                        text_parts.append("\n")
+        # Walk text from this ParagraphStyleRange, handling nested Change elements.
+        # IDML nests: PSR > CharacterStyleRange > Content (normal text)
+        #             PSR > Change > CharacterStyleRange > Content (tracked changes)
+        # We must NOT use psr.iter() because Change elements at the PSR level can
+        # span across subsequent PSRs, duplicating their content.
+        # Instead: walk direct children, then recurse one level into Change/CSR.
+        def _collect_text(parent):
+            """Collect Content/Br from direct children, recursing into wrappers."""
+            for child in parent:
+                if child.tag == "Content":
+                    text_parts.append(child.text or "")
+                elif child.tag == "Br":
+                    text_parts.append("\n")
+                elif child.tag in ("CharacterStyleRange", "Change", "HyperlinkTextSource"):
+                    _collect_text(child)
+        _collect_text(psr)
 
         text = "".join(text_parts).strip()
         if text:
