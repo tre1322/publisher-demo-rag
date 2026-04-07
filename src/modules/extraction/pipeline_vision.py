@@ -35,17 +35,21 @@ logger = logging.getLogger(__name__)
 
 # The prompt that drives structured JSON output from Claude Vision.
 # Proven in testing — do not change without re-testing on known editions.
-PAGE_PROMPT = """Analyze this newspaper page carefully and return ONLY valid JSON with this exact structure:
+PAGE_PROMPT = """You are a newspaper text transcription tool. Your job is to TRANSCRIBE the exact text from this newspaper page into structured JSON.
+
+CRITICAL: You must copy the EXACT words printed on the page. Do NOT summarize, paraphrase, shorten, or make up any text. Every word in body_text must appear on the page exactly as printed. If you cannot read a word, use [illegible]. Never fabricate or infer text that isn't visible.
+
+Return ONLY valid JSON with this structure:
 
 {
   "page_num": <integer — set this to PAGE_NUM_PLACEHOLDER>,
   "page_type": "<front|inside|sports|classifieds|opinion|obituaries>",
   "articles": [
     {
-      "headline": "<full headline text>",
-      "subheadline": "<subheadline or deck text, or null>",
+      "headline": "<exact headline text as printed>",
+      "subheadline": "<exact subheadline text, or null>",
       "byline": "<author name without 'By' prefix, or null>",
-      "body_text": "<complete article body text, preserve paragraphs with \\n\\n>",
+      "body_text": "<EXACT article body text transcribed word-for-word from the page. Preserve paragraph breaks with \\n\\n. Copy every sentence completely.>",
       "jump_out": {
         "keyword": "<slug keyword like COUNCIL or SCHOOL or null>",
         "target_page": <page number or null>
@@ -68,9 +72,11 @@ PAGE_PROMPT = """Analyze this newspaper page carefully and return ONLY valid JSO
 }
 
 Rules:
-- Extract ALL article text completely, word for word — do not summarize or truncate
+- TRANSCRIBE every article's body text EXACTLY as printed — word for word, sentence for sentence
+- Do NOT summarize, paraphrase, or shorten any text
+- Do NOT make up or infer text that is not visible on the page
 - Preserve paragraph breaks as \\n\\n in body_text
-- For jump references like "SEE COUNCIL • PAGE 8" or "COUNCIL/ FROM PAGE 1", set jump_out or jump_in accordingly
+- For jump references like "SEE COUNCIL • PAGE 8" or "COUNCIL/ FROM PAGE 1" or "KEYWORD • Page N", set jump_out or jump_in accordingly
 - If an article continues to another page, set jump_out with the keyword and target page
 - If this is a continuation from another page, set is_continuation=true and jump_in with source page
 - Do NOT include advertisements in the articles array — put them in ads array
@@ -165,7 +171,7 @@ def _extract_page_vision(
 
     response = client.messages.create(
         model=VISION_MODEL,
-        max_tokens=8192,
+        max_tokens=16384,
         messages=[{
             "role": "user",
             "content": [
