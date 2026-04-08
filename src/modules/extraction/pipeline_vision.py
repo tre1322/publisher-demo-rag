@@ -694,7 +694,7 @@ def run_vision_pipeline(
     # Initialize the appropriate API client
     if vision_provider == "openai":
         from openai import OpenAI
-        client = OpenAI()
+        client = OpenAI(timeout=120.0)  # 2 min timeout per request to prevent hangs
         extract_fn = _extract_page_openai
         logger.info(f"Vision pipeline using OpenAI {VISION_MODEL}")
     else:
