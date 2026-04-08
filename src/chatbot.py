@@ -656,9 +656,15 @@ def create_app() -> FastAPI:
                     if len(related) >= 4:
                         break
 
+        # Check for podcast audio file
+        podcast_url = None
+        podcast_path = Path("static/podcasts") / f"{item_id}.m4a"
+        if podcast_path.exists():
+            podcast_url = f"/static/podcasts/{item_id}.m4a"
+
         return landing_templates.TemplateResponse(
             request=request, name="article_detail.html",
-            context={"article": article, "related": related},
+            context={"article": article, "related": related, "podcast_url": podcast_url},
         )
 
     # ── Ad Serving Endpoints ──

@@ -327,6 +327,135 @@
         }
         .back-link:hover { text-decoration: underline; }
 
+        /* ── Podcast Player ── */
+        .podcast-player {
+            background: linear-gradient(135deg, var(--nav-bg) 0%, color-mix(in srgb, var(--nav-bg) 80%, #4338ca) 100%);
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin-bottom: 24px;
+            color: white;
+            position: relative;
+            overflow: hidden;
+        }
+        .podcast-player::before {
+            content: '';
+            position: absolute;
+            top: -40px; right: -40px;
+            width: 120px; height: 120px;
+            background: rgba(255,255,255,0.04);
+            border-radius: 50%;
+        }
+        .podcast-player::after {
+            content: '';
+            position: absolute;
+            bottom: -20px; left: 30%;
+            width: 80px; height: 80px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 50%;
+        }
+        .podcast-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 16px;
+            position: relative;
+            z-index: 1;
+        }
+        .podcast-icon {
+            width: 36px; height: 36px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+        }
+        .podcast-icon svg {
+            width: 20px; height: 20px;
+            fill: white;
+        }
+        .podcast-label {
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+        }
+        .podcast-sublabel {
+            font-size: 12px;
+            color: rgba(255,255,255,0.6);
+            font-weight: 400;
+            margin-top: 1px;
+        }
+        .podcast-controls {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            position: relative;
+            z-index: 1;
+        }
+        .podcast-play-btn {
+            width: 44px; height: 44px;
+            background: white;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+            transition: transform 120ms ease, box-shadow 120ms ease;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        .podcast-play-btn:hover {
+            transform: scale(1.06);
+            box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+        }
+        .podcast-play-btn:active { transform: scale(0.97); }
+        .podcast-play-btn svg {
+            width: 20px; height: 20px;
+            fill: var(--nav-bg);
+            margin-left: 2px;
+        }
+        .podcast-play-btn.playing svg { margin-left: 0; }
+        .podcast-progress-wrap {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .podcast-progress-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(255,255,255,0.18);
+            border-radius: 3px;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+        .podcast-progress-bar:hover { height: 8px; }
+        .podcast-progress-fill {
+            height: 100%;
+            background: white;
+            border-radius: 3px;
+            width: 0%;
+            transition: width 100ms linear;
+        }
+        .podcast-time {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: rgba(255,255,255,0.55);
+            font-variant-numeric: tabular-nums;
+        }
+        .podcast-speed-btn {
+            background: rgba(255,255,255,0.15);
+            border: none;
+            color: white;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: background 120ms;
+        }
+        .podcast-speed-btn:hover { background: rgba(255,255,255,0.25); }
+
         /* ── Responsive ── */
         @media (max-width: 1024px) {
             .page-layout {
@@ -373,6 +502,36 @@
             <a class="back-link" href="{% if article.publisher == 'Pipestone Star' %}/pipestone{% else %}/{% endif %}">
                 &larr; Back to {{ article.publisher or 'Home' }}
             </a>
+
+            {% if podcast_url %}
+            <div class="podcast-player">
+                <div class="podcast-header">
+                    <div class="podcast-icon">
+                        <svg viewBox="0 0 24 24"><path d="M12 1a4 4 0 0 0-4 4v7a4 4 0 0 0 8 0V5a4 4 0 0 0-4-4zm0 18a7 7 0 0 1-7-7H3a9 9 0 0 0 8 8.94V23h2v-2.06A9 9 0 0 0 21 12h-2a7 7 0 0 1-7 7z"/></svg>
+                    </div>
+                    <div>
+                        <div class="podcast-label">Listen to This Story</div>
+                        <div class="podcast-sublabel">AI-generated audio summary &middot; Powered by NotebookLM</div>
+                    </div>
+                </div>
+                <div class="podcast-controls">
+                    <button class="podcast-play-btn" id="podcast-play" onclick="togglePodcast()">
+                        <svg id="play-icon" viewBox="0 0 24 24"><polygon points="6,3 20,12 6,21"/></svg>
+                    </button>
+                    <div class="podcast-progress-wrap">
+                        <div class="podcast-progress-bar" id="podcast-bar" onclick="seekPodcast(event)">
+                            <div class="podcast-progress-fill" id="podcast-fill"></div>
+                        </div>
+                        <div class="podcast-time">
+                            <span id="podcast-current">0:00</span>
+                            <span id="podcast-duration">--:--</span>
+                        </div>
+                    </div>
+                    <button class="podcast-speed-btn" id="podcast-speed" onclick="cyclePodcastSpeed()">1x</button>
+                </div>
+                <audio id="podcast-audio" preload="metadata" src="{{ podcast_url }}"></audio>
+            </div>
+            {% endif %}
 
             <article class="article">
                 <div class="article-meta">
@@ -453,6 +612,66 @@
     </div>
 
     <script>
+        // ── Podcast Player ──
+        const podcastAudio = document.getElementById('podcast-audio');
+        if (podcastAudio) {
+            const playBtn = document.getElementById('podcast-play');
+            const playIcon = document.getElementById('play-icon');
+            const fill = document.getElementById('podcast-fill');
+            const currentTime = document.getElementById('podcast-current');
+            const durationEl = document.getElementById('podcast-duration');
+            const speedBtn = document.getElementById('podcast-speed');
+            const speeds = [1, 1.25, 1.5, 2];
+            let speedIdx = 0;
+
+            function fmt(s) {
+                const m = Math.floor(s / 60);
+                const sec = Math.floor(s % 60);
+                return m + ':' + (sec < 10 ? '0' : '') + sec;
+            }
+
+            podcastAudio.addEventListener('loadedmetadata', () => {
+                durationEl.textContent = fmt(podcastAudio.duration);
+            });
+
+            podcastAudio.addEventListener('timeupdate', () => {
+                if (podcastAudio.duration) {
+                    fill.style.width = (podcastAudio.currentTime / podcastAudio.duration * 100) + '%';
+                    currentTime.textContent = fmt(podcastAudio.currentTime);
+                }
+            });
+
+            podcastAudio.addEventListener('ended', () => {
+                playBtn.classList.remove('playing');
+                playIcon.innerHTML = '<polygon points="6,3 20,12 6,21"/>';
+            });
+
+            window.togglePodcast = function() {
+                if (podcastAudio.paused) {
+                    podcastAudio.play();
+                    playBtn.classList.add('playing');
+                    playIcon.innerHTML = '<rect x="5" y="3" width="4" height="18"/><rect x="15" y="3" width="4" height="18"/>';
+                } else {
+                    podcastAudio.pause();
+                    playBtn.classList.remove('playing');
+                    playIcon.innerHTML = '<polygon points="6,3 20,12 6,21"/>';
+                }
+            };
+
+            window.seekPodcast = function(e) {
+                const bar = document.getElementById('podcast-bar');
+                const rect = bar.getBoundingClientRect();
+                const pct = (e.clientX - rect.left) / rect.width;
+                podcastAudio.currentTime = pct * podcastAudio.duration;
+            };
+
+            window.cyclePodcastSpeed = function() {
+                speedIdx = (speedIdx + 1) % speeds.length;
+                podcastAudio.playbackRate = speeds[speedIdx];
+                speedBtn.textContent = speeds[speedIdx] + 'x';
+            };
+        }
+
         // ── Article body rendering ──
         const rawBody = {{ (article.cleaned_text or article.full_text or '')|tojson }};
         const bodyEl = document.getElementById('article-body');
