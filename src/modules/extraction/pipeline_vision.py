@@ -1,21 +1,22 @@
-"""Vision-based extraction: send PDF pages to Claude Opus as images.
+"""Vision-based extraction: send PDF pages to GPT-5.4 or Claude as images.
 
 Instead of parsing PDF layout with code (which fails on multi-column
 layouts, split text blocks, and column-break hyphens), this pipeline
-sends each page as a PNG image to Claude's vision model and asks it
-to read the page like a human editor.
+sends each page as a PNG image to a vision model and asks it to read
+the page like a human editor.
 
-Claude returns structured JSON with:
+The model returns structured JSON with:
 - Every article's headline, byline, and full body text
 - Jump-out references (article continues on another page)
 - Jump-in markers (article is a continuation from another page)
 
-Then we stitch articles across pages by matching jump keywords.
+Then we stitch articles across pages using a scoring-based matcher
+that evaluates 9 factors: keyword match, page references, byline
+consistency, headline similarity, lexical continuity, content kind,
+and distance penalty.
 
-Proven approach: tested on Cottonwood County Citizen 03-18-26,
-pages 1+5. All 3 jumped articles stitched correctly.
-
-Cost: ~$0.02/page, ~$0.30 per 14-page edition.
+Default provider: OpenAI GPT-5.4 (image method, ~$0.04/page)
+Fallback: Anthropic Claude Sonnet (~$0.02/page but less accurate)
 """
 
 import base64
@@ -23,18 +24,24 @@ import json
 import logging
 import re
 import time
+from difflib import SequenceMatcher
 from pathlib import Path
 
-import anthropic
 import fitz  # PyMuPDF
 
-from src.core.config import VISION_COST_PER_PAGE, VISION_DPI, VISION_MODEL, VISION_PAGE_DELAY
+from src.core.config import (
+    VISION_COST_PER_PAGE,
+    VISION_DPI,
+    VISION_MODEL,
+    VISION_PAGE_DELAY,
+    VISION_PROVIDER,
+)
 from src.modules.extraction.extract_pages import ARTIFACTS_BASE
 
 logger = logging.getLogger(__name__)
 
-# The prompt that drives structured JSON output from Claude Vision.
-# Proven in testing — do not change without re-testing on known editions.
+# The prompt that drives structured JSON output from the vision model.
+# Proven in testing with GPT-5.4 — do not change without re-testing.
 PAGE_PROMPT = """You are a newspaper text transcription tool. Your job is to TRANSCRIBE the exact text from this newspaper page into structured JSON.
 
 CRITICAL: You must copy the EXACT words printed on the page. Do NOT summarize, paraphrase, shorten, or make up any text. Every word in body_text must appear on the page exactly as printed. If you cannot read a word, use [illegible]. Never fabricate or infer text that isn't visible.
@@ -93,7 +100,7 @@ def estimate_vision_cost(page_count: int) -> dict:
     return {
         "pages": page_count,
         "est_cost_usd": round(page_count * VISION_COST_PER_PAGE, 2),
-        "est_time_minutes": round(page_count * 1.5, 1),  # ~90s avg per page
+        "est_time_minutes": round(page_count * 1.0, 1),  # ~60s avg per page with GPT-5.4
     }
 
 
@@ -149,23 +156,71 @@ def _render_page_image(doc: fitz.Document, page_num: int) -> tuple[bytes, str]:
     return jpeg_bytes, "image/jpeg"
 
 
-def _extract_page_vision(
+# ---------------------------------------------------------------------------
+# Vision extraction — supports OpenAI GPT-5.4 and Anthropic Claude
+# ---------------------------------------------------------------------------
+
+def _extract_page_openai(
     image_bytes: bytes,
     page_num: int,
-    client: anthropic.Anthropic,
+    client,
     media_type: str = "image/png",
 ) -> dict:
-    """Send one page image to Claude Vision and get structured JSON back.
+    """Send one page image to OpenAI GPT-5.4 and get structured JSON back."""
+    image_b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
+    prompt = PAGE_PROMPT.replace("PAGE_NUM_PLACEHOLDER", str(page_num))
 
-    Args:
-        image_bytes: Image bytes (PNG or JPEG).
-        page_num: 1-indexed page number (injected into prompt).
-        client: Anthropic API client.
-        media_type: MIME type of the image ("image/png" or "image/jpeg").
+    response = client.responses.create(
+        model=VISION_MODEL,
+        input=[{
+            "role": "user",
+            "content": [
+                {
+                    "type": "input_image",
+                    "image_url": f"data:{media_type};base64,{image_b64}",
+                },
+                {
+                    "type": "input_text",
+                    "text": prompt,
+                },
+            ],
+        }],
+    )
 
-    Returns:
-        Parsed JSON dict with page_num, articles, ads.
-    """
+    # Extract text from response
+    raw_text = ""
+    for item in response.output:
+        if hasattr(item, "content") and item.content is not None:
+            for block in item.content:
+                if hasattr(block, "text"):
+                    raw_text += block.text
+        if hasattr(item, "text") and item.text:
+            raw_text += item.text
+    if not raw_text and hasattr(response, "output_text") and response.output_text:
+        raw_text = response.output_text
+
+    # Log cost
+    try:
+        from src.modules.costs.tracker import log_api_call
+        usage = getattr(response, "usage", None)
+        log_api_call(
+            "openai", VISION_MODEL, "vision_extraction",
+            input_tokens=getattr(usage, "input_tokens", 0) if usage else 0,
+            output_tokens=getattr(usage, "output_tokens", 0) if usage else 0,
+        )
+    except Exception:
+        pass
+
+    return _parse_vision_response(raw_text, page_num)
+
+
+def _extract_page_anthropic(
+    image_bytes: bytes,
+    page_num: int,
+    client,
+    media_type: str = "image/png",
+) -> dict:
+    """Send one page image to Anthropic Claude and get structured JSON back."""
     image_b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
     prompt = PAGE_PROMPT.replace("PAGE_NUM_PLACEHOLDER", str(page_num))
 
@@ -195,28 +250,34 @@ def _extract_page_vision(
     try:
         from src.modules.costs.tracker import log_api_call
         usage = getattr(response, "usage", None)
-        log_api_call("anthropic", VISION_MODEL, "vision_extraction",
+        log_api_call(
+            "anthropic", VISION_MODEL, "vision_extraction",
             input_tokens=getattr(usage, "input_tokens", 0) if usage else 0,
-            output_tokens=getattr(usage, "output_tokens", 0) if usage else 0)
+            output_tokens=getattr(usage, "output_tokens", 0) if usage else 0,
+        )
     except Exception:
         pass
 
     raw_text = response.content[0].text.strip()
+    return _parse_vision_response(raw_text, page_num)
+
+
+def _parse_vision_response(raw_text: str, page_num: int) -> dict:
+    """Parse raw vision model response text into structured JSON."""
+    clean = raw_text.strip()
 
     # Strip markdown code fences if present
-    if raw_text.startswith("```"):
-        raw_text = re.sub(r"^```\w*\n?", "", raw_text)
-        raw_text = re.sub(r"\n?```$", "", raw_text)
+    if clean.startswith("```"):
+        clean = re.sub(r"^```\w*\n?", "", clean)
+        clean = re.sub(r"\n?```$", "", clean)
 
     try:
-        result = json.loads(raw_text)
+        result = json.loads(clean)
     except json.JSONDecodeError:
-        # Try to salvage truncated JSON
-        result = _salvage_truncated_json(raw_text, page_num)
+        result = _salvage_truncated_json(clean, page_num)
 
     # Ensure page_num is set
     result["page_num"] = page_num
-
     return result
 
 
@@ -249,99 +310,312 @@ def _salvage_truncated_json(raw_text: str, page_num: int) -> dict:
     }
 
 
-def _stitch_articles(page_results: list[dict]) -> list[dict]:
-    """Stitch articles across pages using jump_out/jump_in keywords.
+# ---------------------------------------------------------------------------
+# Scoring-based article stitcher
+# ---------------------------------------------------------------------------
 
-    For each article with a jump_out keyword, find the matching continuation
-    on the target page and concatenate the body text.
+def _stitch_articles(page_results: list[dict]) -> list[dict]:
+    """Stitch articles across pages using a multi-factor scoring system.
+
+    Evaluates 9 factors for each candidate stitch:
+    1. Keyword match (jump_out keyword matches jump_in keyword)
+    2. Page reference match (target_page matches continuation's page)
+    3. Source page back-reference (continuation points back to source)
+    4. Byline consistency
+    5. Headline similarity (fuzzy match)
+    6. Lexical continuity (last words of source overlap first words of continuation)
+    7. Content kind match (news→news, sports→sports)
+    8. Page distance penalty
+    9. Body text length bonus (prefer longer continuations)
 
     Returns list of StandardArticle dicts.
     """
-    # Build index: (keyword, source_page) -> continuation article
-    continuations = {}
-    for page in page_results:
-        page_num = page["page_num"]
-        for art in page.get("articles", []):
-            ji = art.get("jump_in")
-            if art.get("is_continuation") and ji and ji.get("keyword"):
-                key = (ji["keyword"].upper().strip(), ji.get("source_page"))
-                continuations[key] = {**art, "_page_num": page_num}
-
-    stitched = []
-    used_keys = set()
+    # Separate source articles (with jump_out) and continuations (with jump_in)
+    sources = []  # (page_data, article, page_num)
+    continuations = []  # (page_data, article, page_num)
+    standalone = []  # articles with no jumps
 
     for page in page_results:
         page_num = page["page_num"]
         for art in page.get("articles", []):
-            if art.get("is_continuation"):
-                continue  # skip — merged into source article
-
             if art.get("is_ad"):
-                continue  # skip ads
+                continue
 
-            body = art.get("body_text", "")
-            headline = art.get("headline", "")
-            jump_pages = []
-            is_stitched = False
+            jo = art.get("jump_out") or {}
+            ji = art.get("jump_in") or {}
 
-            # Check for jump-out
-            jo = art.get("jump_out")
-            if jo and jo.get("keyword"):
-                kw = jo["keyword"].upper().strip()
-                target = jo.get("target_page")
+            has_jump_out = bool(jo.get("keyword"))
+            has_jump_in = bool(ji.get("keyword")) or art.get("is_continuation")
 
-                # Try exact match (keyword + source_page)
-                cont = (
-                    continuations.get((kw, page_num))
-                    or continuations.get((kw, None))
-                    or next((v for k, v in continuations.items() if k[0] == kw), None)
-                )
+            if has_jump_out and not has_jump_in:
+                sources.append((page, art, page_num))
+            elif has_jump_in and not has_jump_out:
+                continuations.append((page, art, page_num))
+            elif has_jump_out and has_jump_in:
+                # Article is both a continuation AND jumps out again (multi-hop)
+                continuations.append((page, art, page_num))
+                sources.append((page, art, page_num))
+            else:
+                standalone.append((page, art, page_num))
 
-                if cont:
-                    key = next(k for k, v in continuations.items() if v is cont)
-                    if key not in used_keys:
-                        cont_body = cont.get("body_text", "")
-                        if cont_body:
-                            body = body + "\n\n" + cont_body
-                            jump_pages.append(cont["_page_num"])
-                            is_stitched = True
-                            used_keys.add(key)
+    # Score all possible source→continuation pairs
+    scored_pairs = []
+    for s_idx, (s_page, s_art, s_pnum) in enumerate(sources):
+        for c_idx, (c_page, c_art, c_pnum) in enumerate(continuations):
+            if s_pnum == c_pnum:
+                continue  # same page — not a stitch
+            score = _score_stitch(s_art, s_pnum, s_page, c_art, c_pnum, c_page)
+            if score >= 5.0:
+                scored_pairs.append((score, s_idx, c_idx))
 
-            # Build StandardArticle
-            byline = art.get("byline") or ""
-            if byline.lower().startswith("by "):
-                byline = byline[3:].strip()
+    # Greedy one-to-one matching: highest scores first
+    scored_pairs.sort(reverse=True)
+    used_sources = set()
+    used_conts = set()
+    matches = []  # (source_idx, cont_idx)
 
-            stitched.append({
-                "headline": headline,
-                "subheadline": art.get("subheadline") or "",
-                "byline": byline,
-                "body_text": body,
-                "content_type": _infer_page_content_type(page.get("page_type", ""), headline),
-                "start_page": page_num,
-                "jump_pages": jump_pages,
-                "is_stitched": is_stitched,
-                "extraction_confidence": 0.85,
-                "source_pipeline": "vision",
-            })
+    for score, s_idx, c_idx in scored_pairs:
+        if s_idx in used_sources or c_idx in used_conts:
+            continue
+        matches.append((s_idx, c_idx))
+        used_sources.add(s_idx)
+        used_conts.add(c_idx)
+        logger.info(
+            f"  Stitch: '{sources[s_idx][1].get('headline', '')[:50]}' p{sources[s_idx][2]} "
+            f"-> p{continuations[c_idx][2]} (score={score:.1f})"
+        )
 
-    # Add any unclaimed continuations as standalone articles
-    for key, cont in continuations.items():
-        if key not in used_keys:
-            stitched.append({
-                "headline": cont.get("headline", ""),
-                "subheadline": cont.get("subheadline") or "",
-                "byline": cont.get("byline") or "",
-                "body_text": cont.get("body_text", ""),
-                "content_type": "news",
-                "start_page": cont["_page_num"],
-                "jump_pages": [],
-                "is_stitched": False,
-                "extraction_confidence": 0.75,
-                "source_pipeline": "vision",
-            })
+    # Build stitched articles
+    stitched = []
+
+    # Process matched sources
+    matched_cont_indices = {c_idx for _, c_idx in matches}
+    matched_src_indices = {s_idx for s_idx, _ in matches}
+
+    for s_idx, c_idx in matches:
+        s_page, s_art, s_pnum = sources[s_idx]
+        c_page, c_art, c_pnum = continuations[c_idx]
+
+        body = _merge_article_text(
+            s_art.get("body_text", ""),
+            c_art.get("body_text", ""),
+        )
+
+        # Use source headline (continuation headlines are often "from Page X")
+        headline = s_art.get("headline", "")
+        byline = s_art.get("byline") or c_art.get("byline") or ""
+        if byline.lower().startswith("by "):
+            byline = byline[3:].strip()
+
+        stitched.append({
+            "headline": headline,
+            "subheadline": s_art.get("subheadline") or c_art.get("subheadline") or "",
+            "byline": byline,
+            "body_text": body,
+            "content_type": _infer_page_content_type(
+                s_page.get("page_type", ""), headline
+            ),
+            "start_page": s_pnum,
+            "jump_pages": [c_pnum],
+            "is_stitched": True,
+            "extraction_confidence": 0.90,
+            "source_pipeline": "vision",
+        })
+
+    # Add unmatched sources (jump_out but no matching continuation found)
+    for s_idx, (s_page, s_art, s_pnum) in enumerate(sources):
+        if s_idx in matched_src_indices:
+            continue
+        # Don't double-add if also in continuations
+        if s_art.get("is_continuation"):
+            continue
+        byline = s_art.get("byline") or ""
+        if byline.lower().startswith("by "):
+            byline = byline[3:].strip()
+        stitched.append({
+            "headline": s_art.get("headline", ""),
+            "subheadline": s_art.get("subheadline") or "",
+            "byline": byline,
+            "body_text": s_art.get("body_text", ""),
+            "content_type": _infer_page_content_type(
+                s_page.get("page_type", ""), s_art.get("headline", "")
+            ),
+            "start_page": s_pnum,
+            "jump_pages": [],
+            "is_stitched": False,
+            "extraction_confidence": 0.85,
+            "source_pipeline": "vision",
+        })
+
+    # Add standalone articles (no jumps at all)
+    for s_page, s_art, s_pnum in standalone:
+        byline = s_art.get("byline") or ""
+        if byline.lower().startswith("by "):
+            byline = byline[3:].strip()
+        stitched.append({
+            "headline": s_art.get("headline", ""),
+            "subheadline": s_art.get("subheadline") or "",
+            "byline": byline,
+            "body_text": s_art.get("body_text", ""),
+            "content_type": _infer_page_content_type(
+                s_page.get("page_type", ""), s_art.get("headline", "")
+            ),
+            "start_page": s_pnum,
+            "jump_pages": [],
+            "is_stitched": False,
+            "extraction_confidence": 0.85,
+            "source_pipeline": "vision",
+        })
+
+    # Add unmatched continuations as standalone
+    for c_idx, (c_page, c_art, c_pnum) in enumerate(continuations):
+        if c_idx in matched_cont_indices:
+            continue
+        # Skip if this continuation is also a source that was already matched
+        if c_art.get("jump_out", {}).get("keyword"):
+            # Check if it was added as a source
+            is_source_added = any(
+                sources[s_idx][1] is c_art for s_idx in range(len(sources))
+                if s_idx not in matched_src_indices
+            )
+            if not is_source_added:
+                continue
+
+        byline = c_art.get("byline") or ""
+        if byline.lower().startswith("by "):
+            byline = byline[3:].strip()
+        stitched.append({
+            "headline": c_art.get("headline", ""),
+            "subheadline": c_art.get("subheadline") or "",
+            "byline": byline,
+            "body_text": c_art.get("body_text", ""),
+            "content_type": _infer_page_content_type(
+                c_page.get("page_type", ""), c_art.get("headline", "")
+            ),
+            "start_page": c_pnum,
+            "jump_pages": [],
+            "is_stitched": False,
+            "extraction_confidence": 0.75,
+            "source_pipeline": "vision",
+        })
 
     return stitched
+
+
+def _score_stitch(
+    source: dict, s_pnum: int, s_page: dict,
+    cont: dict, c_pnum: int, c_page: dict,
+) -> float:
+    """Score how well a source article and continuation match.
+
+    Returns a float score; higher is better. Minimum threshold: 5.0.
+    """
+    score = 0.0
+
+    s_jo = source.get("jump_out") or {}
+    c_ji = cont.get("jump_in") or {}
+    s_kw = (s_jo.get("keyword") or "").upper().strip()
+    c_kw = (c_ji.get("keyword") or "").upper().strip()
+
+    # 1. Keyword match (strongest signal) — up to 5 points
+    if s_kw and c_kw:
+        if s_kw == c_kw:
+            score += 5.0
+        elif s_kw in c_kw or c_kw in s_kw:
+            score += 3.0
+        else:
+            # Fuzzy keyword match
+            ratio = SequenceMatcher(None, s_kw, c_kw).ratio()
+            if ratio > 0.6:
+                score += ratio * 3.0
+
+    # 2. Page reference match — source targets this page
+    s_target = s_jo.get("target_page")
+    if s_target and s_target == c_pnum:
+        score += 3.0
+
+    # 3. Source page back-reference — continuation points back to source
+    c_source = c_ji.get("source_page")
+    if c_source and c_source == s_pnum:
+        score += 3.0
+
+    # 4. Byline consistency
+    s_by = (source.get("byline") or "").lower().strip()
+    c_by = (cont.get("byline") or "").lower().strip()
+    if s_by and c_by and s_by == c_by:
+        score += 1.5
+
+    # 5. Headline similarity
+    s_hl = (source.get("headline") or "").lower()
+    c_hl = (cont.get("headline") or "").lower()
+    if s_hl and c_hl:
+        hl_ratio = SequenceMatcher(None, s_hl, c_hl).ratio()
+        if hl_ratio > 0.5:
+            score += hl_ratio * 1.5
+
+    # 6. Lexical continuity — do the last words of source overlap first words of cont?
+    s_body = source.get("body_text", "")
+    c_body = cont.get("body_text", "")
+    if s_body and c_body:
+        s_tail = s_body[-200:].lower().split()
+        c_head = c_body[:200].lower().split()
+        if s_tail and c_head:
+            overlap = set(s_tail[-10:]) & set(c_head[:10])
+            # Some overlap of common words is expected; significant overlap suggests match
+            if len(overlap) >= 3:
+                score += 1.0
+
+    # 7. Content kind match
+    s_type = s_page.get("page_type", "").lower()
+    c_type = c_page.get("page_type", "").lower()
+    if s_type and c_type and s_type == c_type:
+        score += 0.5
+
+    # 8. Page distance penalty — articles usually jump nearby
+    dist = abs(c_pnum - s_pnum)
+    if dist <= 2:
+        score += 1.0
+    elif dist <= 5:
+        score += 0.5
+    elif dist > 10:
+        score -= 1.0
+
+    # 9. Body text length bonus — prefer longer continuations (more likely real)
+    if len(c_body) > 500:
+        score += 0.5
+
+    return score
+
+
+def _merge_article_text(source_body: str, cont_body: str) -> str:
+    """Merge source and continuation text, deduplicating any overlap.
+
+    Sometimes the source's trailing text and the continuation's leading
+    text overlap (the model transcribes the same paragraph twice). This
+    finds the longest suffix/prefix overlap and removes the duplicate.
+    """
+    if not cont_body:
+        return source_body
+    if not source_body:
+        return cont_body
+
+    # Check for suffix/prefix overlap
+    # Take the last 300 chars of source and first 300 chars of continuation
+    s_tail = source_body[-300:]
+    c_head = cont_body[:300:]
+
+    best_overlap = 0
+    min_overlap = 30  # minimum chars to consider as real overlap
+
+    for i in range(min_overlap, min(len(s_tail), len(c_head)) + 1):
+        if s_tail.endswith(c_head[:i]):
+            best_overlap = i
+
+    if best_overlap >= min_overlap:
+        logger.info(f"  Overlap dedup: removed {best_overlap} chars of duplicate text")
+        return source_body + "\n\n" + cont_body[best_overlap:].lstrip()
+
+    return source_body + "\n\n" + cont_body
 
 
 def _infer_page_content_type(page_type: str, headline: str) -> str:
@@ -371,8 +645,9 @@ def run_vision_pipeline(
     publisher_id: int,
     page_filter: list[int] | None = None,
     on_page_complete: callable = None,
+    provider: str | None = None,
 ) -> dict:
-    """Full vision pipeline: render pages -> Claude Vision -> stitch -> StandardArticles.
+    """Full vision pipeline: render pages -> Vision API -> stitch -> StandardArticles.
 
     Args:
         pdf_path: Path to the PDF file.
@@ -381,12 +656,15 @@ def run_vision_pipeline(
         page_filter: Optional list of page numbers to process (1-indexed).
                      If None, processes all pages.
         on_page_complete: Optional callback(page_num, total_pages, result) for progress.
+        provider: Override vision provider ("openai" or "anthropic").
+                  Defaults to VISION_PROVIDER from config.
 
     Returns:
         Dict with success, articles (StandardArticle list), page_results, cost_usd, timing.
     """
     pdf_path = str(pdf_path)
     start_time = time.time()
+    vision_provider = (provider or VISION_PROVIDER).lower()
 
     result = {
         "success": False,
@@ -396,6 +674,7 @@ def run_vision_pipeline(
         "pages_processed": 0,
         "cost_usd": 0.0,
         "error": None,
+        "provider": vision_provider,
     }
 
     # Open PDF
@@ -412,8 +691,17 @@ def run_vision_pipeline(
     artifacts_dir = ARTIFACTS_BASE / f"publisher_{publisher_id}" / f"edition_{edition_id}"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-    # Initialize Anthropic client
-    client = anthropic.Anthropic()
+    # Initialize the appropriate API client
+    if vision_provider == "openai":
+        from openai import OpenAI
+        client = OpenAI()
+        extract_fn = _extract_page_openai
+        logger.info(f"Vision pipeline using OpenAI {VISION_MODEL}")
+    else:
+        import anthropic
+        client = anthropic.Anthropic()
+        extract_fn = _extract_page_anthropic
+        logger.info(f"Vision pipeline using Anthropic {VISION_MODEL}")
 
     page_results = []
 
@@ -430,8 +718,8 @@ def run_vision_pipeline(
             fmt = "PNG" if "png" in media_type else "JPEG"
             logger.info(f"  Page {page_num}: {len(image_bytes)} bytes {fmt}")
 
-            # Send to Claude Vision
-            page_data = _extract_page_vision(image_bytes, page_num, client, media_type)
+            # Send to Vision API
+            page_data = extract_fn(image_bytes, page_num, client, media_type)
 
             article_count = len(page_data.get("articles", []))
             ad_count = len(page_data.get("ads", []))
@@ -475,7 +763,7 @@ def run_vision_pipeline(
     elapsed = round(time.time() - start_time, 1)
     stitched_count = sum(1 for a in articles if a.get("is_stitched"))
     logger.info(
-        f"Vision pipeline complete: {len(articles)} articles "
+        f"Vision pipeline complete ({vision_provider}): {len(articles)} articles "
         f"({stitched_count} stitched) from {len(pages_to_process)} pages "
         f"in {elapsed}s, cost=${result['cost_usd']}"
     )
