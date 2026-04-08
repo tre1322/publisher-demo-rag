@@ -503,36 +503,6 @@
                 &larr; Back to {{ article.publisher or 'Home' }}
             </a>
 
-            {% if podcast_url %}
-            <div class="podcast-player">
-                <div class="podcast-header">
-                    <div class="podcast-icon">
-                        <svg viewBox="0 0 24 24"><path d="M12 1a4 4 0 0 0-4 4v7a4 4 0 0 0 8 0V5a4 4 0 0 0-4-4zm0 18a7 7 0 0 1-7-7H3a9 9 0 0 0 8 8.94V23h2v-2.06A9 9 0 0 0 21 12h-2a7 7 0 0 1-7 7z"/></svg>
-                    </div>
-                    <div>
-                        <div class="podcast-label">Listen to This Story</div>
-                        <div class="podcast-sublabel">AI-generated audio summary &middot; Powered by NotebookLM</div>
-                    </div>
-                </div>
-                <div class="podcast-controls">
-                    <button class="podcast-play-btn" id="podcast-play" onclick="togglePodcast()">
-                        <svg id="play-icon" viewBox="0 0 24 24"><polygon points="6,3 20,12 6,21"/></svg>
-                    </button>
-                    <div class="podcast-progress-wrap">
-                        <div class="podcast-progress-bar" id="podcast-bar" onclick="seekPodcast(event)">
-                            <div class="podcast-progress-fill" id="podcast-fill"></div>
-                        </div>
-                        <div class="podcast-time">
-                            <span id="podcast-current">0:00</span>
-                            <span id="podcast-duration">--:--</span>
-                        </div>
-                    </div>
-                    <button class="podcast-speed-btn" id="podcast-speed" onclick="cyclePodcastSpeed()">1x</button>
-                </div>
-                <audio id="podcast-audio" preload="metadata" src="{{ podcast_url }}"></audio>
-            </div>
-            {% endif %}
-
             <article class="article">
                 <div class="article-meta">
                     <span class="article-publisher">{{ article.publisher or 'Observer/Advocate' }}</span>
@@ -553,7 +523,41 @@
                 {% endif %}
 
                 {% if article.author %}
-                <div class="article-byline">By <strong>{{ article.author }}</strong></div>
+                <div class="article-byline" {% if podcast_url %}style="border-bottom: none; padding-bottom: 0; margin-bottom: 16px;"{% endif %}>By <strong>{{ article.author }}</strong></div>
+                {% endif %}
+
+                {% if podcast_url %}
+                <div class="podcast-player">
+                    <div class="podcast-header">
+                        <div class="podcast-icon">
+                            <svg viewBox="0 0 24 24"><path d="M12 1a4 4 0 0 0-4 4v7a4 4 0 0 0 8 0V5a4 4 0 0 0-4-4zm0 18a7 7 0 0 1-7-7H3a9 9 0 0 0 8 8.94V23h2v-2.06A9 9 0 0 0 21 12h-2a7 7 0 0 1-7 7z"/></svg>
+                        </div>
+                        <div>
+                            <div class="podcast-label">Listen to This Story</div>
+                            <div class="podcast-sublabel">AI-generated audio summary &middot; Powered by NotebookLM</div>
+                        </div>
+                    </div>
+                    <div class="podcast-controls">
+                        <button class="podcast-play-btn" id="podcast-play" onclick="togglePodcast()">
+                            <svg id="play-icon" viewBox="0 0 24 24"><polygon points="6,3 20,12 6,21"/></svg>
+                        </button>
+                        <div class="podcast-progress-wrap">
+                            <div class="podcast-progress-bar" id="podcast-bar" onclick="seekPodcast(event)">
+                                <div class="podcast-progress-fill" id="podcast-fill"></div>
+                            </div>
+                            <div class="podcast-time">
+                                <span id="podcast-current">0:00</span>
+                                <span id="podcast-duration">--:--</span>
+                            </div>
+                        </div>
+                        <button class="podcast-speed-btn" id="podcast-speed" onclick="cyclePodcastSpeed()">1x</button>
+                    </div>
+                    <audio id="podcast-audio" preload="metadata" src="{{ podcast_url }}"></audio>
+                </div>
+                {% endif %}
+
+                {% if podcast_url %}
+                <div style="border-bottom: 1px solid var(--border); margin-bottom: 24px;"></div>
                 {% endif %}
 
                 <div class="article-body" id="article-body">
