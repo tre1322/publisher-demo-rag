@@ -106,6 +106,22 @@ from src.query_engine import QueryEngine
 logger = logging.getLogger(__name__)
 
 
+def _count_by_type(chunks: list[dict]) -> dict[str, int]:
+    """Count chunks by their search type.
+
+    Args:
+        chunks: List of search result chunks.
+
+    Returns:
+        Dictionary mapping search type to count.
+    """
+    counts: dict[str, int] = {}
+    for chunk in chunks:
+        search_type = chunk.get("search_type", "unknown")
+        counts[search_type] = counts.get(search_type, 0) + 1
+    return counts
+
+
 def sanitize_partial_html(text: str) -> str:
     """Hide incomplete HTML tags during streaming.
 
@@ -218,12 +234,17 @@ def create_chatbot() -> gr.Blocks:
                 return
 
             # Perform search via content orchestrator (intent-based routing)
+            search_metadata = {}
             if orchestrator is not None:
-                chunks = orchestrator.search(message)
+                chunks, search_metadata = orchestrator.search(message)
             elif engine.search_agent is not None:
-                chunks = engine.search_agent.search(message)
+                chunks, search_metadata = engine.search_agent.search(message)
             else:
                 chunks = engine.retrieve(message)
+                search_metadata = {
+                    "search_method": "direct_retrieval",
+                    "chunks_retrieved": len(chunks),
+                }
 
             # Log content impressions for analytics
             for chunk in chunks:
@@ -258,8 +279,15 @@ def create_chatbot() -> gr.Blocks:
             history[-1]["content"] = accumulated
             yield "", history
 
-            # Log complete response
-            insert_message(current_conversation_id, "assistant", accumulated)
+            # Build metadata for logging
+            response_metadata = {
+                "search": search_metadata,
+                "chunks_count": len(chunks),
+                "chunks_by_type": _count_by_type(chunks),
+            }
+
+            # Log complete response with search metadata
+            insert_message(current_conversation_id, "assistant", accumulated, metadata=response_metadata)
 
         except Exception as e:
             logger.error(f"Error processing query: {e}")

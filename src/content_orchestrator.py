@@ -24,36 +24,69 @@ class ContentOrchestrator:
         self.tools = SearchTools()
         logger.info("ContentOrchestrator initialized")
 
-    def search(self, query: str) -> list[dict]:
+    def search(self, query: str) -> tuple[list[dict], dict]:
         """Search across content domains based on query intent.
 
         Args:
             query: User's search query.
 
         Returns:
-            Merged, ranked list of result dicts.
+            Tuple of (results, search_metadata) where search_metadata contains:
+                - search_method: "content_orchestrator"
+                - intent: Detected intent (AD_BUSINESS, ARTICLE_NEWS, MIXED_DISCOVERY)
+                - searches_executed: List of search domain executions
+                - total_results: Total results before deduplication
+                - unique_results: Results after deduplication
         """
+        import time
+        start_time = time.time()
+
         intent = classify_intent(query)
 
         results: list[dict] = []
+        searches_executed = []
 
         if intent == AD_BUSINESS:
             # Ads first, then articles as supplement
-            results.extend(self._search_ads(query))
-            results.extend(self._search_articles(query, top_k=3))
-            results.extend(self._search_events(query))
+            ads_results = self._search_ads(query)
+            results.extend(ads_results)
+            searches_executed.append({"domain": "advertisements", "count": len(ads_results)})
+
+            article_results = self._search_articles(query, top_k=3)
+            results.extend(article_results)
+            searches_executed.append({"domain": "articles", "count": len(article_results)})
+
+            event_results = self._search_events(query)
+            results.extend(event_results)
+            searches_executed.append({"domain": "events", "count": len(event_results)})
 
         elif intent == ARTICLE_NEWS:
             # Articles first, ads as supplement
-            results.extend(self._search_articles(query))
-            results.extend(self._search_ads(query))
-            results.extend(self._search_events(query))
+            article_results = self._search_articles(query)
+            results.extend(article_results)
+            searches_executed.append({"domain": "articles", "count": len(article_results)})
+
+            ads_results = self._search_ads(query)
+            results.extend(ads_results)
+            searches_executed.append({"domain": "advertisements", "count": len(ads_results)})
+
+            event_results = self._search_events(query)
+            results.extend(event_results)
+            searches_executed.append({"domain": "events", "count": len(event_results)})
 
         else:  # MIXED_DISCOVERY
             # Search everything equally
-            results.extend(self._search_articles(query))
-            results.extend(self._search_ads(query))
-            results.extend(self._search_events(query))
+            article_results = self._search_articles(query)
+            results.extend(article_results)
+            searches_executed.append({"domain": "articles", "count": len(article_results)})
+
+            ads_results = self._search_ads(query)
+            results.extend(ads_results)
+            searches_executed.append({"domain": "advertisements", "count": len(ads_results)})
+
+            event_results = self._search_events(query)
+            results.extend(event_results)
+            searches_executed.append({"domain": "events", "count": len(event_results)})
 
         # Deduplicate by text hash
         seen = set()
@@ -79,7 +112,18 @@ class ContentOrchestrator:
             score = r.get("score", 0)
             logger.info(f"  Result {i+1}: [{rtype}] {title} (score={score:.2f})")
 
-        return unique
+        # Build metadata
+        execution_time_ms = int((time.time() - start_time) * 1000)
+        search_metadata = {
+            "search_method": "content_orchestrator",
+            "intent": intent,
+            "searches_executed": searches_executed,
+            "total_results": len(results),
+            "unique_results": len(unique),
+            "execution_time_ms": execution_time_ms,
+        }
+
+        return unique, search_metadata
 
     def _search_articles(self, query: str, top_k: int = 5) -> list[dict]:
         """Search article domain."""

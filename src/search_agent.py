@@ -199,7 +199,7 @@ class SearchAgent:
             logger.warning(f"Unknown tool: {tool_name}")
             return []
 
-    def search(self, query: str, publisher: str | None = None) -> list[dict]:
+    def search(self, query: str, publisher: str | None = None) -> tuple[list[dict], dict]:
         """Search for articles using the agent.
 
         Args:
@@ -207,8 +207,15 @@ class SearchAgent:
             publisher: Optional publisher name to restrict results to.
 
         Returns:
-            List of relevant chunks/articles.
+            Tuple of (results, search_metadata) where search_metadata contains:
+                - tools_used: List of tool executions with parameters and result counts
+                - total_results: Total results before deduplication
+                - unique_results: Results after deduplication
+                - execution_time_ms: Time taken to execute search
         """
+        import time
+        start_time = time.time()
+
         # Store publisher filter for use in _execute_tool
         self._current_publisher = publisher
         logger.info(f"Search agent processing: '{query}'" + (f" [publisher={publisher}]" if publisher else ""))
@@ -241,6 +248,7 @@ class SearchAgent:
         # Process response and execute tools
         all_results: list[dict] = []
         tool_results = []
+        tools_used = []  # Track tool executions for metadata
 
         for content_block in response.content:
             if content_block.type == "tool_use":
@@ -249,6 +257,14 @@ class SearchAgent:
 
                 # Execute the tool
                 results = self._execute_tool(tool_name, tool_input)
+
+                # Track tool execution for metadata
+                tool_execution = {
+                    "tool": tool_name,
+                    "parameters": tool_input,
+                    "result_count": len(results),
+                    "top_results": []
+                }
 
                 # For metadata_search, convert articles to chunks format
                 if tool_name == "metadata_search" and results:
@@ -268,18 +284,28 @@ class SearchAgent:
                 logger.info(
                     f"Tool '{tool_name}' returned {len(results)} results"
                 )
+
+                # Capture top results for metadata
                 for i, result in enumerate(results[:5]):  # Log first 5 results
+                    result_summary = {}
                     if "title" in result.get("metadata", {}):
-                        logger.info(
-                            f"  Result {i + 1}: {result['metadata'].get('title', 'Unknown')[:60]}"
-                        )
+                        title = result['metadata'].get('title', 'Unknown')[:60]
+                        result_summary = {"title": title, "score": result.get("score", 0)}
+                        logger.info(f"  Result {i + 1}: {title}")
                     elif "title" in result:
-                        logger.info(f"  Result {i + 1}: {result.get('title', 'Unknown')[:60]}")
+                        title = result.get('title', 'Unknown')[:60]
+                        result_summary = {"title": title, "score": result.get("score", 0)}
+                        logger.info(f"  Result {i + 1}: {title}")
                     elif "product_name" in result:
-                        logger.info(
-                            f"  Result {i + 1}: {result.get('product_name', 'Unknown')[:60]} "
-                            f"({result.get('advertiser', 'Unknown')})"
-                        )
+                        product_name = result.get('product_name', 'Unknown')[:60]
+                        advertiser = result.get('advertiser', 'Unknown')
+                        result_summary = {"product_name": product_name, "advertiser": advertiser}
+                        logger.info(f"  Result {i + 1}: {product_name} ({advertiser})")
+
+                    if result_summary:
+                        tool_execution["top_results"].append(result_summary)
+
+                tools_used.append(tool_execution)
 
                 # Track tool result for potential follow-up
                 tool_results.append(
@@ -305,7 +331,19 @@ class SearchAgent:
         unique_results.sort(key=lambda x: x.get("score", 0), reverse=True)
 
         logger.info(f"Search agent returned {len(unique_results)} unique results")
-        return unique_results
+
+        # Build search metadata
+        execution_time_ms = int((time.time() - start_time) * 1000)
+        search_metadata = {
+            "search_method": "search_agent",
+            "tools_used": tools_used,
+            "total_results": len(all_results),
+            "unique_results": len(unique_results),
+            "execution_time_ms": execution_time_ms,
+            "publisher": publisher,
+        }
+
+        return unique_results, search_metadata
 
 
 def main() -> None:
@@ -322,8 +360,9 @@ def main() -> None:
     for query in test_queries:
         print(f"\nQuery: {query}")
         print("-" * 50)
-        results = agent.search(query)
-        print(f"Found {len(results)} results")
+        results, metadata = agent.search(query)
+        print(f"Found {len(results)} results (execution time: {metadata.get('execution_time_ms', 0)}ms)")
+        print(f"Tools used: {[t['tool'] for t in metadata.get('tools_used', [])]}")
         for i, result in enumerate(results[:3]):
             title = result.get("metadata", {}).get("title", "Unknown")[:50]
             score = result.get("score", 0)
