@@ -33,12 +33,18 @@ from src.prompts import (
     format_sources,
     get_system_prompt,
 )
+from src.modules.editions.database import get_current_edition_ids
 from src.search_agent import SearchAgent
 
 logger = logging.getLogger(__name__)
 
 # Maximum number of conversation turns to keep in history
 MAX_HISTORY_TURNS = 10
+
+# Score multiplier applied to chunks from the current edition.
+# Stacks multiplicatively with freshness boost so a current-edition article
+# published this week ends up at ~1.7x (1.15 * 1.5) vs a historical article's 1.0x.
+EDITION_CURRENT_BOOST = 1.5
 
 
 class QueryEngine:
@@ -110,6 +116,11 @@ class QueryEngine:
         logger.info(f"Query: '{query}'" + (f" [publisher={publisher}]" if publisher else ""))
         logger.info(f"Collection has {self.collection.count()} chunks")
 
+        # Look up current edition IDs once per query for the boost step below.
+        current_edition_ids = get_current_edition_ids(publisher)
+        if current_edition_ids:
+            logger.info(f"Current edition ids for boost: {sorted(current_edition_ids)}")
+
         # Generate query embedding
         query_embedding = self.embedding_model.encode(query).tolist()
         logger.info("Generated query embedding")
@@ -171,10 +182,20 @@ class QueryEngine:
                     except (ValueError, TypeError):
                         pass
 
+                # Boost score for chunks from the current edition.
+                edition_boost = 1.0
+                chunk_edition = str(metadata.get("edition_id", "") or "")
+                if chunk_edition and chunk_edition in current_edition_ids:
+                    edition_boost = EDITION_CURRENT_BOOST
+                    logger.info(
+                        f"    -> current-edition boost applied "
+                        f"(edition_id={chunk_edition}, x{EDITION_CURRENT_BOOST})"
+                    )
+
                 chunk = {
                     "text": doc,
                     "metadata": metadata,
-                    "score": score * freshness_boost,
+                    "score": score * freshness_boost * edition_boost,
                 }
                 chunks.append(chunk)
 

@@ -73,6 +73,19 @@ class SearchTools:
             publisher=publisher,
         )
 
+    def historical_search(
+        self,
+        query: str,
+        top_k: int = 3,
+        publisher: str | None = None,
+    ) -> list[dict]:
+        """Semantic search restricted to past editions (excludes the current one)."""
+        return self.articles.historical_search(
+            query=query,
+            top_k=top_k,
+            publisher=publisher,
+        )
+
     def get_chunks_for_article(self, doc_id: str) -> list[dict]:
         """Get all chunks for a specific article."""
         return self.articles.get_chunks_for_article(doc_id)
@@ -238,7 +251,7 @@ DATABASE_INFO_SCHEMA = {
 DIRECTORY_SEARCH_SCHEMA = {
     "name": "search_directory",
     "description": "Search the local business directory for businesses by name, services, or category. Returns businesses that have advertised in the newspaper. Use this for questions about local services, stores, restaurants, etc.",
-    "input_schema": {
+    "parameters": {
         "type": "object",
         "properties": {
             "query": {

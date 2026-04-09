@@ -319,6 +319,39 @@ def mark_edition_current(edition_id: int, publisher_id: int) -> None:
     logger.info(f"Edition {edition_id} marked as current for publisher {publisher_id}")
 
 
+def get_current_edition_ids(publisher: str | None = None) -> set[str]:
+    """Return the set of current edition IDs as strings (matching Chroma metadata format).
+
+    Args:
+        publisher: Optional publisher name. When provided, returns only that publisher's
+            current edition. When None, returns every publisher's current edition
+            (useful for cross-network queries).
+
+    Returns:
+        Set of edition id strings. Empty set if nothing is marked current.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        if publisher:
+            cursor.execute(
+                """
+                SELECT e.id FROM editions e
+                JOIN publishers p ON p.id = e.publisher_id
+                WHERE e.is_current = 1 AND p.name = ?
+                """,
+                (publisher,),
+            )
+        else:
+            cursor.execute("SELECT id FROM editions WHERE is_current = 1")
+        return {str(row[0]) for row in cursor.fetchall()}
+    except Exception as e:
+        logger.warning(f"get_current_edition_ids failed: {e}")
+        return set()
+    finally:
+        conn.close()
+
+
 def get_edition_count() -> int:
     conn = get_connection()
     cursor = conn.cursor()

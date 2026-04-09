@@ -1,6 +1,7 @@
 """Search functionality for articles."""
 
 import logging
+from datetime import datetime
 
 from sentence_transformers import SentenceTransformer
 
@@ -9,6 +10,10 @@ from src.core.config import (
     RETRIEVAL_TOP_K,
     SIMILARITY_THRESHOLD,
 )
+
+# Score boost for chunks from the current edition. Matches EDITION_CURRENT_BOOST
+# in src/query_engine.py — keep both in sync.
+EDITION_CURRENT_BOOST = 1.5
 from src.core.vector_store import get_articles_collection, get_legacy_collection
 from src.modules.articles.database import (
     get_all_locations,
@@ -16,6 +21,7 @@ from src.modules.articles.database import (
     get_article_by_id,
     search_by_metadata,
 )
+from src.modules.editions.database import get_current_edition_ids
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +109,11 @@ class ArticleSearch:
 
         results = collection.query(**query_kwargs)
 
+        # Look up current edition IDs once per query for the boost step below.
+        current_edition_ids = get_current_edition_ids(publisher)
+        if current_edition_ids:
+            logger.info(f"  Current edition ids for boost: {sorted(current_edition_ids)}")
+
         chunks = []
         if results and results["documents"]:
             for i, doc in enumerate(results["documents"][0]):
@@ -113,13 +124,44 @@ class ArticleSearch:
                     continue
 
                 metadata = results["metadatas"][0][i] if results["metadatas"] else {}
+
+                # Freshness boost — matches the logic in QueryEngine.retrieve().
+                publish_date = str(
+                    metadata.get("edition_date", "") or metadata.get("publish_date", "")
+                )
+                freshness_boost = 1.0
+                if publish_date:
+                    try:
+                        pd = datetime.strptime(publish_date, "%Y-%m-%d")
+                        age_days = (datetime.now() - pd).days
+                        if age_days <= 7:
+                            freshness_boost = 1.15
+                        elif age_days <= 30:
+                            freshness_boost = 1.05
+                    except (ValueError, TypeError):
+                        pass
+
+                # Current-edition boost.
+                edition_boost = 1.0
+                chunk_edition = str(metadata.get("edition_id", "") or "")
+                if chunk_edition and chunk_edition in current_edition_ids:
+                    edition_boost = EDITION_CURRENT_BOOST
+                    logger.info(
+                        f"    -> current-edition boost applied "
+                        f"(edition_id={chunk_edition}, x{EDITION_CURRENT_BOOST}, "
+                        f"title='{str(metadata.get('title',''))[:40]}')"
+                    )
+
                 chunk = {
                     "text": doc,
                     "metadata": metadata,
-                    "score": score,
+                    "score": score * freshness_boost * edition_boost,
                     "search_type": "semantic",
                 }
                 chunks.append(chunk)
+
+        # Re-sort by boosted score so the best-boosted chunks come first.
+        chunks.sort(key=lambda c: c["score"], reverse=True)
 
         logger.info(f"  Collection '{label}': {len(chunks)} results")
         return chunks
@@ -226,6 +268,55 @@ class ArticleSearch:
 
         result = filtered_chunks[:top_k]
         logger.info(f"Hybrid search returned {len(result)} chunks")
+        return result
+
+    def historical_search(
+        self,
+        query: str,
+        top_k: int = 3,
+        publisher: str | None = None,
+    ) -> list[dict]:
+        """Semantic search restricted to past editions (excludes the current edition).
+
+        Use when the user wants background or "has this been covered before?".
+
+        Args:
+            query: Search query text.
+            top_k: Number of results to return.
+            publisher: Optional publisher filter.
+
+        Returns:
+            List of chunks from non-current editions only.
+        """
+        logger.info(
+            f"Historical search: '{query}' (top_k={top_k})"
+            + (f" [publisher={publisher}]" if publisher else "")
+        )
+
+        current_ids = get_current_edition_ids(publisher)
+        if not current_ids:
+            logger.info("No current edition marked — historical_search behaves like semantic_search")
+
+        # Over-fetch so we have enough left after dropping current-edition chunks.
+        raw = self.semantic_search(
+            query,
+            top_k=max(top_k * 3, 10),
+            publisher=publisher,
+        )
+
+        filtered = [
+            c for c in raw
+            if str(c.get("metadata", {}).get("edition_id", "") or "") not in current_ids
+        ]
+
+        for c in filtered:
+            c["search_type"] = "historical"
+
+        result = filtered[:top_k]
+        logger.info(
+            f"Historical search returned {len(result)} chunks "
+            f"(excluded {len(raw) - len(filtered)} current-edition chunks)"
+        )
         return result
 
     def get_article_details(self, doc_id: str) -> dict | None:
@@ -365,6 +456,28 @@ def get_article_tools_schema() -> list[dict]:
                     "subject": {
                         "type": "string",
                         "description": subject_desc,
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+        {
+            "name": "historical_search",
+            "description": (
+                "Search PAST editions only (excludes the current week). Use when the user "
+                "asks about history, past coverage, or 'has this been covered before', or "
+                "when you want to enrich a current-edition answer with background context."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "Number of results (default 3, max 5)",
                     },
                 },
                 "required": ["query"],

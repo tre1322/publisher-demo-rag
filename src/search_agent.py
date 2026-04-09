@@ -149,6 +149,12 @@ class SearchAgent:
                 subject=tool_input.get("subject"),
                 publisher=pub,
             )
+        elif tool_name == "historical_search":
+            return self.search_tools.historical_search(
+                query=tool_input.get("query", ""),
+                top_k=min(tool_input.get("top_k", 3) or 3, 5),
+                publisher=pub,
+            )
         elif tool_name == "search_advertisements":
             pub = getattr(self, "_current_publisher", None)
             return self.search_tools.search_advertisements(
