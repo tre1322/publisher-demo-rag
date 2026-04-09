@@ -32,6 +32,34 @@ def init_table() -> None:
         )
     """)
 
+    # Add columns if they don't exist (migration for existing DBs).
+    # `keywords` in particular is written by directory enrichment, read by the
+    # admin directory editor, business-detail template, and searched by
+    # SearchTools.search_directory — fresh DBs need it to exist.
+    for col, coltype in [
+        ("address", "TEXT"),
+        ("city", "TEXT"),
+        ("state", "TEXT"),
+        ("phone", "TEXT"),
+        ("email", "TEXT"),
+        ("website", "TEXT"),
+        ("social_json", "TEXT"),
+        ("hours_json", "TEXT"),
+        ("category", "TEXT"),
+        ("description", "TEXT"),
+        ("services", "TEXT"),
+        ("keywords", "TEXT"),
+        ("publisher", "TEXT"),
+        ("enrichment_status", "TEXT DEFAULT 'pending'"),
+        ("enrichment_error", "TEXT"),
+        ("last_enriched_at", "TEXT"),
+        ("last_advertised_at", "TEXT"),
+    ]:
+        try:
+            cursor.execute(f"ALTER TABLE organizations ADD COLUMN {col} {coltype}")
+        except Exception:
+            pass
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS publications (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
