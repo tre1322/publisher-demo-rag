@@ -122,6 +122,62 @@ def _count_by_type(chunks: list[dict]) -> dict[str, int]:
     return counts
 
 
+def _validate_response_grounding(response: str, chunks: list[dict]) -> tuple[bool, str]:
+    """Validate that response is grounded in provided chunks, not training data.
+
+    Args:
+        response: The generated response text.
+        chunks: The search result chunks that were provided as context.
+
+    Returns:
+        Tuple of (is_valid, reason). If not valid, returns False and a reason string.
+    """
+    # First, check for training data indicator phrases (regardless of length)
+    training_data_indicators = [
+        "as of my knowledge cutoff",
+        "i don't have access to",
+        "i'm an ai assistant",
+        "according to my training",
+        "as a language model",
+        "i can't browse",
+        "i don't have real-time",
+    ]
+    response_lower = response.lower()
+    for phrase in training_data_indicators:
+        if phrase in response_lower:
+            return False, f"training_data_phrase: {phrase}"
+
+    # Allow short conversational responses without chunks
+    if len(response) < 100:
+        return True, ""
+
+    # No chunks provided - only allow "no info" responses
+    if not chunks:
+        # Check if response acknowledges lack of information
+        no_info_phrases = [
+            "don't have",
+            "no information",
+            "no results",
+            "couldn't find",
+            "no articles",
+            "not seeing",
+            "try asking",
+            "try a different",
+        ]
+        if any(phrase in response_lower for phrase in no_info_phrases):
+            return True, ""
+
+        # Long response with no chunks = likely training data
+        return False, "long_response_no_chunks"
+
+    # Very few chunks but very long detailed response
+    if len(chunks) < 2 and len(response) > 400:
+        # Could be legitimate if synthesizing limited info, but flag for review
+        return True, ""  # Allow but we'll log it via metadata
+
+    return True, ""
+
+
 def sanitize_partial_html(text: str) -> str:
     """Hide incomplete HTML tags during streaming.
 
@@ -275,6 +331,16 @@ def create_chatbot() -> gr.Blocks:
             # Ensure sponsored disclosure for any ads (legal requirement)
             accumulated = ensure_sponsored_disclosure(accumulated, chunks)
 
+            # Validate response is grounded in search results
+            is_valid, validation_reason = _validate_response_grounding(accumulated, chunks)
+            if not is_valid:
+                logger.warning(
+                    f"Response failed grounding validation: {validation_reason}. "
+                    f"Chunks: {len(chunks)}, Response length: {len(accumulated)}"
+                )
+                # Replace with safe fallback response
+                accumulated = "I don't have information about that in our archives. Try rephrasing your question or searching for something else."
+
             # Final update with complete text (in case last token completed a tag)
             history[-1]["content"] = accumulated
             yield "", history
@@ -284,6 +350,10 @@ def create_chatbot() -> gr.Blocks:
                 "search": search_metadata,
                 "chunks_count": len(chunks),
                 "chunks_by_type": _count_by_type(chunks),
+                "validation": {
+                    "is_valid": is_valid,
+                    "reason": validation_reason if not is_valid else None,
+                }
             }
 
             # Log complete response with search metadata
