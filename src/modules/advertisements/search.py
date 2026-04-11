@@ -11,8 +11,14 @@ from src.modules.advertisements.database import (
     get_all_ad_categories,
     search_advertisements,
 )
+from src.modules.editions.database import get_current_edition_ids
 
 logger = logging.getLogger(__name__)
+
+# Keep in sync with EDITION_CURRENT_BOOST in src/query_engine.py
+# and src/modules/articles/search.py. Current-edition ads rank
+# ~1.5x above historical ads on the same topic.
+EDITION_CURRENT_BOOST = 1.5
 
 
 def _search_by_advertiser_name(query: str, limit: int = 10, publisher: str | None = None) -> list[dict]:
@@ -107,6 +113,7 @@ def _format_ad_result(ad: dict, score: float = 1.0) -> dict:
             "url": f"/ad/{ad.get('ad_id', '')}" if ad.get("web_image_path") else ad.get("url", ""),
             "content_type": "advertisement",
             "location": ad.get("location", ""),
+            "edition_id": ad.get("edition_id"),
         },
         "score": score,
         "search_type": "advertisement",
@@ -199,6 +206,26 @@ class AdvertisementSearch:
             if ad_id not in seen_ids:
                 seen_ids.add(ad_id)
                 results.append(_format_ad_result(ad, score=1.0))
+
+        # Current-edition boost: multiply the score of ads whose edition_id
+        # matches the publisher's current edition. Mirrors the articles-side
+        # boost in QueryEngine.retrieve() / ArticleSearch._query_collection().
+        current_edition_ids = get_current_edition_ids(publisher)
+        if current_edition_ids:
+            logger.info(
+                f"  Ad boost: current edition ids = {sorted(current_edition_ids)}"
+            )
+            for r in results:
+                ad_edition = str(r.get("metadata", {}).get("edition_id", "") or "")
+                if ad_edition and ad_edition in current_edition_ids:
+                    before = r.get("score", 0)
+                    r["score"] = before * EDITION_CURRENT_BOOST
+                    advertiser = r.get("metadata", {}).get("advertiser", "?")[:40]
+                    logger.info(
+                        f"    -> ad current-edition boost applied "
+                        f"(edition_id={ad_edition}, '{advertiser}', "
+                        f"{before:.3f} -> {r['score']:.3f})"
+                    )
 
         # Sort by score descending
         results.sort(key=lambda x: x.get("score", 0), reverse=True)
