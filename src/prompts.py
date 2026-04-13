@@ -1,5 +1,6 @@
 """Prompt templates for the Publisher RAG Demo."""
 
+from datetime import datetime
 from urllib.parse import quote
 
 HELP_MESSAGE = """I'm a news and local information assistant. Here's what I can help with:
@@ -34,7 +35,8 @@ Publisher priority:
 - Only include content from other publishers if the user explicitly asks about another area
 
 Rules:
-- Only use information from the provided context
+- CRITICAL: Only use information from the provided context - NEVER use your general knowledge or training data
+- If the context doesn't contain the answer, say "I don't have information about that in our archives"
 - ALWAYS cite sources using HTML hyperlinks that open in new tabs: <a href="url" target="_blank">Article Title</a>
 - For advertisements with a URL, ALWAYS include a clickable link so readers can view the ad
 - Be concise but complete
@@ -44,7 +46,19 @@ Rules:
 - Present the information as if you know it
 - Do not mention that the information is based on an article
 - Do not make any commentary on the information, such as whether it is complete or not
-- You can have conversations with the user, but don't make up any information. General knowledge is ok.
+- You can have polite conversations (greetings, thanks, clarifications) but for ANY factual question, ONLY use the provided context
+- Never provide factual information from outside the search results, even if you know it from your training data
+
+Article freshness guidelines:
+- Articles are labeled with their age (e.g., "Published 2 days ago", "Published 3 weeks ago")
+- When citing information from articles older than 1 week, mention the timeframe to give context
+- Use phrases like:
+  - "According to a recent article..." (for articles ≤7 days old)
+  - "An article from 3 weeks ago reported..." (for articles 1-4 weeks old)
+  - "An article from last month mentioned..." (for articles 1-3 months old)
+  - "An older article from [date] stated..." (for articles >3 months old)
+- For time-sensitive topics (events, sales, ongoing situations), note if the information might be outdated
+- Today's date is important context - use it to determine if information is current or historical
 
 Sponsored content disclosure (LEGAL REQUIREMENT):
 - Content marked [SPONSORED] in the context is paid advertising
@@ -120,6 +134,43 @@ def make_tracked_url(
 
     # Use absolute URL so Gradio opens in new tab
     return f"{BASE_URL}/track?{params}"
+
+
+def _calculate_age_label(publish_date: str) -> str:
+    """Calculate a human-readable age label for an article.
+
+    Args:
+        publish_date: Publication date in YYYY-MM-DD format.
+
+    Returns:
+        Age label like "Published 2 days ago" or "Published 3 weeks ago".
+        Returns empty string if date is invalid or missing.
+    """
+    if not publish_date or publish_date == "Unknown date":
+        return ""
+
+    try:
+        pub_date = datetime.strptime(publish_date, "%Y-%m-%d")
+        age_days = (datetime.now() - pub_date).days
+
+        if age_days == 0:
+            return "Published today"
+        elif age_days == 1:
+            return "Published yesterday"
+        elif age_days < 7:
+            return f"Published {age_days} days ago"
+        elif age_days < 30:
+            weeks = age_days // 7
+            return f"Published {weeks} week{'s' if weeks > 1 else ''} ago"
+        elif age_days < 365:
+            months = age_days // 30
+            return f"Published {months} month{'s' if months > 1 else ''} ago"
+        else:
+            years = age_days // 365
+            return f"Published {years} year{'s' if years > 1 else ''} ago"
+
+    except (ValueError, TypeError):
+        return ""
 
 
 def get_content_id(chunk: dict) -> str:
@@ -205,8 +256,15 @@ def format_context(
                 f"Info: {text}\n"
             )
         else:
+            # Add age label for articles
+            age_label = _calculate_age_label(date)
+            article_header = f"[Article {i}"
+            if age_label:
+                article_header += f" - {age_label}"
+            article_header += "]"
+
             context_parts.append(
-                f"[Article {i}]\n"
+                f"{article_header}\n"
                 f"Title: {title}\n"
                 f"Date: {date}\n"
                 f"Author: {author}\n"
