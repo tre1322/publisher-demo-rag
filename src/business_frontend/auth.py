@@ -63,7 +63,7 @@ def init_tables() -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             invite_code TEXT UNIQUE NOT NULL,
             business_name TEXT,
-            publisher TEXT NOT NULL,
+            publisher TEXT NOT NULL DEFAULT '',
             tier TEXT DEFAULT 'growth',
             note TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -71,6 +71,22 @@ def init_tables() -> None:
             used_by_user_id INTEGER
         )
     """)
+
+    # Migrate pre-existing tables from earlier deploys that lack newer columns.
+    # Each ALTER TABLE is idempotent via try/except so fresh DBs just skip it.
+    for col, coltype in [
+        ("publisher", "TEXT NOT NULL DEFAULT ''"),
+        ("business_name", "TEXT"),
+        ("tier", "TEXT DEFAULT 'growth'"),
+        ("note", "TEXT"),
+        ("used_at", "TEXT"),
+        ("used_by_user_id", "INTEGER"),
+    ]:
+        try:
+            cursor.execute(f"ALTER TABLE business_invites ADD COLUMN {col} {coltype}")
+        except Exception:
+            pass
+
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_invite_code ON business_invites(invite_code)"
     )
