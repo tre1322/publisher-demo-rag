@@ -284,23 +284,26 @@ class SearchTools:
         query: str | None = None,
         category: str | None = None,
     ) -> list[dict]:
-        """Search sponsored answers for a category.
+        """Search sponsored answers by keyword and/or category.
+
+        Uses keyword-first matching (Trevor's pilot choice): any query
+        keyword appearing in the sponsored answer's text, category, or
+        org name will surface it. Exact category match is also honored.
 
         Results prefixed with [SPONSORED Answer from ...] so the existing
         disclosure logic in prompts.py handles legal compliance. Each
-        returned answer increments its impression counter. No publisher
-        filter — businesses appear in all publication chatbots.
+        returned answer increments its impression counter.
         """
         from src.modules.sponsored.database import (
-            get_active_sponsored_for_category,
+            find_matching_sponsored,
             increment_impression,
         )
 
-        if not category:
+        if not query and not category:
             return []
 
         results = []
-        for s in get_active_sponsored_for_category(category):
+        for s in find_matching_sponsored(query=query, category=category):
             if not increment_impression(s["id"]):
                 continue
             phone = s.get("org_phone") or ""

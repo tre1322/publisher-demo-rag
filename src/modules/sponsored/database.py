@@ -84,6 +84,95 @@ def get_sponsored_answers_for_org(org_id: int) -> list[dict]:
     return rows
 
 
+# Stop words to skip when breaking a query into match keywords.
+# Includes grammatical fillers AND generic temporal/common words that
+# frequently appear in ANY sponsored answer text (e.g. "today" in the
+# phrase "today's digital world") and would cause false positives.
+_STOP_WORDS = frozenset(
+    """
+    a an the is are was were be been being have has had do does did
+    will would could should can may might shall need want like get got
+    some any where what which who how that this those these there here
+    to for of in on at by with from about into and or but not no so if
+    then than very just also too up out it its i me my we our you your
+    mine ours
+
+    today tomorrow yesterday now day week month year time morning
+    evening afternoon night tonight current currently recent recently
+    business businesses service services company companies thing things
+    stuff something someone somebody anyone anybody everyone everybody
+    place places somewhere anywhere everywhere people person
+    really actually basically literally probably usually generally
+    good great best better nice much many more most less least few
+    new old big small large tiny huge little
+    please thanks thank hello hi hey
+""".split()
+)
+
+
+def _extract_keywords(text: str) -> list[str]:
+    """Pull keyword tokens from a query for sponsored-answer matching."""
+    import re as _re
+
+    if not text:
+        return []
+    words = _re.findall(r"[a-zA-Z]+", text.lower())
+    return [w for w in words if len(w) > 2 and w not in _STOP_WORDS]
+
+
+def find_matching_sponsored(
+    query: str | None = None, category: str | None = None
+) -> list[dict]:
+    """Find active sponsored answers matching a query and/or category.
+
+    Keyword-first match policy (per Trevor's choice for Main Street OS
+    pilot): matches are surfaced whenever query keywords appear in the
+    sponsored answer's text, category, or business name. Exact category
+    match is also honored. Each row only appears once thanks to the OR
+    query + LIMIT 3.
+    """
+    keywords = _extract_keywords(query or "")
+    if not keywords and not category:
+        return []
+
+    clauses: list[str] = []
+    params: list = []
+
+    if category:
+        clauses.append("LOWER(sa.category) = ?")
+        params.append(category.lower())
+
+    for word in keywords:
+        clauses.append(
+            "(LOWER(sa.answer_text) LIKE ? "
+            "OR LOWER(sa.category) LIKE ? "
+            "OR LOWER(o.name) LIKE ?)"
+        )
+        pat = f"%{word}%"
+        params.extend([pat, pat, pat])
+
+    if not clauses:
+        return []
+
+    sql = f"""
+        SELECT sa.*, o.name as org_name, o.phone as org_phone, o.address as org_address
+        FROM sponsored_answers sa
+        JOIN organizations o ON sa.organization_id = o.id
+        WHERE sa.status = 'active'
+          AND sa.impressions_used < sa.impressions_limit
+          AND ({" OR ".join(clauses)})
+        ORDER BY sa.impressions_used ASC
+        LIMIT 3
+    """
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(sql, params)
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+
+
 def get_active_sponsored_for_category(category: str) -> list[dict]:
     """Get active sponsored answers matching a category.
 

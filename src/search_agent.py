@@ -159,13 +159,32 @@ class SearchAgent:
             )
         elif tool_name == "search_advertisements":
             pub = getattr(self, "_current_publisher", None)
-            return self.search_tools.search_advertisements(
+            ad_results = self.search_tools.search_advertisements(
                 query=tool_input.get("query"),
                 category=tool_input.get("category"),
                 max_price=tool_input.get("max_price"),
                 on_sale_only=tool_input.get("on_sale_only", False),
                 publisher=pub,
             )
+            # ── Belt & suspenders: auto-invoke sponsored answer search too ──
+            # LLMs don't reliably call search_sponsored_answers even when the
+            # system prompt requires it. Main Street OS revenue depends on
+            # sponsored answers surfacing, so we also run them here using the
+            # same query+category. Duplicates are filtered by doc_id downstream.
+            try:
+                sponsored_results = self.search_tools.search_sponsored_answers(
+                    query=tool_input.get("query"),
+                    category=tool_input.get("category"),
+                )
+                if sponsored_results:
+                    logger.info(
+                        f"Auto-surfaced {len(sponsored_results)} sponsored answer(s) "
+                        f"alongside ad search"
+                    )
+                return ad_results + sponsored_results
+            except Exception as e:
+                logger.warning(f"Auto-sponsored-search failed: {e}")
+                return ad_results
         elif tool_name == "search_directory":
             pub = getattr(self, "_current_publisher", None)
             return self.search_tools.search_directory(
