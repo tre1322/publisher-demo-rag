@@ -96,7 +96,9 @@ async def stream_response(
                 conversation_id = int(conversation["id"])
             else:
                 conversation_id = insert_conversation(session_id, publisher=publisher)
-                logger.info(f"Created new conversation for session: {session_id} (publisher: {publisher})")
+                logger.info(
+                    f"Created new conversation for session: {session_id} (publisher: {publisher})"
+                )
 
             # Log user message
             insert_message(conversation_id, "user", message)
@@ -123,19 +125,41 @@ async def stream_response(
             cross_network = False
             if publisher:
                 cross_ref_keywords = [
-                    "windom", "pipestone", "mountain lake", "mt. lake", "mt lake",
-                    "butterfield", "cottonwood", "jackson", "murray",
-                    "worthington", "nobles", "luverne", "rock county",
-                    "marshall", "southwest", "slayton",
-                    "observer", "advocate", "pipestone star", "county star",
-                    "other papers", "other newspapers", "regional", "network",
-                    "across", "all papers", "all publications",
+                    "windom",
+                    "pipestone",
+                    "mountain lake",
+                    "mt. lake",
+                    "mt lake",
+                    "butterfield",
+                    "cottonwood",
+                    "jackson",
+                    "murray",
+                    "worthington",
+                    "nobles",
+                    "luverne",
+                    "rock county",
+                    "marshall",
+                    "southwest",
+                    "slayton",
+                    "observer",
+                    "advocate",
+                    "pipestone star",
+                    "county star",
+                    "other papers",
+                    "other newspapers",
+                    "regional",
+                    "network",
+                    "across",
+                    "all papers",
+                    "all publications",
                 ]
                 msg_lower = message.lower()
                 if any(kw in msg_lower for kw in cross_ref_keywords):
                     effective_publisher = None  # Search all publishers
                     cross_network = True
-                    logger.info(f"Cross-network search triggered: '{message}' (was: {publisher})")
+                    logger.info(
+                        f"Cross-network search triggered: '{message}' (was: {publisher})"
+                    )
 
             # Primary search: this publisher's content
             chunks = engine.retrieve(message, publisher=effective_publisher)
@@ -166,23 +190,35 @@ async def stream_response(
                 from src.search_tools import SearchTools
 
                 # Primary: this publisher's ads/directory
-                ad_results = AdvertisementSearch().search(message, publisher=effective_publisher)
+                ad_results = AdvertisementSearch().search(
+                    message, publisher=effective_publisher
+                )
                 chunks.extend(ad_results)
-                dir_results = SearchTools().search_directory(query=message, publisher=effective_publisher)
+                dir_results = SearchTools().search_directory(
+                    query=message, publisher=effective_publisher
+                )
                 chunks.extend(dir_results)
 
                 # Secondary: network ads/directory (lower priority)
                 if effective_publisher and not cross_network:
-                    net_ad_results = AdvertisementSearch().search(message, publisher=None)
-                    seen_ad_ids = {c.get("metadata", {}).get("doc_id") for c in ad_results}
+                    net_ad_results = AdvertisementSearch().search(
+                        message, publisher=None
+                    )
+                    seen_ad_ids = {
+                        c.get("metadata", {}).get("doc_id") for c in ad_results
+                    }
                     for ad in net_ad_results:
                         ad_id = ad.get("metadata", {}).get("doc_id")
                         if ad_id and ad_id not in seen_ad_ids:
                             ad["score"] = ad.get("score", 0.5) * 0.6
                             chunks.append(ad)
 
-                    net_dir_results = SearchTools().search_directory(query=message, publisher=None)
-                    seen_dir_ids = {c.get("metadata", {}).get("doc_id") for c in dir_results}
+                    net_dir_results = SearchTools().search_directory(
+                        query=message, publisher=None
+                    )
+                    seen_dir_ids = {
+                        c.get("metadata", {}).get("doc_id") for c in dir_results
+                    }
                     for d in net_dir_results:
                         d_id = d.get("metadata", {}).get("doc_id")
                         if d_id and d_id not in seen_dir_ids:
@@ -191,6 +227,23 @@ async def stream_response(
 
                 event_results = EventSearch().search(message)
                 chunks.extend(event_results)
+
+                # Main Street OS: always surface matching sponsored answers.
+                # This is the load-bearing revenue loop — must fire on every
+                # query regardless of publisher scope so businesses reach
+                # customers from both papers (commuting-distance directory).
+                try:
+                    sponsored_results = SearchTools().search_sponsored_answers(
+                        query=message
+                    )
+                    if sponsored_results:
+                        logger.info(
+                            f"Surfaced {len(sponsored_results)} sponsored "
+                            f"answer(s) for query: {message!r}"
+                        )
+                        chunks.extend(sponsored_results)
+                except Exception as sp_err:
+                    logger.warning(f"Sponsored search error: {sp_err}")
             except Exception as sup_err:
                 logger.warning(f"Supplemental search error: {sup_err}")
 
