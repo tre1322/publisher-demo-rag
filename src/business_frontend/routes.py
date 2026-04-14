@@ -463,10 +463,13 @@ async def api_analytics(
 
 @router.put("/api/settings")
 async def api_update_settings(request: Request, user: dict = Depends(require_auth)):
+    from src.modules.organizations.database import _slugify
+
     data = await request.json()
     org_id = user["organization_id"]
 
     allowed = {
+        "name",
         "description",
         "services",
         "keywords",
@@ -479,12 +482,46 @@ async def api_update_settings(request: Request, user: dict = Depends(require_aut
         "hours_json",
         "social_json",
     }
-    updates = {k: v for k, v in data.items() if k in allowed}
+    updates = {
+        k: (v or "").strip() if isinstance(v, str) else v
+        for k, v in data.items()
+        if k in allowed
+    }
+
+    # Validate name if being changed
+    if "name" in updates:
+        new_name = updates["name"]
+        if not new_name:
+            return JSONResponse(
+                {"error": "Business name cannot be empty"}, status_code=400
+            )
+        if len(new_name) > 120:
+            return JSONResponse(
+                {"error": "Business name is too long (max 120 chars)"}, status_code=400
+            )
+
     if not updates:
         return JSONResponse({"error": "No valid fields to update"}, status_code=400)
 
     conn = get_connection()
     cursor = conn.cursor()
+
+    # If the name changed, regenerate a unique slug (same pattern as registration)
+    if "name" in updates:
+        slug_base = _slugify(updates["name"]) or "business"
+        slug = slug_base
+        n = 2
+        while True:
+            cursor.execute(
+                "SELECT id FROM organizations WHERE slug = ? AND id != ?",
+                (slug, org_id),
+            )
+            if not cursor.fetchone():
+                break
+            slug = f"{slug_base}-{n}"
+            n += 1
+        updates["slug"] = slug
+
     set_clause = ", ".join(f"{k} = ?" for k in updates)
     values = list(updates.values()) + [org_id]
     cursor.execute(

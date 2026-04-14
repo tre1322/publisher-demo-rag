@@ -16,8 +16,8 @@
                 <div class="card-body">
                     <div class="mb-3">
                         <label class="form-label">Business Name</label>
-                        <input type="text" class="form-control" value="{{ org.name if org else '' }}" disabled>
-                        <small class="text-muted">Contact your newspaper to change your business name.</small>
+                        <input type="text" name="name" class="form-control" value="{{ org.name if org else '' }}" maxlength="120" required>
+                        <small class="text-muted">Changing this also updates how your business appears in the chatbot directory.</small>
                     </div>
                     <div class="mb-3"><label class="form-label">Phone</label><input type="tel" name="phone" class="form-control" value="{{ org.phone or '' }}"></div>
                     <div class="mb-3"><label class="form-label">Email</label><input type="email" name="email" class="form-control" value="{{ org.email or '' }}"></div>
@@ -125,7 +125,7 @@
 
         const form = document.getElementById('settings-form');
         const payload = {};
-        ['phone', 'email', 'website', 'address', 'city', 'state', 'description', 'services', 'keywords'].forEach(f => {
+        ['name', 'phone', 'email', 'website', 'address', 'city', 'state', 'description', 'services', 'keywords'].forEach(f => {
             const el = form.querySelector(`[name="${f}"]`);
             if (el) payload[f] = el.value;
         });
