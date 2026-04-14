@@ -739,7 +739,12 @@ def _sweep_unclaimed_into_continuations(
         all_blocks = original_blocks + swept_blocks
         all_blocks.sort(key=lambda b: (int(b[0] // _COL_BAND), b[1]))
         cont.body_text = "\n\n".join(t for _, _, t in all_blocks)
-        cont.bottom_y = max(cont.bottom_y, max(c.y1 for c in unclaimed if cont.top_y - 30 <= c.y0 < y_max - 5))
+        # If no unclaimed cells fall in the vertical range, leave bottom_y unchanged
+        # (default=cont.bottom_y makes the inner max a no-op in that case).
+        cont.bottom_y = max(
+            cont.bottom_y,
+            max((c.y1 for c in unclaimed if cont.top_y - 30 <= c.y0 < y_max - 5), default=cont.bottom_y),
+        )
 
         logger.info(
             f"  Swept {len(swept_blocks)} unclaimed blocks into continuation "

@@ -496,6 +496,7 @@ async def upload_editions(
     publication_name: str = Form(""),
     edition_date: str = Form(""),
     pipeline: str = Form("auto"),
+    edition_mode: str = Form("auto"),
     _username: str = Depends(verify_credentials),
 ) -> JSONResponse:
     """Upload and process newspaper editions (.pdf or .idml).
@@ -507,7 +508,6 @@ async def upload_editions(
     - .pdf + pipeline=auto → defaults to V2
     """
     from src.modules.extraction.pipeline_v2 import run_v2_pipeline
-    from src.modules.extraction.publish import write_edition_to_db
     from src.modules.extraction.shared_write_layer import write_articles_to_all
     from src.modules.publishers.database import get_publisher_by_name
     from src.modules.publishers.uploads import upload_edition
@@ -522,6 +522,16 @@ async def upload_editions(
             detail=f"Unknown publisher: '{publisher}'.",
         )
     publisher_id = pub_record["id"]
+
+    # Convert edition_mode form value to tri-state force_current flag.
+    # - "auto" (default): None → promote only if newest by edition_date
+    # - "current": True → force as current (override date check)
+    # - "historical": False → seed as historical (never promote)
+    force_current: bool | None = None
+    if edition_mode == "current":
+        force_current = True
+    elif edition_mode == "historical":
+        force_current = False
 
     SUPPORTED_EXTENSIONS = (".pdf", ".idml")
     results = []
@@ -564,6 +574,7 @@ async def upload_editions(
                     idml_path=tmp_path,
                     publisher_name=publisher,
                     edition_date=edition_date or None,
+                    force_current=force_current,
                 )
                 file_result["articles"] = idml_result["articles_inserted"]
                 file_result["chunks_indexed"] = idml_result.get("chunks_indexed", 0)
@@ -601,7 +612,7 @@ async def upload_editions(
                     }
 
                 # Launch background thread
-                def _run_vision(eid, path, pub_id, pub_name, ed_date, fname):
+                def _run_vision(eid, path, pub_id, pub_name, ed_date, fname, fc):
                     try:
                         from src.modules.extraction.pipeline_vision import run_vision_pipeline
                         from src.modules.extraction.shared_write_layer import write_articles_to_all as _write
@@ -632,6 +643,7 @@ async def upload_editions(
                             publisher_name=pub_name,
                             edition_date=ed_date or None,
                             source_filename=fname,
+                            force_current=fc,
                         )
 
                         with _vision_jobs_lock:
@@ -652,7 +664,7 @@ async def upload_editions(
 
                 thread = threading.Thread(
                     target=_run_vision,
-                    args=(edition_id, pdf_path, publisher_id, publisher, edition_date, file.filename),
+                    args=(edition_id, pdf_path, publisher_id, publisher, edition_date, file.filename, force_current),
                     daemon=True,
                 )
                 thread.start()
@@ -681,10 +693,11 @@ async def upload_editions(
                     results.append(file_result)
                     continue
 
-                # Write to content_items (Phase 6)
-                write_edition_to_db(edition_id)
-
-                # Write to articles table + ChromaDB via shared layer
+                # Write to articles table + content_items + ChromaDB via shared layer.
+                # NOTE: we no longer call write_edition_to_db() here — the shared
+                # layer is the single writer for content_items (per its docstring).
+                # Calling both caused duplicate rows (one stitched + one unstitched
+                # copy of each article — see the duplicate-stitch bug fix).
                 write_result = write_articles_to_all(
                     articles=v2_result["articles"],
                     edition_id=edition_id,
@@ -692,6 +705,7 @@ async def upload_editions(
                     publisher_name=publisher,
                     edition_date=edition_date or None,
                     source_filename=file.filename,
+                    force_current=force_current,
                 )
                 file_result["articles"] = write_result["articles_written"]
                 file_result["stitched"] = v2_result["stitched_count"]

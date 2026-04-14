@@ -167,6 +167,16 @@
                     </select>
                 </div>
             </div>
+            <div class="form-row">
+                <div>
+                    <label>Edition Status</label>
+                    <select name="edition_mode">
+                        <option value="auto" selected>Auto — promote to current if newest by date</option>
+                        <option value="current">Force as current (override date check)</option>
+                        <option value="historical">Seed as historical (never promote)</option>
+                    </select>
+                </div>
+            </div>
             <button type="submit" class="btn btn-primary" id="edition-submit">Upload &amp; Process</button>
             <div id="edition-status"></div>
         </form>

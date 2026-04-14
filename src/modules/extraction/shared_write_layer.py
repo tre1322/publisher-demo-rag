@@ -23,7 +23,11 @@ from src.core.config import CHUNK_OVERLAP, CHUNK_SIZE, EMBEDDING_MODEL
 from src.core.vector_store import get_articles_collection
 from src.modules.articles import insert_edition_article
 from src.modules.content_items.database import insert_content_item
-from src.modules.editions.database import mark_edition_current, update_edition_status
+from src.modules.editions.database import (
+    mark_edition_current,
+    mark_edition_current_if_latest,
+    update_edition_status,
+)
 from src.modules.extraction.publish import generate_homepage_batch
 
 logger = logging.getLogger(__name__)
@@ -99,6 +103,7 @@ def write_articles_to_all(
     publisher_name: str,
     edition_date: str | None = None,
     source_filename: str = "",
+    force_current: bool | None = None,
 ) -> dict:
     """Write StandardArticle dicts to all system destinations.
 
@@ -109,6 +114,15 @@ def write_articles_to_all(
         publisher_name: Publisher display name (e.g., "Cottonwood County Citizen").
         edition_date: Edition date in YYYY-MM-DD format.
         source_filename: Original filename for metadata.
+        force_current: Tri-state flag controlling is_current behavior:
+            - None (default): auto — promote to current only if edition_date is the
+              newest for this publisher (via mark_edition_current_if_latest).
+            - True: unconditionally promote this edition to current.
+            - False: seed-as-historical — skip the mark-current step entirely so
+              older/backfill editions do not displace the real current edition.
+            In all three cases ChromaDB indexing and content_items writes still run
+            in full — historical editions are fully retrievable by the chatbot,
+            just without the ×1.5 current-edition boost.
 
     Returns:
         Dict with counts: articles_written, content_items_written, chunks_indexed.
@@ -133,7 +147,10 @@ def write_articles_to_all(
         jump_pages = art.get("jump_pages") or []
         content_type = art.get("content_type") or _infer_content_type(headline, body_text)
         subheadline = art.get("subheadline", "")
-        is_stitched = art.get("is_stitched", False)
+        # is_stitched: prefer explicit flag; fall back to "has jump pages" since
+        # V2 pipeline's article dicts don't always carry is_stitched through. Any
+        # article with non-empty jump_pages spans multiple pages = stitched.
+        is_stitched = art.get("is_stitched") or bool(jump_pages)
         confidence = art.get("extraction_confidence", 0.9)
 
         # 1. Legacy articles table
@@ -213,9 +230,22 @@ def write_articles_to_all(
             )
             total_chunks += len(chunks)
 
-    # 4. Homepage batch scoring + mark edition current
+    # 4. Homepage batch scoring + mark edition current (tri-state)
     generate_homepage_batch(edition_id)
-    mark_edition_current(edition_id, publisher_id)
+    if force_current is True:
+        logger.info(
+            f"write_articles_to_all: force_current=True → "
+            f"unconditionally promoting edition {edition_id}"
+        )
+        mark_edition_current(edition_id, publisher_id)
+    elif force_current is False:
+        logger.info(
+            f"write_articles_to_all: force_current=False → "
+            f"seeding edition {edition_id} as historical "
+            f"(is_current flag untouched)"
+        )
+    else:
+        mark_edition_current_if_latest(edition_id, publisher_id)
 
     # Update edition status
     update_edition_status(

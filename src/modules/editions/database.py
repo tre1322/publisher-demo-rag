@@ -319,6 +319,79 @@ def mark_edition_current(edition_id: int, publisher_id: int) -> None:
     logger.info(f"Edition {edition_id} marked as current for publisher {publisher_id}")
 
 
+def mark_edition_current_if_latest(edition_id: int, publisher_id: int) -> bool:
+    """Mark edition as current only if it's the newest by edition_date for this publisher.
+
+    This is the date-aware variant of mark_edition_current(). It compares the target
+    edition's edition_date against the max edition_date of every OTHER edition for the
+    same publisher. Uses strict > so that re-processing an edition with the same date
+    does not flip the flag back.
+
+    Returns True if this edition was promoted to current; False if skipped because a
+    newer sibling exists (i.e. the caller uploaded a historical back-issue).
+
+    Edge cases:
+    - No other editions exist for this publisher → promotes (first upload wins).
+    - This edition's edition_date is NULL → cannot compare, skips and logs a warning.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT edition_date FROM editions WHERE id = ?", (edition_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            logger.warning(
+                f"mark_edition_current_if_latest: edition {edition_id} not found"
+            )
+            return False
+        my_date = row[0]
+        if not my_date:
+            logger.warning(
+                f"mark_edition_current_if_latest: edition {edition_id} has no "
+                f"edition_date — skipping (cannot compare). Upload form should "
+                f"require a date when using auto mode."
+            )
+            return False
+
+        cursor.execute(
+            """
+            SELECT MAX(edition_date) FROM editions
+            WHERE publisher_id = ? AND id != ? AND edition_date IS NOT NULL
+            """,
+            (publisher_id, edition_id),
+        )
+        max_other = cursor.fetchone()[0]
+    finally:
+        conn.close()
+
+    if max_other is None:
+        logger.info(
+            f"mark_edition_current_if_latest: edition {edition_id} "
+            f"(edition_date={my_date}) is first for publisher {publisher_id} "
+            f"→ promoting to current"
+        )
+        mark_edition_current(edition_id, publisher_id)
+        return True
+
+    if my_date > max_other:
+        logger.info(
+            f"mark_edition_current_if_latest: edition {edition_id} "
+            f"(edition_date={my_date}) is newer than latest sibling "
+            f"({max_other}) → promoting to current"
+        )
+        mark_edition_current(edition_id, publisher_id)
+        return True
+
+    logger.info(
+        f"mark_edition_current_if_latest: edition {edition_id} "
+        f"(edition_date={my_date}) is not newer than latest sibling "
+        f"({max_other}) → leaving is_current untouched (historical seed)"
+    )
+    return False
+
+
 def get_current_edition_ids(publisher: str | None = None) -> set[str]:
     """Return the set of current edition IDs as strings (matching Chroma metadata format).
 

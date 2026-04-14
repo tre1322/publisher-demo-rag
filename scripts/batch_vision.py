@@ -75,7 +75,21 @@ def main():
     parser.add_argument("--limit", type=int, default=0, help="Process only first N editions")
     parser.add_argument("--resume", action="store_true", help="Skip already-processed editions")
     parser.add_argument("--edition-date", default=None, help="Override edition date (YYYY-MM-DD)")
+    parser.add_argument(
+        "--mode",
+        choices=["auto", "current", "historical"],
+        default="historical",
+        help="is_current behavior: auto (promote if newest), current (force), "
+             "historical (never promote — default for batch backfill)",
+    )
     args = parser.parse_args()
+
+    # Map --mode to tri-state force_current flag
+    force_current: bool | None = None
+    if args.mode == "current":
+        force_current = True
+    elif args.mode == "historical":
+        force_current = False
 
     pdf_dir = Path(args.dir)
     if not pdf_dir.is_dir():
@@ -192,6 +206,7 @@ def main():
                 publisher_name=args.publisher,
                 edition_date=edition_date,
                 source_filename=pdf_path.name,
+                force_current=force_current,
             )
 
             article_count = write_result["articles_written"]

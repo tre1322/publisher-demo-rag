@@ -1014,6 +1014,7 @@ def ingest_idml_edition(
     idml_path: str,
     publisher_name: str,
     edition_date: str | None = None,
+    force_current: bool | None = None,
 ) -> dict:
     """Parse an IDML file and write articles to all system destinations.
 
@@ -1025,6 +1026,9 @@ def ingest_idml_edition(
         idml_path: Path to the .idml file.
         publisher_name: Publisher name (e.g., "Cottonwood County Citizen").
         edition_date: Edition date in YYYY-MM-DD format.
+        force_current: Tri-state is_current override passed through to
+            write_articles_to_all. None = auto (promote if newest by date),
+            True = force current, False = seed as historical.
 
     Returns:
         Dict with ingestion results.
@@ -1086,6 +1090,7 @@ def ingest_idml_edition(
         publisher_name=publisher_name,
         edition_date=edition_date,
         source_filename=filename,
+        force_current=force_current,
     )
 
     # Process classified listings as individual ads
