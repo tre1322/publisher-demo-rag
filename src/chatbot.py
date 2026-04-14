@@ -503,6 +503,22 @@ def create_app() -> FastAPI:
     # Include admin dashboard routes
     app.include_router(admin_router)
 
+    # Include business console routes (Main Street OS)
+    try:
+        from src.business_frontend import router as business_router
+        from src.business_frontend.auth import AuthRequired
+
+        app.include_router(business_router)
+
+        @app.exception_handler(AuthRequired)
+        async def _biz_auth_redirect(request, exc):
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(url="/business/login", status_code=303)
+
+        logger.info("Business console routes mounted at /business/")
+    except Exception as e:
+        logger.warning(f"Could not mount business console routes: {e}")
+
     # Include public news routes
     try:
         from src.public_frontend import router as news_router

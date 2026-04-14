@@ -30,8 +30,8 @@ RUN uv venv && \
       --extra-index-url https://pypi.org/simple \
       torch sentence-transformers transformers && \
     pip install --no-cache-dir \
-      anthropic beautifulsoup4 boto3 chromadb fastapi feedparser gradio \
-      httpx llama-index llama-index-embeddings-huggingface \
+      anthropic bcrypt beautifulsoup4 boto3 chromadb fastapi feedparser gradio \
+      httpx itsdangerous llama-index llama-index-embeddings-huggingface \
       llama-index-llms-anthropic openai pandas pdfplumber Pillow pymupdf \
       python-dotenv striprtf uvicorn
 

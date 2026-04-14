@@ -54,6 +54,7 @@ def init_table() -> None:
         ("enrichment_error", "TEXT"),
         ("last_enriched_at", "TEXT"),
         ("last_advertised_at", "TEXT"),
+        ("tier", "TEXT DEFAULT 'starter'"),
     ]:
         try:
             cursor.execute(f"ALTER TABLE organizations ADD COLUMN {col} {coltype}")

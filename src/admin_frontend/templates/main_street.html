@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if publisher %}{{ publisher }} — {% endif %}Main Street OS — Admin</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #f5f5f5; color: #333; }
+        .header { background: #1a1f36; color: white; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { font-size: 20px; font-weight: 600; }
+        .header a { color: #93c5fd; text-decoration: none; font-size: 14px; }
+        .container { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
+
+        .stats { display: flex; gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: white; border-radius: 8px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); flex: 1; }
+        .stat-card .label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-card .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+
+        .card { background: white; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 24px; overflow: hidden; }
+        .card-header { padding: 16px 20px; border-bottom: 1px solid #f0f0f0; font-size: 16px; font-weight: 600; }
+        .card-body { padding: 20px; }
+
+        .scope-notice { background: #fef3c7; border: 1px solid #fde68a; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; color: #78350f; font-size: 14px; }
+
+        .invite-form { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
+        .invite-form .field { display: flex; flex-direction: column; gap: 4px; }
+        .invite-form .field label { font-size: 12px; color: #888; text-transform: uppercase; font-weight: 600; }
+        .invite-form input, .invite-form select { padding: 10px 14px; border: 1.5px solid #ddd; border-radius: 8px; font-size: 14px; }
+        .invite-form input[name="business_name"] { min-width: 260px; }
+
+        .btn { padding: 10px 18px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; }
+        .btn-blue { background: #2563eb; color: white; }
+        .btn-blue:hover { background: #1d4ed8; }
+        .btn-blue:disabled { background: #9ca3af; cursor: not-allowed; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th { text-align: left; padding: 10px 14px; color: #888; font-size: 12px; text-transform: uppercase; letter-spacing: 0.3px; border-bottom: 2px solid #f0f0f0; }
+        td { padding: 10px 14px; border-bottom: 1px solid #f0f0f0; }
+        tr:hover { background: #f9fafb; }
+
+        .badge { padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+        .badge-pending { background: #fef3c7; color: #92400e; }
+        .badge-used { background: #dcfce7; color: #166534; }
+        .badge-growth { background: #dbeafe; color: #1e40af; }
+        .badge-premium { background: #ede9fe; color: #5b21b6; }
+
+        .invite-link { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 12px 16px; margin-top: 16px; display: none; align-items: center; gap: 10px; }
+        .invite-link input { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; font-family: monospace; }
+        .btn-copy { padding: 8px 14px; font-size: 12px; background: #059669; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
+
+        .empty { text-align: center; padding: 40px; color: #999; }
+
+        .toast { position: fixed; bottom: 24px; right: 24px; background: #059669; color: white; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 500; display: none; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+        .toast.error { background: #dc2626; }
+        .toast.show { display: block; animation: fadeInUp 0.3s ease; }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        @media (max-width: 768px) {
+            .stats { flex-direction: column; }
+            .invite-form { flex-direction: column; align-items: stretch; }
+            .invite-form .field { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🏪 {% if publisher %}{{ publisher }} — {% endif %}Main Street OS</h1>
+        <a href="/admin/{% if publisher_slug %}{{ publisher_slug }}{% endif %}">← Back to Dashboard</a>
+    </div>
+
+    <div class="container">
+        {% if not publisher %}
+        <div class="scope-notice">
+            <strong>Network-wide view.</strong> You're seeing all publications. To create invites,
+            open this page from a specific publication:
+            <a href="/admin/cottonwood/main-street">Cottonwood County Citizen</a> or
+            <a href="/admin/pipestone/main-street">Pipestone Star</a>.
+        </div>
+        {% endif %}
+
+        <div class="stats">
+            <div class="stat-card"><div class="label">Enrolled Businesses</div><div class="value" id="stat-enrolled">-</div></div>
+            <div class="stat-card"><div class="label">Pending Invites</div><div class="value" id="stat-pending">-</div></div>
+            <div class="stat-card"><div class="label">Used Invites</div><div class="value" id="stat-used">-</div></div>
+        </div>
+
+        {% if publisher %}
+        <div class="card">
+            <div class="card-header">Invite a Business to {{ publisher }}</div>
+            <div class="card-body">
+                <div class="invite-form">
+                    <div class="field" style="flex:1;">
+                        <label>Business Name</label>
+                        <input name="business_name" placeholder="Joe's Pizza">
+                    </div>
+                    <div class="field">
+                        <label>Tier</label>
+                        <select name="tier">
+                            <option value="growth">Growth ($75/mo)</option>
+                            <option value="premium">Premium ($150/mo)</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Note (optional)</label>
+                        <input name="note" placeholder="Called 4/14">
+                    </div>
+                    <button class="btn btn-blue" onclick="createInvite()">Create Invite</button>
+                </div>
+                <div class="invite-link" id="invite-result">
+                    <input id="invite-url" readonly>
+                    <button class="btn-copy" onclick="copyLink()">Copy Link</button>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card">
+            <div class="card-header">Invites{% if publisher %} — {{ publisher }}{% endif %}</div>
+            <div id="invites-body"></div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">Enrolled Businesses{% if publisher %} — {{ publisher }}{% endif %}</div>
+            <div id="businesses-body"></div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+<script>
+    const MS_PUBLISHER = '{{ publisher }}';
+    const pubParam = MS_PUBLISHER ? '?publisher=' + encodeURIComponent(MS_PUBLISHER) : '';
+
+    function showToast(msg, isError) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.className = 'toast show' + (isError ? ' error' : '');
+        setTimeout(() => { t.className = 'toast'; }, 3000);
+    }
+
+    function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+    async function createInvite() {
+        if (!MS_PUBLISHER) { showToast('Open from /admin/cottonwood/main-street or /admin/pipestone/main-street', true); return; }
+        const name = document.querySelector('[name="business_name"]').value.trim();
+        const tier = document.querySelector('[name="tier"]').value;
+        const note = document.querySelector('[name="note"]').value.trim();
+        if (!name) { showToast('Business name is required', true); return; }
+
+        const res = await fetch('/admin/api/main-street/invite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ business_name: name, publisher: MS_PUBLISHER, tier, note }),
+        });
+        const data = await res.json();
+        if (data.success) {
+            document.getElementById('invite-url').value = data.link;
+            document.getElementById('invite-result').style.display = 'flex';
+            document.querySelector('[name="business_name"]').value = '';
+            document.querySelector('[name="note"]').value = '';
+            showToast('Invite created for ' + name);
+            loadAll();
+        } else {
+            showToast(data.error || 'Failed to create invite', true);
+        }
+    }
+
+    function copyLink() {
+        const input = document.getElementById('invite-url');
+        input.select();
+        navigator.clipboard.writeText(input.value);
+        showToast('Link copied!');
+    }
+
+    async function loadAll() {
+        // Invites
+        const invRes = await fetch('/admin/api/main-street/invites' + pubParam);
+        const invData = await invRes.json();
+        const invites = invData.invites || [];
+
+        document.getElementById('stat-pending').textContent = invites.filter(i => !i.used_at).length;
+        document.getElementById('stat-used').textContent = invites.filter(i => i.used_at).length;
+
+        const invBody = document.getElementById('invites-body');
+        if (invites.length === 0) {
+            invBody.innerHTML = '<div class="empty">No invites yet.' + (MS_PUBLISHER ? ' Create one above.' : '') + '</div>';
+        } else {
+            invBody.innerHTML = '<table><thead><tr><th>Business</th>' +
+                (MS_PUBLISHER ? '' : '<th>Publisher</th>') +
+                '<th>Tier</th><th>Status</th><th>Created</th><th>Note</th></tr></thead><tbody>' +
+                invites.map(i => '<tr>' +
+                    '<td><strong>' + esc(i.business_name) + '</strong></td>' +
+                    (MS_PUBLISHER ? '' : '<td>' + esc(i.publisher) + '</td>') +
+                    '<td><span class="badge badge-' + esc(i.tier) + '">' + esc(i.tier) + '</span></td>' +
+                    '<td>' + (i.used_at
+                        ? '<span class="badge badge-used">Registered ' + i.used_at.slice(0,10) + '</span>'
+                        : '<span class="badge badge-pending">Pending</span>') + '</td>' +
+                    '<td>' + (i.created_at || '').slice(0,10) + '</td>' +
+                    '<td style="color:#888;">' + esc(i.note || '') + '</td>' +
+                    '</tr>').join('') + '</tbody></table>';
+        }
+
+        // Enrolled businesses
+        const bizRes = await fetch('/admin/api/main-street/businesses' + pubParam);
+        const bizData = await bizRes.json();
+        const businesses = bizData.businesses || [];
+        document.getElementById('stat-enrolled').textContent = businesses.length;
+
+        const bizBody = document.getElementById('businesses-body');
+        if (businesses.length === 0) {
+            bizBody.innerHTML = '<div class="empty">No businesses enrolled yet.</div>';
+        } else {
+            bizBody.innerHTML = '<table><thead><tr><th>Business</th><th>Owner</th>' +
+                (MS_PUBLISHER ? '' : '<th>Publisher</th>') +
+                '<th>Tier</th><th>Location</th><th>Enrolled</th><th>Last Login</th></tr></thead><tbody>' +
+                businesses.map(b => '<tr>' +
+                    '<td><strong>' + esc(b.business_name) + '</strong></td>' +
+                    '<td>' + esc(b.owner_name) + '<br><span style="color:#888;font-size:12px;">' + esc(b.email) + '</span></td>' +
+                    (MS_PUBLISHER ? '' : '<td>' + esc(b.publisher || '') + '</td>') +
+                    '<td><span class="badge badge-' + esc(b.tier || 'growth') + '">' + esc(b.tier || 'growth') + '</span></td>' +
+                    '<td>' + (b.city ? esc(b.city) + (b.state ? ', ' + esc(b.state) : '') : '—') + '</td>' +
+                    '<td>' + (b.enrolled_at || '').slice(0,10) + '</td>' +
+                    '<td>' + (b.last_login ? b.last_login.slice(0,10) : '<span style="color:#999;">Never</span>') + '</td>' +
+                    '</tr>').join('') + '</tbody></table>';
+        }
+    }
+
+    loadAll();
+</script>
+</body>
+</html>

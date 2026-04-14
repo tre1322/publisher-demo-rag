@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Dashboard{% endblock %} — Main Street OS</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0/dist/css/tabler.min.css">
+    <style>
+        .nav-link-icon { width: 1.5rem; }
+        .stat-card { transition: transform 0.15s; }
+        .stat-card:hover { transform: translateY(-2px); }
+    </style>
+    {% block head %}{% endblock %}
+</head>
+<body class="d-flex flex-column">
+    <div class="page">
+        <aside class="navbar navbar-vertical navbar-expand-lg" style="background:#1a2332;">
+            <div class="container-fluid">
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#sidebar-menu">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <h1 class="navbar-brand navbar-brand-autodark">
+                    <span class="text-white">{{ org.name if org else 'Main Street OS' }}</span>
+                </h1>
+                <div class="collapse navbar-collapse" id="sidebar-menu">
+                    <ul class="navbar-nav pt-lg-3">
+                        <li class="nav-item"><a class="nav-link {% if active_page == 'dashboard' %}active{% endif %}" href="/business/"><span class="nav-link-icon">📊</span> <span class="nav-link-title">Dashboard</span></a></li>
+                        <li class="nav-item"><a class="nav-link {% if active_page == 'analytics' %}active{% endif %}" href="/business/analytics"><span class="nav-link-icon">📈</span> <span class="nav-link-title">Analytics</span></a></li>
+                        <li class="nav-item"><a class="nav-link {% if active_page == 'ads' %}active{% endif %}" href="/business/ads"><span class="nav-link-icon">📢</span> <span class="nav-link-title">My Ads</span></a></li>
+                        <li class="nav-item"><a class="nav-link {% if active_page == 'sponsored' %}active{% endif %}" href="/business/sponsored"><span class="nav-link-icon">⭐</span> <span class="nav-link-title">Sponsored Answers</span></a></li>
+                        <li class="nav-item"><a class="nav-link {% if active_page == 'settings' %}active{% endif %}" href="/business/settings"><span class="nav-link-icon">⚙️</span> <span class="nav-link-title">Settings</span></a></li>
+                    </ul>
+                    <div class="mt-auto pt-3 border-top border-secondary">
+                        <div class="px-3 py-2 text-muted small">
+                            {{ user.name if user else '' }}<br>
+                            <a href="/business/logout" class="text-muted">Sign out</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <div class="page-wrapper">
+            <div class="page-body">
+                <div class="container-xl">
+                    {% block content %}{% endblock %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0/dist/js/tabler.min.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

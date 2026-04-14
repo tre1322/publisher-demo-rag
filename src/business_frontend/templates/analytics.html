@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% set active_page = "analytics" %}
+{% block title %}Analytics{% endblock %}
+
+{% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>{% endblock %}
+
+{% block content %}
+<div class="page-header d-print-none mb-4">
+    <div class="row align-items-center">
+        <div class="col-auto">
+            <h2 class="page-title">Visibility Analytics</h2>
+            <div class="text-muted">How people find {{ org.name if org else 'your business' }}</div>
+        </div>
+        <div class="col-auto ms-auto d-flex gap-2">
+            <input type="date" id="date-from" class="form-control form-control-sm" style="width:150px">
+            <input type="date" id="date-to" class="form-control form-control-sm" style="width:150px">
+            <button id="btn-refresh" class="btn btn-sm btn-primary">Update</button>
+        </div>
+    </div>
+</div>
+
+<div class="row row-deck row-cards mb-4">
+    <div class="col-sm-6 col-lg-3"><div class="card stat-card"><div class="card-body"><div class="subheader">Total Impressions</div><div class="h1 mb-0" id="stat-impressions">—</div></div></div></div>
+    <div class="col-sm-6 col-lg-3"><div class="card stat-card"><div class="card-body"><div class="subheader">Clicks</div><div class="h1 mb-0" id="stat-clicks">—</div></div></div></div>
+    <div class="col-sm-6 col-lg-3"><div class="card stat-card"><div class="card-body"><div class="subheader">CTR</div><div class="h1 mb-0" id="stat-ctr">—</div></div></div></div>
+    <div class="col-sm-6 col-lg-3"><div class="card stat-card"><div class="card-body"><div class="subheader">Directory Mentions</div><div class="h1 mb-0" id="stat-directory">—</div></div></div></div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header"><h3 class="card-title">Impressions &amp; Clicks Over Time</h3></div>
+    <div class="card-body"><canvas id="chart-daily" height="80"></canvas></div>
+</div>
+
+<div class="row row-deck row-cards">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">How People Find You</h3></div>
+            <div class="table-responsive"><table class="table table-vcenter card-table">
+                <thead><tr><th>Query</th><th class="text-end">Times</th></tr></thead>
+                <tbody id="tbl-queries"><tr><td colspan="2" class="text-muted">Loading...</td></tr></tbody>
+            </table></div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Ad Performance</h3></div>
+            <div class="table-responsive"><table class="table table-vcenter card-table">
+                <thead><tr><th>Ad</th><th class="text-end">Impr.</th><th class="text-end">Clicks</th></tr></thead>
+                <tbody id="tbl-ads"><tr><td colspan="3" class="text-muted">Loading...</td></tr></tbody>
+            </table></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+    const dateFrom = document.getElementById('date-from');
+    const dateTo = document.getElementById('date-to');
+    let chart = null;
+
+    const now = new Date();
+    const ago = new Date(now); ago.setDate(ago.getDate() - 30);
+    dateFrom.value = ago.toISOString().slice(0, 10);
+    dateTo.value = now.toISOString().slice(0, 10);
+
+    function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+    async function load() {
+        const params = new URLSearchParams({date_from: dateFrom.value, date_to: dateTo.value});
+        const res = await fetch('/business/api/analytics?' + params);
+        const data = await res.json();
+
+        document.getElementById('stat-impressions').textContent = data.summary.total_impressions.toLocaleString();
+        document.getElementById('stat-clicks').textContent = data.summary.total_clicks.toLocaleString();
+        document.getElementById('stat-ctr').textContent = data.summary.ctr_percent + '%';
+        document.getElementById('stat-directory').textContent = data.summary.directory_mentions.toLocaleString();
+
+        const labels = [...new Set([
+            ...data.daily.ad_impressions.map(d => d.date),
+            ...data.daily.ad_clicks.map(d => d.date),
+            ...data.daily.dir_impressions.map(d => d.date),
+        ])].sort();
+        const imprMap = Object.fromEntries(data.daily.ad_impressions.map(d => [d.date, d.count]));
+        const clickMap = Object.fromEntries(data.daily.ad_clicks.map(d => [d.date, d.count]));
+        const dirMap = Object.fromEntries(data.daily.dir_impressions.map(d => [d.date, d.count]));
+
+        if (chart) chart.destroy();
+        chart = new Chart(document.getElementById('chart-daily'), {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {label: 'Ad Impressions', data: labels.map(d => imprMap[d] || 0), borderColor: '#206bc4', fill: false, tension: 0.3},
+                    {label: 'Clicks', data: labels.map(d => clickMap[d] || 0), borderColor: '#2fb344', fill: false, tension: 0.3},
+                    {label: 'Directory Mentions', data: labels.map(d => dirMap[d] || 0), borderColor: '#f76707', borderDash: [5,5], fill: false, tension: 0.3},
+                ]
+            },
+            options: {responsive: true, plugins: {legend: {position: 'bottom'}}, scales: {y: {beginAtZero: true}}}
+        });
+
+        const qBody = document.getElementById('tbl-queries');
+        qBody.innerHTML = data.top_queries.length === 0
+            ? '<tr><td colspan="2" class="text-muted">No queries yet</td></tr>'
+            : data.top_queries.map(q => '<tr><td>' + esc(q.query) + '</td><td class="text-end">' + q.count + '</td></tr>').join('');
+
+        const aBody = document.getElementById('tbl-ads');
+        aBody.innerHTML = data.top_content.length === 0
+            ? '<tr><td colspan="3" class="text-muted">No ads yet</td></tr>'
+            : data.top_content.map(a => '<tr><td>' + esc(a.product_name || a.headline || a.ad_id) + '</td><td class="text-end">' + a.impressions + '</td><td class="text-end">' + a.clicks + '</td></tr>').join('');
+    }
+
+    document.getElementById('btn-refresh').addEventListener('click', load);
+    load();
+})();
+</script>
+{% endblock %}

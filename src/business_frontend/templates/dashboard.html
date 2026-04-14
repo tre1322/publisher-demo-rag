@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% set active_page = "dashboard" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header d-print-none mb-4">
+    <div class="row align-items-center">
+        <div class="col-auto">
+            <h2 class="page-title">Welcome, {{ user.name }}</h2>
+            <div class="text-muted">{{ org.name if org else 'Your Business' }} — Last 30 days</div>
+        </div>
+        <div class="col-auto ms-auto">
+            <span class="badge {% if org.tier == 'premium' %}bg-purple{% elif org.tier == 'growth' %}bg-blue{% else %}bg-secondary{% endif %} fs-6">
+                {{ (org.tier or 'starter') | title }} Plan
+            </span>
+        </div>
+    </div>
+</div>
+
+<div class="row row-deck row-cards mb-4">
+    <div class="col-sm-6 col-lg-3"><div class="card stat-card"><div class="card-body"><div class="subheader">Total Impressions</div><div class="h1 mb-0">{{ stats.total_impressions | default(0) }}</div><div class="text-muted small">Times your business appeared in results</div></div></div></div>
+    <div class="col-sm-6 col-lg-3"><div class="card stat-card"><div class="card-body"><div class="subheader">Clicks</div><div class="h1 mb-0">{{ stats.clicks | default(0) }}</div><div class="text-muted small">People who clicked to learn more</div></div></div></div>
+    <div class="col-sm-6 col-lg-3"><div class="card stat-card"><div class="card-body"><div class="subheader">Click-through Rate</div><div class="h1 mb-0">{{ stats.ctr | default(0) }}%</div><div class="text-muted small">Of impressions that led to clicks</div></div></div></div>
+    <div class="col-sm-6 col-lg-3"><div class="card stat-card"><div class="card-body"><div class="subheader">Directory Mentions</div><div class="h1 mb-0">{{ stats.directory_mentions | default(0) }}</div><div class="text-muted small">Times shown in chatbot answers</div></div></div></div>
+</div>
+
+<div class="row row-deck row-cards">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Quick Actions</h3></div>
+            <div class="list-group list-group-flush">
+                <a href="/business/analytics" class="list-group-item list-group-item-action">View detailed analytics</a>
+                <a href="/business/sponsored" class="list-group-item list-group-item-action">Manage sponsored answers</a>
+                <a href="/business/settings" class="list-group-item list-group-item-action">Update business profile</a>
+                <a href="/business/ads" class="list-group-item list-group-item-action">View your advertisements</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">About Main Street OS</h3></div>
+            <div class="card-body">
+                <p>Main Street OS helps local businesses get found by their community. When someone asks your local newspaper's AI assistant a question related to your business, you show up.</p>
+                <p class="mb-0"><strong>Your plan:</strong> {{ (org.tier or 'starter') | title }}
+                {% if org.tier == 'starter' %} — <a href="#">Upgrade to get sponsored answers</a>{% endif %}
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

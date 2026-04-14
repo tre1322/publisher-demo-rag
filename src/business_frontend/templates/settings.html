@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% set active_page = "settings" %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<div class="page-header d-print-none mb-4">
+    <h2 class="page-title">Business Profile</h2>
+    <div class="text-muted">This information appears when people search for your business</div>
+</div>
+
+<form id="settings-form">
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header"><h3 class="card-title">Contact Information</h3></div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Business Name</label>
+                        <input type="text" class="form-control" value="{{ org.name if org else '' }}" disabled>
+                        <small class="text-muted">Contact your newspaper to change your business name.</small>
+                    </div>
+                    <div class="mb-3"><label class="form-label">Phone</label><input type="tel" name="phone" class="form-control" value="{{ org.phone or '' }}"></div>
+                    <div class="mb-3"><label class="form-label">Email</label><input type="email" name="email" class="form-control" value="{{ org.email or '' }}"></div>
+                    <div class="mb-3"><label class="form-label">Website</label><input type="url" name="website" class="form-control" value="{{ org.website or '' }}" placeholder="https://"></div>
+                    <div class="mb-3"><label class="form-label">Address</label><input type="text" name="address" class="form-control" value="{{ org.address or '' }}"></div>
+                    <div class="row">
+                        <div class="col-8 mb-3"><label class="form-label">City</label><input type="text" name="city" class="form-control" value="{{ org.city or '' }}"></div>
+                        <div class="col-4 mb-3"><label class="form-label">State</label><input type="text" name="state" class="form-control" value="{{ org.state or '' }}" maxlength="2"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="card mb-4">
+                <div class="card-header"><h3 class="card-title">Social Media</h3></div>
+                <div class="card-body">
+                    <div class="mb-3"><label class="form-label">Facebook Page URL</label><input type="url" id="social-facebook" class="form-control" placeholder="https://facebook.com/yourbusiness"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header"><h3 class="card-title">About Your Business</h3></div>
+                <div class="card-body">
+                    <div class="mb-3"><label class="form-label">Description</label><textarea name="description" class="form-control" rows="4" placeholder="Tell the community what makes your business special...">{{ org.description or '' }}</textarea></div>
+                    <div class="mb-3"><label class="form-label">Services</label><textarea name="services" class="form-control" rows="2" placeholder="List your main services, separated by commas">{{ org.services or '' }}</textarea></div>
+                    <div class="mb-3">
+                        <label class="form-label">Keywords</label>
+                        <input type="text" name="keywords" class="form-control" value="{{ org.keywords or '' }}" placeholder="pizza, italian, delivery, dine-in">
+                        <small class="text-muted">Help people find you — words someone might search for.</small>
+                    </div>
+                </div>
+            </div>
+            <div class="card mb-4">
+                <div class="card-header"><h3 class="card-title">Business Hours</h3></div>
+                <div class="card-body"><div id="hours-editor"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-4">
+        <button type="submit" class="btn btn-primary btn-lg">Save Changes</button>
+        <span id="save-msg" class="ms-3"></span>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+    const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+    let hours = {};
+    try { hours = JSON.parse('{{ org.hours_json | default("{}", true) | e }}'); } catch(e) {}
+    let social = {};
+    try { social = JSON.parse('{{ org.social_json | default("{}", true) | e }}'); } catch(e) {}
+    if (social.facebook) document.getElementById('social-facebook').value = social.facebook;
+
+    const editor = document.getElementById('hours-editor');
+    DAYS.forEach(day => {
+        const key = day.toLowerCase();
+        const dayHours = hours[key] || {};
+        editor.innerHTML += `
+        <div class="row mb-2 align-items-center">
+            <div class="col-3"><label class="form-label mb-0">${day.slice(0,3)}</label></div>
+            <div class="col-3"><input type="time" class="form-control form-control-sm hours-open" data-day="${key}" value="${dayHours.open || ''}"></div>
+            <div class="col-1 text-center">to</div>
+            <div class="col-3"><input type="time" class="form-control form-control-sm hours-close" data-day="${key}" value="${dayHours.close || ''}"></div>
+            <div class="col-2">
+                <label class="form-check form-check-inline mb-0">
+                    <input type="checkbox" class="form-check-input hours-closed" data-day="${key}" ${dayHours.closed ? 'checked' : ''}>
+                    <span class="form-check-label small">Closed</span>
+                </label>
+            </div>
+        </div>`;
+    });
+
+    editor.addEventListener('change', e => {
+        if (e.target.classList.contains('hours-closed')) {
+            const row = e.target.closest('.row');
+            row.querySelectorAll('input[type="time"]').forEach(i => { i.disabled = e.target.checked; if (e.target.checked) i.value = ''; });
+        }
+    });
+    document.querySelectorAll('.hours-closed:checked').forEach(cb => cb.dispatchEvent(new Event('change', {bubbles: true})));
+
+    document.getElementById('settings-form').addEventListener('submit', async e => {
+        e.preventDefault();
+        const msg = document.getElementById('save-msg');
+        msg.textContent = 'Saving...'; msg.className = 'ms-3 text-muted';
+
+        const hoursData = {};
+        DAYS.forEach(day => {
+            const key = day.toLowerCase();
+            const closed = document.querySelector(`.hours-closed[data-day="${key}"]`).checked;
+            if (closed) {
+                hoursData[key] = {closed: true};
+            } else {
+                const open = document.querySelector(`.hours-open[data-day="${key}"]`).value;
+                const close = document.querySelector(`.hours-close[data-day="${key}"]`).value;
+                if (open || close) hoursData[key] = {open, close};
+            }
+        });
+
+        const socialData = {};
+        const fb = document.getElementById('social-facebook').value.trim();
+        if (fb) socialData.facebook = fb;
+
+        const form = document.getElementById('settings-form');
+        const payload = {};
+        ['phone', 'email', 'website', 'address', 'city', 'state', 'description', 'services', 'keywords'].forEach(f => {
+            const el = form.querySelector(`[name="${f}"]`);
+            if (el) payload[f] = el.value;
+        });
+        payload.hours_json = JSON.stringify(hoursData);
+        payload.social_json = JSON.stringify(socialData);
+
+        try {
+            const res = await fetch('/business/api/settings', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (data.ok) { msg.textContent = 'Saved!'; msg.className = 'ms-3 text-success'; }
+            else { msg.textContent = data.error || 'Error saving'; msg.className = 'ms-3 text-danger'; }
+        } catch(err) {
+            msg.textContent = 'Network error'; msg.className = 'ms-3 text-danger';
+        }
+    });
+})();
+</script>
+{% endblock %}

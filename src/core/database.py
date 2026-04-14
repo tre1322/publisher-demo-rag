@@ -43,11 +43,15 @@ def init_all_tables() -> None:
     from src.modules.costs.tracker import init_cost_table
     from src.modules.organizations import database as orgs_db
     from src.modules.publishers import database as publishers_db
+    from src.business_frontend import auth as biz_auth
+    from src.modules.sponsored import database as sponsored_db
 
     init_cost_table()
 
     orgs_db.init_table()
     publishers_db.init_table()
+    biz_auth.init_tables()
+    sponsored_db.init_table()
     articles_db.init_table()
     ads_db.init_table()
     events_db.init_table()

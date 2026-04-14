@@ -1248,6 +1248,109 @@ async def costs_history(
     return JSONResponse(content={"history": get_cost_history(30, publisher=publisher)})
 
 
+# ── Main Street OS Admin (business console onboarding) ──
+
+
+@router.get("/main-street", response_class=HTMLResponse)
+async def main_street_admin(
+    request: Request, _username: str = Depends(verify_credentials)
+) -> HTMLResponse:
+    """Render the Main Street OS admin page (network-wide view)."""
+    return templates.TemplateResponse(
+        request=request,
+        name="main_street.html",
+        context={"request": request, "publisher": "", "publisher_slug": ""},
+    )
+
+
+@router.post("/api/main-street/invite")
+async def create_main_street_invite(
+    request: Request, _username: str = Depends(verify_credentials)
+) -> JSONResponse:
+    """Create an invite link for a business. Publisher is passed from the
+    scoped admin page (derived from URL slug client-side)."""
+    from src.business_frontend.auth import create_invite
+
+    data = await request.json()
+    business_name = (data.get("business_name") or "").strip()
+    publisher = (data.get("publisher") or "").strip()
+    tier = data.get("tier", "growth")
+    note = (data.get("note") or "").strip()
+
+    if not business_name:
+        return JSONResponse(
+            content={"success": False, "error": "Business name is required"},
+            status_code=400,
+        )
+    if not publisher:
+        return JSONResponse(
+            content={"success": False, "error": "Publisher is required (open this page from a publisher-scoped URL)"},
+            status_code=400,
+        )
+    if tier not in ("growth", "premium"):
+        return JSONResponse(
+            content={"success": False, "error": "Tier must be growth or premium"},
+            status_code=400,
+        )
+
+    code = create_invite(business_name=business_name, publisher=publisher, tier=tier, note=note)
+    base = str(request.base_url).rstrip("/")
+    link = f"{base}/business/register?invite={code}"
+    return JSONResponse(content={"success": True, "code": code, "link": link})
+
+
+@router.get("/api/main-street/invites")
+async def list_main_street_invites(
+    publisher: str | None = None,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """List invites, optionally filtered to a single publisher."""
+    from src.business_frontend.auth import get_invites_for_publisher
+
+    return JSONResponse(content={"invites": get_invites_for_publisher(publisher)})
+
+
+@router.get("/api/main-street/businesses")
+async def list_enrolled_businesses(
+    publisher: str | None = None,
+    _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """List enrolled Main Street OS businesses, optionally filtered by publisher."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    if publisher:
+        cursor.execute(
+            """
+            SELECT bu.id as user_id, bu.email, bu.name as owner_name,
+                   bu.last_login, bu.created_at as enrolled_at,
+                   o.id as org_id, o.name as business_name, o.tier,
+                   o.city, o.state, o.phone, o.publisher
+            FROM business_users bu
+            JOIN organizations o ON bu.organization_id = o.id
+            WHERE bu.is_active = 1 AND o.publisher = ?
+            ORDER BY bu.created_at DESC
+            """,
+            (publisher,),
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT bu.id as user_id, bu.email, bu.name as owner_name,
+                   bu.last_login, bu.created_at as enrolled_at,
+                   o.id as org_id, o.name as business_name, o.tier,
+                   o.city, o.state, o.phone, o.publisher
+            FROM business_users bu
+            JOIN organizations o ON bu.organization_id = o.id
+            WHERE bu.is_active = 1
+            ORDER BY bu.created_at DESC
+            """
+        )
+    columns = [desc[0] for desc in cursor.description]
+    rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    conn.close()
+    return JSONResponse(content={"businesses": rows})
+
+
 # ── Business Directory Admin ──
 
 
@@ -2263,3 +2366,13 @@ async def admin_publisher_costs(
     if publisher_slug not in _PUBLISHER_SLUGS:
         return templates.TemplateResponse(request=request, name="costs.html", context={"request": request, "publisher": "", "publisher_slug": ""})
     return templates.TemplateResponse(request=request, name="costs.html", context=_publisher_context(request, publisher_slug))
+
+
+@router.get("/{publisher_slug}/main-street", response_class=HTMLResponse)
+async def admin_publisher_main_street(
+    request: Request, publisher_slug: str, _username: str = Depends(verify_credentials)
+) -> HTMLResponse:
+    """Render publisher-scoped Main Street OS admin page."""
+    if publisher_slug not in _PUBLISHER_SLUGS:
+        return templates.TemplateResponse(request=request, name="main_street.html", context={"request": request, "publisher": "", "publisher_slug": ""})
+    return templates.TemplateResponse(request=request, name="main_street.html", context=_publisher_context(request, publisher_slug))

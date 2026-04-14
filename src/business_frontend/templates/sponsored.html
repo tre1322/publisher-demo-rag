@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% set active_page = "sponsored" %}
+{% block title %}Sponsored Answers{% endblock %}
+
+{% block content %}
+<div class="page-header d-print-none mb-4">
+    <h2 class="page-title">Sponsored Answers</h2>
+    <div class="text-muted">When someone asks your community AI about your category, your answer appears</div>
+</div>
+
+<div id="tier-bar" class="card mb-4" style="display:none;">
+    <div class="card-body">
+        <div class="row align-items-center">
+            <div class="col-auto"><span class="badge fs-6" id="tier-badge">—</span></div>
+            <div class="col">
+                <div class="mb-1"><strong>Monthly Impressions:</strong> <span id="usage-text">—</span></div>
+                <div class="progress" style="height:8px;"><div class="progress-bar" id="usage-bar" style="width:0%"></div></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="lockout" class="card mb-4" style="display:none;">
+    <div class="card-body text-center py-5">
+        <h3>Upgrade to Unlock Sponsored Answers</h3>
+        <p class="text-muted">With the Growth plan ($75/mo), your custom answers appear when community members ask about your business category — 20 impressions per month included.</p>
+        <p class="text-muted">Contact your local newspaper to upgrade.</p>
+    </div>
+</div>
+
+<div id="create-section" class="card mb-4" style="display:none;">
+    <div class="card-header"><h3 class="card-title">Create Sponsored Answer</h3></div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Category</label>
+                <select id="inp-category" class="form-select">
+                    <option value="">Select a category...</option>
+                    <option value="restaurant">Restaurant / Food</option>
+                    <option value="retail">Retail / Shopping</option>
+                    <option value="automotive">Automotive</option>
+                    <option value="health">Health / Medical</option>
+                    <option value="professional">Professional Services</option>
+                    <option value="home">Home / Construction</option>
+                    <option value="agriculture">Agriculture</option>
+                    <option value="entertainment">Entertainment</option>
+                    <option value="lodging">Lodging / Travel</option>
+                    <option value="financial">Financial / Insurance</option>
+                    <option value="education">Education</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div class="col-md-8">
+                <label class="form-label">Your Answer <small class="text-muted">(<span id="char-count">0</span>/500)</small></label>
+                <textarea id="inp-answer" class="form-control" rows="3" maxlength="500" placeholder="When someone asks about your category, what should they know? e.g., 'Visit Joe's Pizza for hand-tossed pies made fresh daily. Open 11am-9pm, dine-in or takeout. 507-555-0123.'"></textarea>
+            </div>
+        </div>
+        <div class="mt-3">
+            <button id="btn-create" class="btn btn-primary">Create Sponsored Answer</button>
+            <span id="create-msg" class="ms-2 text-muted"></span>
+        </div>
+    </div>
+</div>
+
+<div class="card" id="answers-card" style="display:none;">
+    <div class="card-header"><h3 class="card-title">Your Sponsored Answers</h3></div>
+    <div class="table-responsive">
+        <table class="table table-vcenter card-table">
+            <thead><tr><th>Category</th><th>Answer</th><th class="text-end">Impressions</th><th>Actions</th></tr></thead>
+            <tbody id="tbl-answers"></tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+    const textarea = document.getElementById('inp-answer');
+    textarea.addEventListener('input', () => {
+        document.getElementById('char-count').textContent = textarea.value.length;
+    });
+
+    function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+    async function load() {
+        const res = await fetch('/business/api/sponsored');
+        const data = await res.json();
+        const tier = data.tier || 'starter';
+        const limit = data.impressions_limit || 0;
+
+        if (tier === 'starter') { document.getElementById('lockout').style.display = ''; return; }
+
+        document.getElementById('tier-bar').style.display = '';
+        document.getElementById('create-section').style.display = '';
+
+        const badge = document.getElementById('tier-badge');
+        badge.textContent = tier.charAt(0).toUpperCase() + tier.slice(1) + ' Plan';
+        badge.className = 'badge fs-6 ' + (tier === 'premium' ? 'bg-purple' : 'bg-blue');
+
+        const totalUsed = data.answers.reduce((s, a) => s + (a.impressions_used || 0), 0);
+        document.getElementById('usage-text').textContent = totalUsed + ' / ' + limit + ' used this month';
+        const pct = limit > 0 ? Math.min(100, totalUsed / limit * 100) : 0;
+        const bar = document.getElementById('usage-bar');
+        bar.style.width = pct + '%';
+        bar.className = 'progress-bar ' + (pct > 80 ? 'bg-danger' : pct > 50 ? 'bg-warning' : 'bg-primary');
+
+        const active = data.answers.filter(a => a.status === 'active');
+        if (active.length > 0) {
+            document.getElementById('answers-card').style.display = '';
+            document.getElementById('tbl-answers').innerHTML = active.map(a =>
+                '<tr>' +
+                '<td><span class="badge bg-azure">' + esc(a.category) + '</span></td>' +
+                '<td style="max-width:350px">' + esc(a.answer_text) + '</td>' +
+                '<td class="text-end">' + (a.impressions_used || 0) + '</td>' +
+                '<td><button class="btn btn-sm btn-outline-danger" onclick="deactivate(' + a.id + ')">Remove</button></td>' +
+                '</tr>'
+            ).join('');
+        }
+    }
+
+    window.deactivate = async function(id) {
+        if (!confirm('Remove this sponsored answer?')) return;
+        await fetch('/business/api/sponsored/' + id, {method: 'DELETE'});
+        load();
+    };
+
+    document.getElementById('btn-create').addEventListener('click', async () => {
+        const cat = document.getElementById('inp-category').value;
+        const text = document.getElementById('inp-answer').value.trim();
+        const msg = document.getElementById('create-msg');
+        if (!cat || !text) { msg.textContent = 'Please select a category and write your answer.'; return; }
+
+        const res = await fetch('/business/api/sponsored', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({category: cat, answer_text: text}),
+        });
+        const data = await res.json();
+        if (data.ok) {
+            msg.textContent = 'Created!';
+            document.getElementById('inp-answer').value = '';
+            document.getElementById('char-count').textContent = '0';
+            load();
+        } else {
+            msg.textContent = data.error || 'Error creating answer';
+        }
+    });
+
+    load();
+})();
+</script>
+{% endblock %}

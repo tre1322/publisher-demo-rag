@@ -20,20 +20,22 @@ logger = logging.getLogger(__name__)
 
 AGENT_SYSTEM_PROMPT = """You are a search agent for a local newspaper database containing news articles, advertisements, events, and a business directory. Your job is to find ALL relevant content for user queries.
 
-You have access to seven search tools:
+You have access to eight search tools:
 1. semantic_search - Find articles by meaning/concepts
 2. metadata_search - Filter articles by date, author, location, subject
 3. hybrid_search - Combine semantic search with metadata filters (PREFERRED for articles)
 4. search_advertisements - Find ads for local businesses, products, and services
 5. search_directory - Find local businesses in the directory (name, services, location, phone)
 6. search_events - Find local events like concerts, sports, arts, and community gatherings
-7. get_database_info - Get info about publishers/newspapers and content counts
+7. search_sponsored_answers - Find sponsored answers from local Main Street OS businesses for specific service categories
+8. get_database_info - Get info about publishers/newspapers and content counts
 
-CRITICAL: For EVERY query, you MUST call ALL FOUR of these tools:
+CRITICAL: For EVERY query, you MUST call ALL FIVE of these tools:
 1. hybrid_search (or semantic_search) - to find relevant news articles
 2. search_advertisements - to find relevant ads and local business services
 3. search_directory - to find local businesses that may offer what the user needs
 4. search_events - to find relevant events
+5. search_sponsored_answers - to find sponsored business answers (pass the most relevant category: restaurant/retail/automotive/health/professional/home/agriculture/entertainment/lodging/financial/education/other)
 
 Active advertisers (from search_advertisements) should be prioritized over directory-only listings (from search_directory). This ensures paying advertisers get top placement while still showing all relevant businesses.
 
@@ -181,6 +183,11 @@ class SearchAgent:
                 max_price=tool_input.get("max_price"),
                 free_only=tool_input.get("free_only", False),
             )
+        elif tool_name == "search_sponsored_answers":
+            return self.search_tools.search_sponsored_answers(
+                query=tool_input.get("query"),
+                category=tool_input.get("category"),
+            )
         elif tool_name == "get_database_info":
             info = self.search_tools.get_database_info()
             # Return as a single result dict for consistency
@@ -211,7 +218,10 @@ class SearchAgent:
         """
         # Store publisher filter for use in _execute_tool
         self._current_publisher = publisher
-        logger.info(f"Search agent processing: '{query}'" + (f" [publisher={publisher}]" if publisher else ""))
+        logger.info(
+            f"Search agent processing: '{query}'"
+            + (f" [publisher={publisher}]" if publisher else "")
+        )
 
         messages: list[anthropic.types.MessageParam] = [
             {"role": "user", "content": query}
@@ -230,11 +240,16 @@ class SearchAgent:
         # Log cost
         try:
             from src.modules.costs.tracker import log_api_call
+
             usage = getattr(response, "usage", None)
-            log_api_call("anthropic", LLM_MODEL, "search_agent",
+            log_api_call(
+                "anthropic",
+                LLM_MODEL,
+                "search_agent",
                 input_tokens=getattr(usage, "input_tokens", 0) if usage else 0,
                 output_tokens=getattr(usage, "output_tokens", 0) if usage else 0,
-                publisher=getattr(self, "_current_publisher", None))
+                publisher=getattr(self, "_current_publisher", None),
+            )
         except Exception:
             pass
 
@@ -265,16 +280,16 @@ class SearchAgent:
                     all_results.extend(results)
 
                 # Log the results that will be available to the LLM
-                logger.info(
-                    f"Tool '{tool_name}' returned {len(results)} results"
-                )
+                logger.info(f"Tool '{tool_name}' returned {len(results)} results")
                 for i, result in enumerate(results[:5]):  # Log first 5 results
                     if "title" in result.get("metadata", {}):
                         logger.info(
                             f"  Result {i + 1}: {result['metadata'].get('title', 'Unknown')[:60]}"
                         )
                     elif "title" in result:
-                        logger.info(f"  Result {i + 1}: {result.get('title', 'Unknown')[:60]}")
+                        logger.info(
+                            f"  Result {i + 1}: {result.get('title', 'Unknown')[:60]}"
+                        )
                     elif "product_name" in result:
                         logger.info(
                             f"  Result {i + 1}: {result.get('product_name', 'Unknown')[:60]} "

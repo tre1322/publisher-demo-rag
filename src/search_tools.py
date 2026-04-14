@@ -137,23 +137,98 @@ class SearchTools:
         if query:
             # Extract meaningful words from the query (skip common stop words)
             stop_words = {
-                "i", "me", "my", "we", "our", "you", "your", "a", "an", "the",
-                "is", "are", "was", "were", "be", "been", "being", "have", "has",
-                "had", "do", "does", "did", "will", "would", "could", "should",
-                "can", "may", "might", "shall", "need", "want", "like", "get",
-                "got", "some", "any", "where", "what", "which", "who", "how",
-                "that", "this", "those", "these", "there", "here", "to", "for",
-                "of", "in", "on", "at", "by", "with", "from", "about", "into",
-                "and", "or", "but", "not", "no", "so", "if", "then", "than",
-                "very", "just", "also", "too", "up", "out", "it", "its",
+                "i",
+                "me",
+                "my",
+                "we",
+                "our",
+                "you",
+                "your",
+                "a",
+                "an",
+                "the",
+                "is",
+                "are",
+                "was",
+                "were",
+                "be",
+                "been",
+                "being",
+                "have",
+                "has",
+                "had",
+                "do",
+                "does",
+                "did",
+                "will",
+                "would",
+                "could",
+                "should",
+                "can",
+                "may",
+                "might",
+                "shall",
+                "need",
+                "want",
+                "like",
+                "get",
+                "got",
+                "some",
+                "any",
+                "where",
+                "what",
+                "which",
+                "who",
+                "how",
+                "that",
+                "this",
+                "those",
+                "these",
+                "there",
+                "here",
+                "to",
+                "for",
+                "of",
+                "in",
+                "on",
+                "at",
+                "by",
+                "with",
+                "from",
+                "about",
+                "into",
+                "and",
+                "or",
+                "but",
+                "not",
+                "no",
+                "so",
+                "if",
+                "then",
+                "than",
+                "very",
+                "just",
+                "also",
+                "too",
+                "up",
+                "out",
+                "it",
+                "its",
             }
             import re as _re
-            words = [w for w in _re.findall(r"[a-zA-Z]+", query.lower()) if w not in stop_words and len(w) > 2]
+
+            words = [
+                w
+                for w in _re.findall(r"[a-zA-Z]+", query.lower())
+                if w not in stop_words and len(w) > 2
+            ]
             if words:
                 # Match ANY keyword against name, description, services, or keywords
                 word_clauses = []
                 for word in words:
-                    word_clauses.append("(name LIKE ? OR description LIKE ? OR services LIKE ? OR keywords LIKE ?)")
+                    word_clauses.append(
+                        "(name LIKE ? OR description LIKE ? OR services LIKE ? OR keywords LIKE ?)"
+                    )
                     params.extend([f"%{word}%"] * 4)
                 sql += " AND (" + " OR ".join(word_clauses) + ")"
 
@@ -184,21 +259,77 @@ class SearchTools:
             if website:
                 text_parts.append(f"Website: {website}")
 
-            results.append({
-                "text": "\n".join(text_parts),
-                "metadata": {
-                    "doc_id": f"dir_{org.get('id', '')}",
-                    "title": name,
-                    "advertiser": name,
-                    "category": org.get("category", ""),
-                    "location": f"{city}, {state}" if city else "",
-                    "url": f"/business/{org.get('id', '')}",
-                    "content_type": "directory",
-                },
-                "score": 0.5,  # Lower than active ads (which get 1.0+)
-                "search_type": "directory",
-            })
+            results.append(
+                {
+                    "text": "\n".join(text_parts),
+                    "metadata": {
+                        "doc_id": f"dir_{org.get('id', '')}",
+                        "title": name,
+                        "advertiser": name,
+                        "category": org.get("category", ""),
+                        "location": f"{city}, {state}" if city else "",
+                        "url": f"/business/{org.get('id', '')}",
+                        "content_type": "directory",
+                    },
+                    "score": 0.5,  # Lower than active ads (which get 1.0+)
+                    "search_type": "directory",
+                }
+            )
 
+        return results
+
+    # Sponsored answer search (Main Street OS)
+    def search_sponsored_answers(
+        self,
+        query: str | None = None,
+        category: str | None = None,
+    ) -> list[dict]:
+        """Search sponsored answers for a category.
+
+        Results prefixed with [SPONSORED Answer from ...] so the existing
+        disclosure logic in prompts.py handles legal compliance. Each
+        returned answer increments its impression counter. No publisher
+        filter — businesses appear in all publication chatbots.
+        """
+        from src.modules.sponsored.database import (
+            get_active_sponsored_for_category,
+            increment_impression,
+        )
+
+        if not category:
+            return []
+
+        results = []
+        for s in get_active_sponsored_for_category(category):
+            if not increment_impression(s["id"]):
+                continue
+            phone = s.get("org_phone") or ""
+            address = s.get("org_address") or ""
+            contact = ""
+            if phone:
+                contact += f" | Phone: {phone}"
+            if address:
+                contact += f" | {address}"
+            text = (
+                f"[SPONSORED Answer from {s['org_name']}]\n"
+                f"Category: {s['category']}\n"
+                f"{s['answer_text']}{contact}"
+            )
+            results.append(
+                {
+                    "text": text,
+                    "metadata": {
+                        "doc_id": f"sponsored_{s['id']}",
+                        "title": f"Sponsored: {s['org_name']}",
+                        "advertiser": s["org_name"],
+                        "category": s["category"],
+                        "content_type": "sponsored_answer",
+                        "url": "",
+                    },
+                    "score": 0.85,
+                    "search_type": "advertisement",
+                }
+            )
         return results
 
     # Event search methods
@@ -267,6 +398,35 @@ DIRECTORY_SEARCH_SCHEMA = {
 }
 
 
+SPONSORED_ANSWERS_SCHEMA = {
+    "name": "search_sponsored_answers",
+    "description": (
+        "Search for sponsored answers from local businesses. Use when the user "
+        "asks about a specific service category (restaurant, retail, automotive, "
+        "health, professional, home, agriculture, entertainment, lodging, "
+        "financial, education) to surface businesses that have paid to provide "
+        "direct answers. These are disclosed as sponsored content."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "What the user is looking for (used for context only)",
+            },
+            "category": {
+                "type": "string",
+                "description": (
+                    "Business category. Available: restaurant, retail, automotive, "
+                    "health, professional, home, agriculture, entertainment, "
+                    "lodging, financial, education, other"
+                ),
+            },
+        },
+    },
+}
+
+
 def get_search_tools_schema() -> list[dict]:
     """Get combined search tools schema with dynamic categories.
 
@@ -278,6 +438,7 @@ def get_search_tools_schema() -> list[dict]:
         + get_ad_tools_schema()
         + [DIRECTORY_SEARCH_SCHEMA]
         + get_event_tools_schema()
+        + [SPONSORED_ANSWERS_SCHEMA]
         + [DATABASE_INFO_SCHEMA]
     )
 

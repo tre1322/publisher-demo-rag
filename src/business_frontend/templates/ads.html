@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% set active_page = "ads" %}
+{% block title %}My Ads{% endblock %}
+
+{% block content %}
+<div class="page-header d-print-none mb-4">
+    <h2 class="page-title">My Advertisements</h2>
+    <div class="text-muted">Ads published by your local newspaper for {{ org.name if org else 'your business' }}</div>
+</div>
+
+{% if ads %}
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-vcenter card-table">
+            <thead><tr><th>Ad</th><th>Category</th><th>Status</th><th>Valid From</th><th>Valid To</th><th>Price</th></tr></thead>
+            <tbody>
+                {% for ad in ads %}
+                <tr>
+                    <td>
+                        <div class="fw-bold">{{ ad.product_name or ad.headline or 'Untitled' }}</div>
+                        {% if ad.description %}<div class="text-muted small" style="max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ ad.description }}</div>{% endif %}
+                    </td>
+                    <td>{{ ad.category or ad.ad_category or '—' }}</td>
+                    <td><span class="badge {% if ad.status == 'active' %}bg-green{% elif ad.status == 'expired' %}bg-secondary{% else %}bg-yellow{% endif %}">{{ ad.status or 'unknown' }}</span></td>
+                    <td>{{ ad.valid_from or '—' }}</td>
+                    <td>{{ ad.valid_to or '—' }}</td>
+                    <td>{{ ('$' + ad.price|string) if ad.price else '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="card"><div class="card-body text-center py-5">
+    <h3 class="text-muted">No advertisements yet</h3>
+    <p class="text-muted">When your local newspaper publishes ads for your business, they'll appear here.</p>
+</div></div>
+{% endif %}
+{% endblock %}
