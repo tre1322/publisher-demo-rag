@@ -62,9 +62,9 @@ def _set_session_cookie(response, user: dict) -> None:
 async def register_page(request: Request, invite: str = ""):
     if not invite:
         return templates.TemplateResponse(
-            "register.html",
-            {
-                "request": request,
+            request=request,
+            name="register.html",
+            context={
                 "error": "No invite code provided. Contact your local newspaper for an invite link.",
                 "invite": None,
             },
@@ -72,21 +72,20 @@ async def register_page(request: Request, invite: str = ""):
     inv = get_invite(invite)
     if not inv:
         return templates.TemplateResponse(
-            "register.html",
-            {"request": request, "error": "Invalid invite code.", "invite": None},
+            request=request,
+            name="register.html",
+            context={"error": "Invalid invite code.", "invite": None},
         )
     if inv.get("used_at"):
         return templates.TemplateResponse(
-            "register.html",
-            {
-                "request": request,
-                "error": "This invite has already been used.",
-                "invite": None,
-            },
+            request=request,
+            name="register.html",
+            context={"error": "This invite has already been used.", "invite": None},
         )
     return templates.TemplateResponse(
-        "register.html",
-        {"request": request, "error": None, "invite": inv},
+        request=request,
+        name="register.html",
+        context={"error": None, "invite": inv},
     )
 
 
@@ -115,37 +114,34 @@ async def register_submit(request: Request):
     inv = get_invite(invite_code)
     if not inv or inv.get("used_at"):
         return templates.TemplateResponse(
-            "register.html",
-            {
-                "request": request,
-                "error": "Invalid or already-used invite.",
-                "invite": None,
-            },
+            request=request,
+            name="register.html",
+            context={"error": "Invalid or already-used invite.", "invite": None},
         )
 
     if not owner_name or not email or not password or not business_name:
         return templates.TemplateResponse(
-            "register.html",
-            {
-                "request": request,
+            request=request,
+            name="register.html",
+            context={
                 "error": "Your name, email, password, and business name are all required.",
                 "invite": inv,
             },
         )
     if len(password) < 6:
         return templates.TemplateResponse(
-            "register.html",
-            {
-                "request": request,
+            request=request,
+            name="register.html",
+            context={
                 "error": "Password must be at least 6 characters.",
                 "invite": inv,
             },
         )
     if get_user_by_email(email):
         return templates.TemplateResponse(
-            "register.html",
-            {
-                "request": request,
+            request=request,
+            name="register.html",
+            context={
                 "error": "An account with this email already exists. Please sign in instead.",
                 "invite": inv,
             },
@@ -214,7 +210,9 @@ async def register_submit(request: Request):
 async def login_page(request: Request):
     if get_current_user(request):
         return RedirectResponse(url="/business/", status_code=303)
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    return templates.TemplateResponse(
+        request=request, name="login.html", context={"error": None}
+    )
 
 
 @router.post("/login", response_class=HTMLResponse)
@@ -224,7 +222,9 @@ async def login_submit(
     user = get_user_by_email(email)
     if not user or not verify_password(password, user["password_hash"]):
         return templates.TemplateResponse(
-            "login.html", {"request": request, "error": "Invalid email or password"}
+            request=request,
+            name="login.html",
+            context={"error": "Invalid email or password"},
         )
     update_last_login(user["id"])
     response = RedirectResponse(url="/business/", status_code=303)
@@ -249,13 +249,9 @@ async def dashboard(request: Request, user: dict = Depends(require_auth)):
     org = _get_org(user["organization_id"])
     stats = _get_summary_stats(user["organization_id"])
     return templates.TemplateResponse(
-        "dashboard.html",
-        {
-            "request": request,
-            "user": user,
-            "org": org,
-            "stats": stats,
-        },
+        request=request,
+        name="dashboard.html",
+        context={"user": user, "org": org, "stats": stats},
     )
 
 
@@ -263,12 +259,9 @@ async def dashboard(request: Request, user: dict = Depends(require_auth)):
 async def analytics_page(request: Request, user: dict = Depends(require_auth)):
     org = _get_org(user["organization_id"])
     return templates.TemplateResponse(
-        "analytics.html",
-        {
-            "request": request,
-            "user": user,
-            "org": org,
-        },
+        request=request,
+        name="analytics.html",
+        context={"user": user, "org": org},
     )
 
 
@@ -277,13 +270,9 @@ async def ads_page(request: Request, user: dict = Depends(require_auth)):
     org = _get_org(user["organization_id"])
     ads = _get_org_ads(user["organization_id"])
     return templates.TemplateResponse(
-        "ads.html",
-        {
-            "request": request,
-            "user": user,
-            "org": org,
-            "ads": ads,
-        },
+        request=request,
+        name="ads.html",
+        context={"user": user, "org": org, "ads": ads},
     )
 
 
@@ -291,12 +280,9 @@ async def ads_page(request: Request, user: dict = Depends(require_auth)):
 async def sponsored_page(request: Request, user: dict = Depends(require_auth)):
     org = _get_org(user["organization_id"])
     return templates.TemplateResponse(
-        "sponsored.html",
-        {
-            "request": request,
-            "user": user,
-            "org": org,
-        },
+        request=request,
+        name="sponsored.html",
+        context={"user": user, "org": org},
     )
 
 
@@ -304,12 +290,9 @@ async def sponsored_page(request: Request, user: dict = Depends(require_auth)):
 async def settings_page(request: Request, user: dict = Depends(require_auth)):
     org = _get_org(user["organization_id"])
     return templates.TemplateResponse(
-        "settings.html",
-        {
-            "request": request,
-            "user": user,
-            "org": org,
-        },
+        request=request,
+        name="settings.html",
+        context={"user": user, "org": org},
     )
 
 
