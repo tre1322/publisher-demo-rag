@@ -237,6 +237,15 @@ class ArticleSearch:
         """
         logger.info(f"Hybrid search: '{query}' with metadata filters")
 
+        # If no metadata filters are active, fall through to pure semantic search.
+        # Otherwise metadata_search(limit=50) imposes an implicit "50 most recent
+        # articles by publish_date" cap that silently excludes historical-seeded
+        # editions — the intersection with the semantic top-k then drops to zero
+        # whenever the best-matching chunks live in older editions.
+        if not any([date_from, date_to, location, subject]):
+            logger.info("Hybrid search: no metadata filters — delegating to semantic_search")
+            return self.semantic_search(query, top_k=top_k, publisher=publisher)
+
         # Get articles matching metadata
         articles = self.metadata_search(
             date_from=date_from,
