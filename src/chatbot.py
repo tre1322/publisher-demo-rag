@@ -501,6 +501,81 @@ def create_app() -> FastAPI:
     except Exception as e:
         logger.warning(f"FTS rebuild at startup failed (non-fatal): {e}")
 
+    # v2 diagnostic: quick health endpoint for the RAG stack. Reports SQLite
+    # article/FTS counts, Chroma chunk count, and whether a probe term (default
+    # "Koerner", overridable via ?q=) appears in SQLite and in the Chroma
+    # index. Used to diagnose SQLite/Chroma drift on deployed environments
+    # where we can't easily open a shell.
+    @app.get("/admin/rag-health")
+    def _rag_health(q: str = "Koerner") -> dict:
+        out: dict = {"probe": q}
+        # SQLite / FTS
+        try:
+            from src.core.database import get_connection
+            conn = get_connection()
+            try:
+                out["articles_count"] = conn.execute(
+                    "SELECT count(*) FROM articles"
+                ).fetchone()[0]
+            except Exception as e:
+                out["articles_count_error"] = str(e)
+            try:
+                out["fts_count"] = conn.execute(
+                    "SELECT count(*) FROM articles_fts"
+                ).fetchone()[0]
+            except Exception as e:
+                out["fts_count_error"] = str(e)
+            try:
+                rows = conn.execute(
+                    "SELECT doc_id, title, publish_date, publisher "
+                    "FROM articles WHERE full_text LIKE ? LIMIT 5",
+                    (f"%{q}%",),
+                ).fetchall()
+                out["probe_in_sqlite"] = [
+                    {
+                        "doc_id": r[0],
+                        "title": r[1],
+                        "publish_date": r[2],
+                        "publisher": r[3],
+                    }
+                    for r in rows
+                ]
+            except Exception as e:
+                out["probe_in_sqlite_error"] = str(e)
+        except Exception as e:
+            out["sqlite_error"] = str(e)
+
+        # Chroma
+        try:
+            from src.core.vector_store import get_articles_collection
+            coll = get_articles_collection()
+            out["chroma_chunks"] = coll.count()
+            # Count chroma chunks that contain probe text AND belong to
+            # any of the matching doc_ids in SQLite.
+            doc_ids = [d["doc_id"] for d in out.get("probe_in_sqlite", [])]
+            if doc_ids:
+                try:
+                    got = coll.get(
+                        where={"doc_id": {"$in": doc_ids}},
+                        limit=20,
+                    )
+                    out["probe_chroma_chunks"] = len(got.get("ids", []))
+                    out["probe_chroma_doc_ids"] = sorted(
+                        set(
+                            (m or {}).get("doc_id")
+                            for m in got.get("metadatas", [])
+                            if m
+                        )
+                    )
+                except Exception as e:
+                    out["probe_chroma_error"] = str(e)
+            else:
+                out["probe_chroma_chunks"] = 0
+        except Exception as e:
+            out["chroma_error"] = str(e)
+
+        return out
+
     # Include chat frontend routes
     app.include_router(chat_router)
 
