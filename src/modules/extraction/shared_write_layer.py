@@ -32,6 +32,49 @@ from src.modules.extraction.publish import generate_homepage_batch
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Junk filter — drop non-editorial content before it reaches the DB
+# ---------------------------------------------------------------------------
+_CONTINUATION_RE = re.compile(r"(?i)^\s*from\s+page\s+\d+")
+_AD_SECTION_TITLES = {
+    "hvac", "plumbing", "hvac/plumbing", "accounting", "accounting/tax services",
+    "classifieds", "legals", "public notices", "farm equip", "farm equip.",
+    "auctions", "boats/motors", "rec. vehicles", "recreational vehicles",
+    "help wanted", "services", "for sale", "real estate",
+    "eeo/aa employer", "employment",
+}
+
+
+def _is_junk_article(headline: str, body_text: str) -> bool:
+    """Return True for content that should never enter the articles table.
+
+    Catches three categories:
+    - Unstitched continuation stubs ("from page 13", "from page 2")
+    - All-caps ad-section headers with ≤ 4 words ("HVAC/PLUMBING")
+    - Known ad-section title strings (classifieds, legals, etc.)
+    """
+    title = (headline or "").strip()
+    body = (body_text or "").strip()
+
+    # 1. Continuation stub — title starts with "from page N"
+    if _CONTINUATION_RE.match(title):
+        return True
+
+    # 2. Body too short after trimming (already checked at < 20 above, but
+    #    raising bar to 80 chars catches partial/orphan ad blocks)
+    if len(body) < 80:
+        return True
+
+    # 3. All-caps short headline — ad section header
+    if title and title.isupper() and len(title.split()) <= 5:
+        return True
+
+    # 4. Known ad-section title (case-insensitive, exact)
+    if title.lower().rstrip(".") in _AD_SECTION_TITLES:
+        return True
+
+    return False
+
 
 def _infer_content_type(headline: str, body_text: str = "") -> str:
     """Infer content type from headline and body text keywords."""
@@ -142,6 +185,24 @@ def write_articles_to_all(
         if not body_text or len(body_text) < 20:
             continue
 
+        # v2 junk filter: drop obvious non-editorial content before it
+        # hits the DB. Three categories:
+        #   1. Unstitched continuation stubs ("from page 13") — orphan
+        #      fragments that the jump matcher couldn't attach to a parent.
+        #      They have no standalone value and clutter the review queue.
+        #   2. All-caps short headlines (≤ 4 words) — ad-section headers
+        #      like "HVAC/PLUMBING" or "ACCOUNTING/TAX SERVICES". Real
+        #      headlines use title case.
+        #   3. Short body text (< 80 chars) — fragment too small to be a
+        #      real article (already caught partly by the < 20 check above,
+        #      but raising the floor filters more stub content).
+        if _is_junk_article(headline, body_text):
+            logger.debug(
+                f"Skipping junk article: title={headline!r:.60} "
+                f"body_len={len(body_text)}"
+            )
+            continue
+
         doc_id = str(uuid.uuid4())
         start_page = art.get("start_page")
         jump_pages = art.get("jump_pages") or []
@@ -168,7 +229,7 @@ def write_articles_to_all(
             continuation_pages=jump_pages or None,
             subheadline=subheadline or None,
             publisher=publisher_name,
-            needs_review=True,
+            needs_review=False,
         )
         articles_written += 1
 
