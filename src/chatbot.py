@@ -494,6 +494,13 @@ def create_app() -> FastAPI:
     """
     app = FastAPI(title="Publisher News Assistant")
 
+    # v2 Phase 3: ensure FTS5 index is built. Idempotent (<1s at current scale).
+    try:
+        from src.modules.articles.fts import rebuild_fts
+        rebuild_fts()
+    except Exception as e:
+        logger.warning(f"FTS rebuild at startup failed (non-fatal): {e}")
+
     # Include chat frontend routes
     app.include_router(chat_router)
 

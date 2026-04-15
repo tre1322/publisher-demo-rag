@@ -46,7 +46,7 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic")
 
 # LLM Settings
 LLM_MODEL = os.getenv("LLM_MODEL", "claude-sonnet-4-20250514")
-LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.3"))
+LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.0"))  # v2 Phase 1d: greedy decoding for factual grounding
 
 # Gradient/DigitalOcean Serverless Inference Settings
 GRADIENT_BASE_URL = os.getenv("GRADIENT_BASE_URL", "https://inference.do-ai.run/v1")

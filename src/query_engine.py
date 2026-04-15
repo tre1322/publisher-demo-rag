@@ -33,7 +33,6 @@ from src.prompts import (
     format_sources,
     get_system_prompt,
 )
-from src.modules.editions.database import get_current_edition_ids
 from src.search_agent import SearchAgent
 
 logger = logging.getLogger(__name__)
@@ -41,10 +40,13 @@ logger = logging.getLogger(__name__)
 # Maximum number of conversation turns to keep in history
 MAX_HISTORY_TURNS = 10
 
-# Score multiplier applied to chunks from the current edition.
-# Stacks multiplicatively with freshness boost so a current-edition article
-# published this week ends up at ~1.7x (1.15 * 1.5) vs a historical article's 1.0x.
-EDITION_CURRENT_BOOST = 1.5
+# v2 Phase 1a (2026-04-14): removed EDITION_CURRENT_BOOST (=1.5) and the freshness
+# boost (×1.15 for <=7d, ×1.05 for <=30d). Both were multiplicative warps on cosine
+# similarity that distorted the trained distribution — a current chunk at cosine
+# 0.70 × 1.5 could beat a historical chunk at 0.85 on an irrelevant topic. That
+# is literally how the "wrong wrestler from another edition" answer happened.
+# Retrieval is now pure semantic similarity; relevance filtering shifts to the
+# entity gate (Phase 2a) and the intent router (Phase 2c).
 
 
 class QueryEngine:
@@ -98,13 +100,23 @@ class QueryEngine:
         self._consecutive_empty_results = 0
         self._empty_results_threshold = 3
 
-    def retrieve(self, query: str, publisher: str | None = None) -> list[dict]:
+    def retrieve(
+        self,
+        query: str,
+        publisher: str | None = None,
+        current_edition_only: bool = False,
+    ) -> list[dict]:
         """Retrieve relevant chunks for a query.
 
         Args:
             query: The user's query.
             publisher: Optional publisher name to filter results (e.g. "Pipestone County Star").
                        When set, only articles from this publisher are returned.
+            current_edition_only: When True, restrict retrieval to chunks tagged
+                       with the publisher's current edition_id. This is the
+                       quota-shaped replacement for the old multiplicative
+                       current-edition boost — used by the intent router when
+                       the query is explicitly about "this week's paper".
 
         Returns:
             List of relevant chunks with metadata and scores.
@@ -113,44 +125,72 @@ class QueryEngine:
             logger.warning("Collection is None - no documents indexed")
             return []
 
-        logger.info(f"Query: '{query}'" + (f" [publisher={publisher}]" if publisher else ""))
+        logger.info(
+            f"Query: '{query}'"
+            + (f" [publisher={publisher}]" if publisher else "")
+            + (" [current_edition_only]" if current_edition_only else "")
+        )
         logger.info(f"Collection has {self.collection.count()} chunks")
-
-        # Look up current edition IDs once per query for the boost step below.
-        current_edition_ids = get_current_edition_ids(publisher)
-        if current_edition_ids:
-            logger.info(f"Current edition ids for boost: {sorted(current_edition_ids)}")
 
         # Generate query embedding
         query_embedding = self.embedding_model.encode(query).tolist()
         logger.info("Generated query embedding")
 
-        # Query ChromaDB — optionally filter by publisher
+        # Over-fetch so the entity gate (Phase 2a) and intent router (Phase 2c)
+        # have enough candidates to filter down. Returning RETRIEVAL_TOP_K raw
+        # chunks leaves too little headroom for downstream trimming.
+        fetch_k = max(RETRIEVAL_TOP_K * 4, 20)
+
+        # Build Chroma `where` filter. Chroma requires $and when combining
+        # multiple top-level predicates.
+        where_clauses: list[dict] = []
+        if publisher:
+            where_clauses.append({"publisher": publisher})
+            logger.info(f"Filtering to publisher: {publisher}")
+        if current_edition_only:
+            try:
+                from src.modules.editions.database import get_current_edition_ids
+                current_ids = get_current_edition_ids(publisher)
+                if current_ids:
+                    where_clauses.append({"edition_id": {"$in": sorted(current_ids)}})
+                    logger.info(
+                        f"Filtering to current edition(s): {sorted(current_ids)}"
+                    )
+                else:
+                    logger.info(
+                        "current_edition_only requested but no current edition found; "
+                        "falling back to full corpus for this publisher"
+                    )
+            except Exception as e:
+                logger.warning(f"get_current_edition_ids failed: {e}")
+
         query_kwargs = {
             "query_embeddings": [query_embedding],
-            "n_results": RETRIEVAL_TOP_K,
+            "n_results": fetch_k,
             "include": ["documents", "metadatas", "distances"],
         }
-        if publisher:
-            query_kwargs["where"] = {"publisher": publisher}
-            logger.info(f"Filtering to publisher: {publisher}")
+        if len(where_clauses) == 1:
+            query_kwargs["where"] = where_clauses[0]
+        elif len(where_clauses) > 1:
+            query_kwargs["where"] = {"$and": where_clauses}
 
         results = self.collection.query(**query_kwargs)
 
-        # Process results
-        chunks = []
+        chunks: list[dict] = []
         total_retrieved = len(results["documents"][0]) if results["documents"] else 0
         logger.info(f"ChromaDB returned {total_retrieved} chunks")
 
         if results and results["documents"]:
             for i, doc in enumerate(results["documents"][0]):
-                # Convert distance to similarity score (cosine)
+                # Convert cosine distance -> similarity. No multiplicative
+                # boosts, no freshness/edition warps: the raw distribution the
+                # embedder was trained on is what SIMILARITY_THRESHOLD is
+                # calibrated against.
                 distance = results["distances"][0][i] if results["distances"] else 0
-                score = 1 - distance  # Convert distance to similarity
+                score = 1 - distance
 
                 metadata = results["metadatas"][0][i] if results["metadatas"] else {}
                 title = str(metadata.get("title", "Unknown"))[:50]
-
                 content_type = str(metadata.get("content_type", "article"))
                 doc_preview = str(doc)[:120].replace("\n", " ") if doc else "(empty)"
                 logger.info(
@@ -159,48 +199,113 @@ class QueryEngine:
                     f"text='{doc_preview}...'"
                 )
 
-                # Filter by similarity threshold
-                if score < SIMILARITY_THRESHOLD:
+                # When current_edition_only=True, relax the similarity threshold.
+                # Queries like "what's this week's feature story?" are browse
+                # queries, not search queries — the user hasn't named a topic,
+                # so scores stay low across every current-edition chunk. The
+                # edition filter is doing the narrowing; the threshold would
+                # just empty the result set.
+                effective_threshold = 0.0 if current_edition_only else SIMILARITY_THRESHOLD
+                if score < effective_threshold:
                     logger.info(
                         f"    -> FILTERED OUT (score {score:.3f} < "
-                        f"threshold {SIMILARITY_THRESHOLD})"
+                        f"threshold {effective_threshold})"
                     )
                     continue
 
-                # Boost score for recent articles
-                publish_date = str(metadata.get("edition_date", "") or metadata.get("publish_date", ""))
-                freshness_boost = 1.0
-                if publish_date:
-                    try:
-                        from datetime import datetime
-                        pd = datetime.strptime(publish_date, "%Y-%m-%d")
-                        age_days = (datetime.now() - pd).days
-                        if age_days <= 7:
-                            freshness_boost = 1.15
-                        elif age_days <= 30:
-                            freshness_boost = 1.05
-                    except (ValueError, TypeError):
-                        pass
-
-                # Boost score for chunks from the current edition.
-                edition_boost = 1.0
-                chunk_edition = str(metadata.get("edition_id", "") or "")
-                if chunk_edition and chunk_edition in current_edition_ids:
-                    edition_boost = EDITION_CURRENT_BOOST
-                    logger.info(
-                        f"    -> current-edition boost applied "
-                        f"(edition_id={chunk_edition}, x{EDITION_CURRENT_BOOST})"
-                    )
-
-                chunk = {
+                chunks.append({
                     "text": doc,
                     "metadata": metadata,
-                    "score": score * freshness_boost * edition_boost,
-                }
-                chunks.append(chunk)
+                    "score": score,
+                })
 
-        # Re-sort by boosted score
+        # Chroma already returns by ascending distance (descending similarity),
+        # so an explicit re-sort is defensive rather than required.
         chunks.sort(key=lambda c: c["score"], reverse=True)
+
+        # v2 Phase 3 (2026-04-14): hybrid search with RRF.
+        #
+        # Dense embeddings (all-MiniLM-L6-v2) smear rare proper nouns into
+        # "generic-competition" or "generic-wrestler" space — that's why the
+        # "WAS speech team at Marshall Invite" article didn't even appear in
+        # dense top-20. Layering BM25 over the full article text + title
+        # catches exactly that failure mode. Reciprocal Rank Fusion merges
+        # the two rankings without needing per-retriever score calibration.
+        try:
+            from src.modules.articles.fts import (
+                lexical_search, reciprocal_rank_fusion, fetch_lexical_only_chunks,
+            )
+            lex = lexical_search(query, publisher=publisher, limit=20)
+            logger.info(
+                f"Lexical (BM25) returned {len(lex)} doc_ids"
+                + (f"; top={lex[0]['doc_id'][:8]} score={lex[0]['score']:.2f}"
+                   if lex else "")
+            )
+            # Pull chunks for FTS-matched articles dense missed entirely.
+            # This is the thing that unblocks historical-edition recall.
+            extra = fetch_lexical_only_chunks(
+                dense_chunks=chunks,
+                lexical_doc_ids_ranked=lex,
+                collection=self.collection,
+                query_embedding=query_embedding,
+                publisher=publisher,
+            )
+            if extra:
+                logger.info(f"Pulled {len(extra)} lexical-only chunks into pool")
+            fused = reciprocal_rank_fusion(chunks, lex)
+            # Append lexical-only chunks that had no dense presence
+            fused.extend(extra)
+            fused.sort(key=lambda c: c.get("rrf_score", 0.0), reverse=True)
+            chunks = fused
+        except Exception as e:
+            logger.warning(
+                f"Hybrid search fell back to dense-only (FTS error): {e}"
+            )
+
+        # v2 Phase 5 (2026-04-14): cross-encoder rerank of the fused pool.
+        # RRF gives us a good recall-optimized top-N; the cross-encoder
+        # reorders for precision. Crucially this runs on the FULL fused
+        # pool (pre-trim), so a precise match that RRF put at rank 6 can
+        # still win the top-5 slot.
+        #
+        # SKIP the reranker on pure-browse queries (current_edition_only).
+        # "What's this week's feature story?" gives the cross-encoder no
+        # concrete signal to grab onto — it ends up reshuffling
+        # semantically-similar chunks by training-distribution accident
+        # and demotes the real feature story out of top-5. Eval harness
+        # observed this: Snakes Alive! canary dropped from rank 1 to
+        # rank 6+ when reranker ran on the current_edition path. For
+        # entity/topic queries the reranker is a precision win; for browse
+        # queries it's dead weight with latency cost.
+        if not current_edition_only:
+            try:
+                from src.modules.articles.reranker import rerank as cross_rerank
+                pre_rerank_top_ids = [
+                    str((c.get("metadata", {}) or {}).get("doc_id", ""))[:8]
+                    for c in chunks[:5]
+                ]
+                chunks = cross_rerank(query, chunks)
+                post_rerank_top_ids = [
+                    str((c.get("metadata", {}) or {}).get("doc_id", ""))[:8]
+                    for c in chunks[:5]
+                ]
+                if pre_rerank_top_ids != post_rerank_top_ids:
+                    logger.info(
+                        f"Reranker reshuffled top-5: pre={pre_rerank_top_ids} "
+                        f"post={post_rerank_top_ids}"
+                    )
+            except Exception as e:
+                logger.warning(f"Reranker skipped (error): {e}")
+        else:
+            logger.info(
+                "Skipping reranker (current_edition_only browse — no entity "
+                "signal for cross-encoder; RRF+edition filter already scoped)"
+            )
+
+        # Cap at RETRIEVAL_TOP_K for callers that don't apply their own trim.
+        # Downstream paths (entity gate, intent router) can re-request via
+        # retrieve_candidates() once Phase 2 lands.
+        chunks = chunks[:RETRIEVAL_TOP_K]
 
         logger.info(
             f"After filtering: {len(chunks)} chunks pass threshold "
