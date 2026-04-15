@@ -506,7 +506,7 @@ def create_app() -> FastAPI:
     # "Koerner", overridable via ?q=) appears in SQLite and in the Chroma
     # index. Used to diagnose SQLite/Chroma drift on deployed environments
     # where we can't easily open a shell.
-    @app.get("/admin/rag-health")
+    @app.get("/rag-health")
     def _rag_health(q: str = "Koerner") -> dict:
         out: dict = {"probe": q}
         # SQLite / FTS
