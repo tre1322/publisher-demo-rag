@@ -576,6 +576,81 @@ def create_app() -> FastAPI:
 
         return out
 
+    # v2 diagnostic: destructive cleanup endpoint for the review queue.
+    # Deletes every article row where needs_review = 1, together with all
+    # associated Chroma chunks (by doc_id) and rebuilds the FTS5 index.
+    # Requires explicit confirm token to prevent accidental/crawler triggers.
+    @app.get("/rag-delete-review-queue")
+    def _rag_delete_review_queue(confirm: str = "") -> dict:
+        from fastapi import HTTPException
+        if confirm != "YES_DELETE_REVIEW_QUEUE":
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Destructive endpoint. Append "
+                    "?confirm=YES_DELETE_REVIEW_QUEUE to proceed."
+                ),
+            )
+
+        result: dict = {"scope": "needs_review=1"}
+        doc_ids: list[str] = []
+
+        # 1. Collect doc_ids to delete from SQLite
+        try:
+            from src.core.database import get_connection
+            conn = get_connection()
+            rows = conn.execute(
+                "SELECT doc_id FROM articles WHERE needs_review = 1"
+            ).fetchall()
+            doc_ids = [r[0] for r in rows if r and r[0]]
+            result["sqlite_candidates"] = len(doc_ids)
+        except Exception as e:
+            result["sqlite_select_error"] = str(e)
+            return result
+
+        # 2. Delete matching chunks from Chroma (by doc_id metadata)
+        try:
+            from src.core.vector_store import get_articles_collection
+            coll = get_articles_collection()
+            before = coll.count()
+            if doc_ids:
+                # Chroma's $in has per-call caps on some backends; chunk it.
+                BATCH = 500
+                for i in range(0, len(doc_ids), BATCH):
+                    batch = doc_ids[i : i + BATCH]
+                    coll.delete(where={"doc_id": {"$in": batch}})
+            after = coll.count()
+            result["chroma_before"] = before
+            result["chroma_after"] = after
+            result["chroma_deleted"] = before - after
+        except Exception as e:
+            result["chroma_delete_error"] = str(e)
+
+        # 3. Delete from SQLite
+        try:
+            cur = conn.execute(
+                "DELETE FROM articles WHERE needs_review = 1"
+            )
+            conn.commit()
+            result["sqlite_deleted"] = cur.rowcount
+            result["sqlite_after"] = conn.execute(
+                "SELECT count(*) FROM articles"
+            ).fetchone()[0]
+        except Exception as e:
+            result["sqlite_delete_error"] = str(e)
+
+        # 4. Rebuild FTS so it reflects the new state
+        try:
+            from src.modules.articles.fts import rebuild_fts
+            rebuild_fts()
+            result["fts_after"] = conn.execute(
+                "SELECT count(*) FROM articles_fts"
+            ).fetchone()[0]
+        except Exception as e:
+            result["fts_rebuild_error"] = str(e)
+
+        return result
+
     # Include chat frontend routes
     app.include_router(chat_router)
 
