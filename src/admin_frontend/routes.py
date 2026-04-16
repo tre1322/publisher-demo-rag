@@ -1104,6 +1104,207 @@ async def upload_article_file(
     })
 
 
+# ── Homepage Pins (editor-curated homepage slots) ──────────────────────────
+# These four endpoints back the "Homepage Layout" tab.
+#
+# Design decisions (confirmed with user):
+#   • Drag-and-drop into exactly 4 slots per section (not a checkbox list).
+#   • Strict mode: pinned = exactly the homepage for News & Sports. If a
+#     publisher has NO pins in a section, the section goes empty on / —
+#     auto-scoring does NOT fill the gap. Trevor wants total editorial
+#     control, not a "smart fallback" that surprises him.
+#   • Per-publisher scoping — the homepage_pins table uses publisher_id,
+#     which is what get_homepage_content() already reads.
+#   • Only News and Sports are wired for now; other sections fall through
+#     to auto-scoring. (See content_items.database.get_homepage_content.)
+
+_PIN_SECTIONS = {"news", "sports"}
+_PIN_SLOTS = {1, 2, 3, 4}
+
+
+def _resolve_publisher_id(publisher_name: str) -> int:
+    """Resolve publisher name → id or raise 404."""
+    from src.modules.publishers.database import get_publisher_by_name
+    pub = get_publisher_by_name(publisher_name)
+    if not pub:
+        raise HTTPException(status_code=404, detail=f"Unknown publisher: {publisher_name}")
+    return int(pub["id"])
+
+
+@router.get("/api/homepage-pins")
+async def list_homepage_pins(
+    publisher: str,
+    _: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Return all pins for a publisher across both sections.
+
+    Shape: {"publisher": "...", "publisher_id": 1, "pins": {"news": [<=4], "sports": [<=4]}}
+    Each pin carries enough fields to render its card in the UI without
+    a second round-trip: headline, byline, edition_date, content_item_id, slot.
+    """
+    from src.core.database import get_homepage_pins
+    publisher_id = _resolve_publisher_id(publisher)
+    raw = get_homepage_pins(publisher_id)
+
+    pins: dict[str, list[dict]] = {"news": [], "sports": []}
+    for row in raw:
+        section = (row.get("section") or "").lower()
+        if section not in pins:
+            continue
+        pins[section].append({
+            "slot": row["slot"],
+            "content_item_id": row["content_item_id"],
+            "headline": row.get("headline") or "",
+            "byline": row.get("byline") or "",
+            "edition_date": row.get("edition_date") or "",
+            "content_type": row.get("content_type") or "",
+        })
+    # Sort each section by slot so the UI can render slot 1..4 in order
+    for section in pins:
+        pins[section].sort(key=lambda p: p["slot"])
+
+    return JSONResponse({
+        "publisher": publisher,
+        "publisher_id": publisher_id,
+        "pins": pins,
+    })
+
+
+@router.get("/api/homepage-pins/candidates")
+async def list_pin_candidates(
+    publisher: str,
+    section: str = "news",
+    limit: int = 50,
+    _: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Return content_items eligible to be pinned for this publisher+section.
+
+    Pulls from the CURRENT edition first (is_current=1). If no current edition
+    exists, falls back to all published content for that publisher+section.
+    This mirrors what get_homepage_content() does when there are no pins —
+    the editor should see the same pool they'd otherwise auto-rank from.
+    """
+    section = (section or "news").lower()
+    if section not in _PIN_SECTIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"section must be one of {sorted(_PIN_SECTIONS)}",
+        )
+    publisher_id = _resolve_publisher_id(publisher)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    def _fetch(current_only: bool) -> list[dict]:
+        where = [
+            "ci.publisher_id = ?",
+            "ci.content_type = ?",
+            "ci.publish_status = 'published'",
+        ]
+        params: list = [publisher_id, section]
+        if current_only:
+            where.append("e.is_current = 1")
+        cursor.execute(f"""
+            SELECT ci.id, ci.headline, ci.byline, ci.edition_date,
+                   ci.content_type, ci.start_page, ci.homepage_score,
+                   ci.edition_id, e.is_current
+            FROM content_items ci
+            JOIN editions e ON ci.edition_id = e.id
+            WHERE {" AND ".join(where)}
+            ORDER BY ci.homepage_score DESC, ci.id DESC
+            LIMIT ?
+        """, params + [limit])
+        cols = [d[0] for d in cursor.description]
+        return [dict(zip(cols, row)) for row in cursor.fetchall()]
+
+    rows = _fetch(current_only=True)
+    if not rows:
+        rows = _fetch(current_only=False)
+    conn.close()
+
+    return JSONResponse({
+        "publisher": publisher,
+        "section": section,
+        "count": len(rows),
+        "candidates": rows,
+    })
+
+
+@router.put("/api/homepage-pins")
+async def put_homepage_pin(
+    request: Request,
+    _: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Set or replace the pin at (publisher, section, slot).
+
+    Body JSON: {publisher, section, slot: 1-4, content_item_id}
+    Idempotent — re-PUT overwrites the slot.
+    """
+    from src.core.database import upsert_homepage_pin
+    body = await request.json()
+    publisher = (body.get("publisher") or "").strip()
+    section = (body.get("section") or "").strip().lower()
+    slot = body.get("slot")
+    content_item_id = body.get("content_item_id")
+
+    if not publisher:
+        raise HTTPException(status_code=400, detail="publisher required")
+    if section not in _PIN_SECTIONS:
+        raise HTTPException(status_code=400, detail=f"section must be one of {sorted(_PIN_SECTIONS)}")
+    if slot not in _PIN_SLOTS:
+        raise HTTPException(status_code=400, detail=f"slot must be one of {sorted(_PIN_SLOTS)}")
+    if not isinstance(content_item_id, int):
+        raise HTTPException(status_code=400, detail="content_item_id must be an integer")
+
+    publisher_id = _resolve_publisher_id(publisher)
+
+    # Sanity-check: the content item must belong to this publisher to prevent
+    # cross-publisher pinning. Catching this at the edge is cheaper than
+    # debugging a mystery homepage later.
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT publisher_id FROM content_items WHERE id = ?",
+        (content_item_id,),
+    )
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="content_item not found")
+    if int(row[0]) != publisher_id:
+        raise HTTPException(
+            status_code=400,
+            detail="content_item belongs to a different publisher",
+        )
+
+    pin_id = upsert_homepage_pin(publisher_id, section, slot, content_item_id)
+    logger.info(
+        f"Pin set: publisher_id={publisher_id} section={section} "
+        f"slot={slot} -> content_item_id={content_item_id} (pin_id={pin_id})"
+    )
+    return JSONResponse({"pin_id": pin_id, "ok": True})
+
+
+@router.delete("/api/homepage-pins")
+async def clear_homepage_pin(
+    publisher: str,
+    section: str,
+    slot: int,
+    _: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Clear a single pin. Idempotent — clearing an empty slot is a no-op."""
+    from src.core.database import delete_homepage_pin
+    section = (section or "").strip().lower()
+    if section not in _PIN_SECTIONS:
+        raise HTTPException(status_code=400, detail=f"section must be one of {sorted(_PIN_SECTIONS)}")
+    if slot not in _PIN_SLOTS:
+        raise HTTPException(status_code=400, detail=f"slot must be one of {sorted(_PIN_SLOTS)}")
+    publisher_id = _resolve_publisher_id(publisher)
+    delete_homepage_pin(publisher_id, section, slot)
+    logger.info(f"Pin cleared: publisher_id={publisher_id} section={section} slot={slot}")
+    return JSONResponse({"ok": True})
+
+
 @router.post("/api/ads/upload")
 async def upload_ads(
     files: list[UploadFile] = File(...),

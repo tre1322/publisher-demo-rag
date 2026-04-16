@@ -131,6 +131,7 @@
             <button class="tab" data-panel="edition-upload-panel">Upload Editions</button>
             <button class="tab" data-panel="ad-upload-panel">Upload Ads</button>
             <button class="tab" data-panel="editions-panel">Editions</button>
+            <button class="tab" data-panel="homepage-panel">Homepage Layout</button>
         </div>
         <div style="margin-left:auto; display:flex; align-items:center; gap:8px;">
             <label style="font-size:0.8rem; font-weight:500; color:#666;">Filter:</label>
@@ -337,6 +338,91 @@
         <div id="editions-list"><div class="empty-state">Loading...</div></div>
     </div>
 
+    <!-- Homepage Layout panel — editor-curated 4 slots per section -->
+    <div class="upload-panel" id="homepage-panel">
+        <h2>Homepage Layout</h2>
+        <p style="color:#6b7280; margin-top:-8px; margin-bottom:16px;">
+            Drag articles from the right-side pool into the 4 slots for News and Sports.
+            Pinned = exactly the homepage. Leave a section empty to show nothing there.
+        </p>
+
+        <div style="display:flex; gap:12px; align-items:center; margin-bottom:18px; flex-wrap:wrap;">
+            <label style="font-size:0.9rem; font-weight:500; color:#374151;">Publisher:</label>
+            <select id="hp-publisher" style="padding:6px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:0.9rem;">
+                <option value="Cottonwood County Citizen">Cottonwood County Citizen</option>
+                <option value="Pipestone Star">Pipestone Star</option>
+            </select>
+            <label style="font-size:0.9rem; font-weight:500; color:#374151; margin-left:12px;">Candidate section:</label>
+            <select id="hp-candidate-section" style="padding:6px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:0.9rem;">
+                <option value="news">news</option>
+                <option value="sports">sports</option>
+            </select>
+            <button onclick="loadHomepageLayout()" style="padding:6px 16px; background:#1a1f36; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600;">Reload</button>
+            <span id="hp-status" style="color:#059669; font-size:0.85rem;"></span>
+        </div>
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:20px;">
+
+            <!-- NEWS slots -->
+            <div>
+                <h3 style="margin:0 0 10px; color:#1a1f36; font-size:1rem;">News (4 slots)</h3>
+                <div id="hp-news-slots" class="hp-slots">
+                    <!-- slots injected by JS -->
+                </div>
+            </div>
+
+            <!-- SPORTS slots -->
+            <div>
+                <h3 style="margin:0 0 10px; color:#1a1f36; font-size:1rem;">Sports (4 slots)</h3>
+                <div id="hp-sports-slots" class="hp-slots">
+                    <!-- slots injected by JS -->
+                </div>
+            </div>
+
+            <!-- Candidate pool -->
+            <div>
+                <h3 style="margin:0 0 10px; color:#1a1f36; font-size:1rem;">Available stories</h3>
+                <div id="hp-candidates" style="max-height:640px; overflow-y:auto; padding-right:4px;">
+                    <div class="empty-state">Select a publisher and click Reload.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .hp-slots { display:flex; flex-direction:column; gap:10px; }
+        .hp-slot {
+            min-height:72px; padding:10px 12px;
+            border:2px dashed #d1d5db; border-radius:8px;
+            background:#fafafa; position:relative;
+        }
+        .hp-slot.drag-over { border-color:#1a1f36; background:#eef2ff; }
+        .hp-slot.filled {
+            background:#fff; border-style:solid; border-color:#1a1f36;
+        }
+        .hp-slot-label {
+            position:absolute; top:-9px; left:10px; background:#fff;
+            padding:0 6px; font-size:0.7rem; font-weight:600;
+            color:#6b7280; letter-spacing:0.04em;
+        }
+        .hp-slot-card { font-size:0.85rem; color:#111827; }
+        .hp-slot-card .hl { font-weight:600; line-height:1.3; }
+        .hp-slot-card .meta { color:#6b7280; font-size:0.75rem; margin-top:2px; }
+        .hp-slot-clear {
+            position:absolute; top:6px; right:8px; background:transparent;
+            border:none; color:#dc2626; cursor:pointer; font-size:0.8rem;
+        }
+        .hp-candidate {
+            padding:10px 12px; margin-bottom:8px;
+            border:1px solid #e5e7eb; border-radius:8px;
+            background:#fff; cursor:grab;
+            font-size:0.85rem; line-height:1.3;
+        }
+        .hp-candidate:active { cursor:grabbing; }
+        .hp-candidate:hover { border-color:#1a1f36; }
+        .hp-candidate .meta { color:#6b7280; font-size:0.75rem; margin-top:2px; }
+    </style>
+
     <!-- Article review panel (default) -->
     <div class="upload-panel active" id="review-panel">
         <h2>Articles Needing Review</h2>
@@ -399,6 +485,7 @@
             if (tab.dataset.panel === 'review-panel') loadArticles();
             if (tab.dataset.panel === 'editions-panel') loadEditions();
             if (tab.dataset.panel === 'import-panel') loadRssFeeds();
+            if (tab.dataset.panel === 'homepage-panel') loadHomepageLayout();
         });
     });
 
@@ -887,6 +974,178 @@
             alert('Delete failed: ' + err.message);
         }
     }
+
+    // ── Homepage Layout (pinning) ───────────────────────────────────────
+    // Architecture: backend is source of truth. Every drop/clear does a
+    // PUT or DELETE and then reloads the pins + candidates. Optimistic UI
+    // updates were tempting but get ugly the moment the server rejects
+    // cross-publisher pins — one round-trip per action keeps it honest.
+
+    const _HP_SECTIONS = ['news', 'sports'];
+    const _HP_SLOTS = [1, 2, 3, 4];
+
+    function _hpAuthHeaders() {
+        return {'Authorization': 'Basic ' + btoa('admin:' + (window._adminPw || 'admin'))};
+    }
+
+    function _hpStatus(msg, isErr=false) {
+        const el = document.getElementById('hp-status');
+        el.textContent = msg;
+        el.style.color = isErr ? '#dc2626' : '#059669';
+        if (msg && !isErr) setTimeout(() => { el.textContent = ''; }, 2500);
+    }
+
+    async function loadHomepageLayout() {
+        const publisher = document.getElementById('hp-publisher').value;
+        const section = document.getElementById('hp-candidate-section').value;
+        await Promise.all([
+            loadHomepagePins(publisher),
+            loadHomepageCandidates(publisher, section),
+        ]);
+    }
+
+    async function loadHomepagePins(publisher) {
+        const res = await fetch(
+            '/admin/api/homepage-pins?publisher=' + encodeURIComponent(publisher),
+            {headers: _hpAuthHeaders()}
+        );
+        if (!res.ok) {
+            _hpStatus('Failed to load pins: ' + res.status, true);
+            return;
+        }
+        const data = await res.json();
+        _HP_SECTIONS.forEach(section => {
+            renderSlots(section, data.pins[section] || []);
+        });
+    }
+
+    function renderSlots(section, pins) {
+        const container = document.getElementById(`hp-${section}-slots`);
+        container.innerHTML = '';
+        // Index pins by slot for O(1) lookup
+        const bySlot = {};
+        pins.forEach(p => { bySlot[p.slot] = p; });
+
+        _HP_SLOTS.forEach(slot => {
+            const div = document.createElement('div');
+            div.className = 'hp-slot';
+            div.dataset.section = section;
+            div.dataset.slot = slot;
+            const pin = bySlot[slot];
+            if (pin) {
+                div.classList.add('filled');
+                div.innerHTML = `
+                    <div class="hp-slot-label">Slot ${slot}</div>
+                    <button class="hp-slot-clear" title="Clear this slot"
+                            onclick="clearPin('${section}', ${slot})">✕</button>
+                    <div class="hp-slot-card">
+                        <div class="hl">${escapeHtml(pin.headline || '(untitled)')}</div>
+                        <div class="meta">${escapeHtml(pin.byline || '')} ${pin.edition_date ? '· ' + escapeHtml(pin.edition_date) : ''}</div>
+                    </div>
+                `;
+            } else {
+                div.innerHTML = `
+                    <div class="hp-slot-label">Slot ${slot}</div>
+                    <div style="color:#9ca3af; font-size:0.85rem; padding-top:4px;">Drop an article here</div>
+                `;
+            }
+            // DnD drop target
+            div.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                div.classList.add('drag-over');
+            });
+            div.addEventListener('dragleave', () => {
+                div.classList.remove('drag-over');
+            });
+            div.addEventListener('drop', async (e) => {
+                e.preventDefault();
+                div.classList.remove('drag-over');
+                const contentItemId = parseInt(e.dataTransfer.getData('text/plain'), 10);
+                if (!contentItemId) return;
+                await setPin(section, slot, contentItemId);
+            });
+            container.appendChild(div);
+        });
+    }
+
+    async function loadHomepageCandidates(publisher, section) {
+        const res = await fetch(
+            `/admin/api/homepage-pins/candidates?publisher=${encodeURIComponent(publisher)}&section=${encodeURIComponent(section)}`,
+            {headers: _hpAuthHeaders()}
+        );
+        if (!res.ok) {
+            document.getElementById('hp-candidates').innerHTML =
+                `<div class="empty-state">Failed to load candidates (${res.status})</div>`;
+            return;
+        }
+        const data = await res.json();
+        const el = document.getElementById('hp-candidates');
+        if (!data.candidates.length) {
+            el.innerHTML = `<div class="empty-state">No ${section} articles found for this publisher.</div>`;
+            return;
+        }
+        el.innerHTML = data.candidates.map(c => `
+            <div class="hp-candidate" draggable="true" data-id="${c.id}">
+                <div style="font-weight:600;">${escapeHtml(c.headline || '(untitled)')}</div>
+                <div class="meta">
+                    ${escapeHtml(c.byline || '')}
+                    ${c.edition_date ? '· ' + escapeHtml(c.edition_date) : ''}
+                    ${c.is_current ? '· <span style="color:#059669;">current</span>' : ''}
+                    · score ${(c.homepage_score ?? 0).toFixed(2)}
+                </div>
+            </div>
+        `).join('');
+        // Attach drag handlers
+        el.querySelectorAll('.hp-candidate').forEach(card => {
+            card.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', card.dataset.id);
+                e.dataTransfer.effectAllowed = 'copy';
+            });
+        });
+    }
+
+    async function setPin(section, slot, contentItemId) {
+        const publisher = document.getElementById('hp-publisher').value;
+        const res = await fetch('/admin/api/homepage-pins', {
+            method: 'PUT',
+            headers: {..._hpAuthHeaders(), 'Content-Type': 'application/json'},
+            body: JSON.stringify({publisher, section, slot, content_item_id: contentItemId}),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({detail: res.statusText}));
+            _hpStatus('Pin failed: ' + (err.detail || res.status), true);
+            return;
+        }
+        _hpStatus(`Pinned to ${section} slot ${slot}`);
+        await loadHomepagePins(publisher);
+    }
+
+    async function clearPin(section, slot) {
+        const publisher = document.getElementById('hp-publisher').value;
+        const url = `/admin/api/homepage-pins?publisher=${encodeURIComponent(publisher)}&section=${section}&slot=${slot}`;
+        const res = await fetch(url, {method: 'DELETE', headers: _hpAuthHeaders()});
+        if (!res.ok) {
+            _hpStatus('Clear failed: ' + res.status, true);
+            return;
+        }
+        _hpStatus(`Cleared ${section} slot ${slot}`);
+        await loadHomepagePins(publisher);
+    }
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    // Reload candidates when the dropdowns change — pins are publisher-scoped
+    // and candidates are publisher+section-scoped, so both change semantics.
+    document.addEventListener('DOMContentLoaded', () => {
+        const pubSel = document.getElementById('hp-publisher');
+        const secSel = document.getElementById('hp-candidate-section');
+        if (pubSel) pubSel.addEventListener('change', loadHomepageLayout);
+        if (secSel) secSel.addEventListener('change', loadHomepageLayout);
+    });
 
     // Initial load
     loadArticles();

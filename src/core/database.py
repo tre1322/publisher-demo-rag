@@ -48,6 +48,7 @@ def init_all_tables() -> None:
 
     init_cost_table()
     _init_rss_feeds_table()
+    _init_homepage_pins_table()
 
     orgs_db.init_table()
     publishers_db.init_table()
@@ -151,6 +152,114 @@ def delete_rss_feed(feed_id: int) -> None:
     conn.execute("DELETE FROM publisher_rss_feeds WHERE id = ?", (feed_id,))
     conn.commit()
     conn.close()
+
+
+# ── Homepage Pins (editor-curated homepage slots) ──
+
+def _init_homepage_pins_table() -> None:
+    """Create homepage_pins table if it doesn't exist.
+
+    Each row represents one slot (1-4) in one section (news/sports) for one
+    publisher, pointing at a specific content_items row. Editors use this to
+    override the auto-computed homepage ordering.
+    """
+    conn = get_connection()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS homepage_pins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            publisher_id INTEGER NOT NULL,
+            section TEXT NOT NULL,
+            slot INTEGER NOT NULL,
+            content_item_id INTEGER NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(publisher_id, section, slot)
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_homepage_pins_lookup "
+        "ON homepage_pins(publisher_id, section, slot)"
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_homepage_pins(publisher_id: int, section: str | None = None) -> list[dict]:
+    """Return pins for a publisher, optionally filtered to one section.
+
+    Joins content_items so the caller gets headline/byline/etc. in one query.
+    Orders by section then slot for stable UI rendering.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    sql = """
+        SELECT hp.id AS pin_id, hp.publisher_id, hp.section, hp.slot,
+               hp.content_item_id, ci.headline, ci.byline, ci.content_type,
+               ci.edition_date, ci.raw_text, ci.cleaned_web_text
+        FROM homepage_pins hp
+        JOIN content_items ci ON ci.id = hp.content_item_id
+        WHERE hp.publisher_id = ?
+    """
+    params: list = [publisher_id]
+    if section:
+        sql += " AND hp.section = ?"
+        params.append(section)
+    sql += " ORDER BY hp.section, hp.slot"
+    cur.execute(sql, params)
+    cols = [d[0] for d in cur.description]
+    rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    conn.close()
+    return rows
+
+
+def upsert_homepage_pin(
+    publisher_id: int, section: str, slot: int, content_item_id: int
+) -> int:
+    """Set (or replace) the pin at (publisher, section, slot). Returns row id."""
+    conn = get_connection()
+    cur = conn.execute(
+        """
+        INSERT INTO homepage_pins (publisher_id, section, slot, content_item_id)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(publisher_id, section, slot)
+        DO UPDATE SET content_item_id = excluded.content_item_id,
+                      created_at = CURRENT_TIMESTAMP
+        """,
+        (publisher_id, section, slot, content_item_id),
+    )
+    conn.commit()
+    row_id = cur.lastrowid
+    conn.close()
+    return row_id
+
+
+def delete_homepage_pin(publisher_id: int, section: str, slot: int) -> None:
+    """Clear a single pin."""
+    conn = get_connection()
+    conn.execute(
+        "DELETE FROM homepage_pins WHERE publisher_id = ? AND section = ? AND slot = ?",
+        (publisher_id, section, slot),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_pinned_content_item_ids(publisher_id: int, section: str) -> list[int]:
+    """Return content_item_ids for this publisher+section, ordered by slot.
+
+    Used by the homepage query to render pinned articles in slot order.
+    """
+    conn = get_connection()
+    cur = conn.execute(
+        """
+        SELECT content_item_id FROM homepage_pins
+        WHERE publisher_id = ? AND section = ?
+        ORDER BY slot
+        """,
+        (publisher_id, section),
+    )
+    ids = [r[0] for r in cur.fetchall()]
+    conn.close()
+    return ids
 
 
 def get_all_publishers() -> list[str]:

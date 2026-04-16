@@ -218,11 +218,52 @@ def get_homepage_content(publisher_id: int, limit: int = 20, section: str = "") 
     is_current=1 in the editions table. If no current edition exists, falls
     back to all published content for that publisher.
 
+    When a publisher+section combination has editor-curated pins
+    (homepage_pins table), those pins replace the auto-computed list
+    entirely. "Pinned = exactly the homepage, nothing else."
+
     Args:
         publisher_id: Filter to this publisher. Pass 0 to get all publishers.
         limit: Max results to return.
         section: Optional content_type filter (e.g. 'news', 'sports').
     """
+    # Editor-curated pins override auto-scoring for this publisher+section.
+    # Only applies when we have both a specific publisher AND a section;
+    # the cross-publisher "Regional Top Stories" column (publisher_id=0)
+    # continues to use auto-scoring.
+    if publisher_id and section:
+        from src.core.database import get_pinned_content_item_ids
+        pinned_ids = get_pinned_content_item_ids(publisher_id, section)
+        if pinned_ids:
+            conn = get_connection()
+            cursor = conn.cursor()
+            placeholders = ",".join("?" * len(pinned_ids))
+            cursor.execute(
+                f"SELECT * FROM content_items WHERE id IN ({placeholders})",
+                pinned_ids,
+            )
+            columns = [desc[0] for desc in cursor.description]
+            rows_by_id = {
+                row[0]: dict(zip(columns, row)) for row in cursor.fetchall()
+            }
+            conn.close()
+            # Preserve slot order (pinned_ids is already slot-ordered)
+            ordered = [rows_by_id[i] for i in pinned_ids if i in rows_by_id]
+            for row in ordered:
+                row["homepage_eligible"] = bool(row.get("homepage_eligible"))
+                row["is_stitched"] = bool(row.get("is_stitched"))
+                if row.get("jump_pages_json"):
+                    row["jump_pages"] = json.loads(row["jump_pages_json"])
+                else:
+                    row["jump_pages"] = []
+            return ordered[:limit]
+        # No pins for this publisher+section → return empty list per user spec
+        # ("pinned = exactly the homepage, nothing else")
+        # BUT only enforce strictness for sections where pinning is supported.
+        if section in ("news", "sports"):
+            return []
+        # Other sections (obituary, opinion, features, etc.) fall through to
+        # auto-scoring below — pinning is only wired for news+sports today.
     conn = get_connection()
     cursor = conn.cursor()
 
