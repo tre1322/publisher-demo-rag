@@ -326,3 +326,74 @@ def write_articles_to_all(
         "content_items_written": content_items_written,
         "chunks_indexed": total_chunks,
     }
+
+
+def write_articles(
+    articles: list[dict],
+    publisher_name: str,
+    edition_date: str | None = None,
+    source_filename: str = "",
+    mark_current: bool = False,
+) -> dict:
+    """High-level convenience wrapper around write_articles_to_all.
+
+    Resolves publisher_name → publisher_id and creates an edition record
+    automatically.  All three ingestion tiers (RSS, URL import, paste form)
+    use this instead of calling write_articles_to_all directly.
+
+    Args:
+        articles: List of StandardArticle dicts.
+        publisher_name: Publisher display name — must exist in the publishers table.
+        edition_date: Edition date in YYYY-MM-DD format (used for edition record).
+        source_filename: Source label for metadata (e.g. "rss:https://…", "paste_form").
+        mark_current: If True, promote this edition to current after write.
+            If False (default), seed as historical — no is_current change.
+
+    Returns:
+        Dict with counts: articles_written, content_items_written, chunks_indexed.
+
+    Raises:
+        ValueError: If publisher_name is not found in the publishers table.
+    """
+    from src.modules.publishers.database import get_publisher_by_name
+    from src.modules.editions.database import insert_edition
+
+    # 1. Resolve publisher
+    pub = get_publisher_by_name(publisher_name)
+    if pub is None:
+        # Auto-register unknown publishers so ingestion always succeeds
+        from src.modules.publishers.database import insert_publisher
+        logger.warning(
+            f"write_articles: publisher {publisher_name!r} not found — "
+            f"auto-registering"
+        )
+        insert_publisher(name=publisher_name)
+        pub = get_publisher_by_name(publisher_name)
+        if pub is None:
+            raise ValueError(
+                f"Publisher {publisher_name!r} could not be created. "
+                f"Check the publishers table."
+            )
+
+    publisher_id: int = pub["id"]
+
+    # 2. Create edition record (lightweight — no PDF, no file hash needed)
+    edition_id: int = insert_edition(
+        source_filename=source_filename or f"import:{publisher_name}",
+        publisher_id=publisher_id,
+        edition_date=edition_date or "",
+        upload_status="completed",
+        extraction_status="completed",
+    )
+
+    # 3. Delegate to the full writer
+    force_current: bool | None = True if mark_current else False
+    return write_articles_to_all(
+        articles=articles,
+        edition_id=edition_id,
+        publisher_id=publisher_id,
+        publisher_name=publisher_name,
+        edition_date=edition_date,
+        source_filename=source_filename,
+        force_current=force_current,
+    )

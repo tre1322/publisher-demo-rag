@@ -47,6 +47,7 @@ def init_all_tables() -> None:
     from src.modules.sponsored import database as sponsored_db
 
     init_cost_table()
+    _init_rss_feeds_table()
 
     orgs_db.init_table()
     publishers_db.init_table()
@@ -82,6 +83,74 @@ def init_all_tables() -> None:
             f"All database tables initialized at {DATABASE_PATH} "
             f"(advertisements.checksum: OK, editions.checksum: {'OK' if 'checksum' in ed_cols else 'MISSING'})"
         )
+
+
+def _init_rss_feeds_table() -> None:
+    """Create publisher_rss_feeds table if it doesn't exist."""
+    conn = get_connection()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS publisher_rss_feeds (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            publisher   TEXT NOT NULL,
+            rss_url     TEXT NOT NULL,
+            label       TEXT,
+            last_synced_at TEXT,
+            created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(publisher, rss_url)
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def get_rss_feeds(publisher: str | None = None) -> list[dict]:
+    """Return all RSS feed configs, optionally filtered by publisher."""
+    conn = get_connection()
+    if publisher:
+        rows = conn.execute(
+            "SELECT * FROM publisher_rss_feeds WHERE publisher = ? ORDER BY publisher, label",
+            (publisher,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM publisher_rss_feeds ORDER BY publisher, label"
+        ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def upsert_rss_feed(publisher: str, rss_url: str, label: str = "") -> int:
+    """Insert or update an RSS feed config. Returns the row id."""
+    conn = get_connection()
+    cur = conn.execute(
+        """INSERT INTO publisher_rss_feeds (publisher, rss_url, label)
+           VALUES (?, ?, ?)
+           ON CONFLICT(publisher, rss_url) DO UPDATE SET label=excluded.label""",
+        (publisher, rss_url, label or rss_url),
+    )
+    conn.commit()
+    row_id = cur.lastrowid
+    conn.close()
+    return row_id
+
+
+def mark_rss_synced(feed_id: int) -> None:
+    """Update last_synced_at timestamp for a feed."""
+    conn = get_connection()
+    conn.execute(
+        "UPDATE publisher_rss_feeds SET last_synced_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (feed_id,),
+    )
+    conn.commit()
+    conn.close()
+
+
+def delete_rss_feed(feed_id: int) -> None:
+    """Remove an RSS feed config."""
+    conn = get_connection()
+    conn.execute("DELETE FROM publisher_rss_feeds WHERE id = ?", (feed_id,))
+    conn.commit()
+    conn.close()
 
 
 def get_all_publishers() -> list[str]:
