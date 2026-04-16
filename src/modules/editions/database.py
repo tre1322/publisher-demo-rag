@@ -305,32 +305,61 @@ def get_edition_by_pdf_path(source_pdf_path: str) -> dict | None:
 def mark_edition_current(edition_id: int, publisher_id: int) -> None:
     """Mark an edition as current, clearing is_current on all other editions for this publisher.
 
-    Side effect (2026-04-16): when this call *displaces* a previously-current
-    edition (i.e. a different edition was current before this one), all
-    homepage_pins for this publisher are deleted. Rationale: Trevor's editorial
-    workflow is weekly — each new edition should start with a blank
-    Homepage Layout so stale pins from last week's paper can't linger on the
-    live site.
+    Side effect (2026-04-16, revised): when this call advances the
+    edition_date (a later-dated edition displaces an earlier-dated one),
+    all homepage_pins for this publisher are deleted. Rationale: Trevor's
+    editorial workflow is weekly — a *new week* should start with a blank
+    Homepage Layout so stale pins from last week's paper can't linger.
 
-    The displacement check is load-bearing: same-day reposts (e.g. paste #2
-    into the same edition, or re-processing the same IDML) call this with
-    the same edition_id that was already current. Blindly wiping pins on
-    every call would destroy pins the editor set between paste #1 and paste #2
-    of the same edition. We only wipe when `edition_id` is new relative to
-    whatever was current before.
+    Load-bearing subtlety (fixed after regression on 2026-04-16 ~06:20):
+    within the same edition_date, multiple editions can exist because
+    source_filename differs (paste_form, upload:sports.rtf, rss-sync, etc.).
+    Treating every same-day source as a "new editorial cycle" would wipe
+    pins Trevor set between paste and upload — exactly the bug he hit when
+    his 4 News pins vanished after he uploaded a Sports RTF. The
+    displacement check must compare edition_dates, not edition_ids.
+
+    Rules:
+      • No previously-current edition → no-op (fresh publisher)
+      • New edition_id == previously-current id → idempotent re-mark, preserve pins
+      • New edition_date == previously-current edition_date → same editorial
+        cycle (different source for the same issue), preserve pins
+      • New edition_date > previously-current edition_date → new week, CLEAR pins
+      • New edition_date missing or older → preserve pins (defensive; if the
+        editor is backfilling or has a date-less paste, don't silently wipe)
     """
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Snapshot the set of currently-current editions for this publisher BEFORE
-    # we flip anything. If the target edition is already in that set, this is
-    # an idempotent re-mark and pins must not be touched.
+    # Snapshot the currently-current edition(s) WITH their edition_date so we
+    # can compare against the incoming edition.
     cursor.execute(
-        "SELECT id FROM editions WHERE publisher_id = ? AND is_current = 1",
+        "SELECT id, edition_date FROM editions "
+        "WHERE publisher_id = ? AND is_current = 1",
         (publisher_id,),
     )
-    previously_current = {row[0] for row in cursor.fetchall()}
-    is_displacement = bool(previously_current) and edition_id not in previously_current
+    prev_rows = cursor.fetchall()
+    prev_ids = {row[0] for row in prev_rows}
+    # Normalize None → "" so string comparison is stable
+    prev_dates = {(row[1] or "") for row in prev_rows}
+    max_prev_date = max(prev_dates) if prev_dates else ""
+
+    cursor.execute(
+        "SELECT edition_date FROM editions WHERE id = ?", (edition_id,)
+    )
+    row = cursor.fetchone()
+    new_date = (row[0] or "") if row else ""
+
+    # Decide displacement: ONLY when edition_date strictly advances.
+    # Same date (even with a different source_filename / new edition_id)
+    # is the same editorial cycle and must preserve pins.
+    is_displacement = (
+        bool(prev_ids)
+        and edition_id not in prev_ids
+        and bool(new_date)
+        and bool(max_prev_date)
+        and new_date > max_prev_date
+    )
 
     cursor.execute(
         "UPDATE editions SET is_current = 0 WHERE publisher_id = ?",
@@ -354,13 +383,15 @@ def mark_edition_current(edition_id: int, publisher_id: int) -> None:
 
     if is_displacement:
         logger.info(
-            f"Edition {edition_id} marked current for publisher {publisher_id} "
-            f"(displaced {sorted(previously_current)}, cleared {pins_cleared} pins)"
+            f"Edition {edition_id} (date={new_date}) marked current for "
+            f"publisher {publisher_id} — advanced past {max_prev_date}, "
+            f"cleared {pins_cleared} pins"
         )
     else:
         logger.info(
-            f"Edition {edition_id} marked current for publisher {publisher_id} "
-            f"(no displacement — pins preserved)"
+            f"Edition {edition_id} (date={new_date or '∅'}) marked current "
+            f"for publisher {publisher_id} — same cycle as "
+            f"{max_prev_date or '∅'}, pins preserved"
         )
 
 

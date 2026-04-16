@@ -1,10 +1,12 @@
 """End-to-end smoke test for pin lifecycle behavior.
 
-Covers the three cascade rules added 2026-04-16:
+Covers the cascade rules added 2026-04-16:
   1. mark_edition_current(SAME edition) → pins preserved (idempotent)
-  2. mark_edition_current(DIFFERENT edition) → pins cleared for that publisher
-  3. delete_edition → pins for that edition's content_items deleted
-  4. reset-data → all pins deleted
+  2. mark_edition_current(SAME DATE, different edition_id) → pins preserved
+     (this is the "Trevor uploaded Sports after pinning News" scenario)
+  3. mark_edition_current(ADVANCED edition_date) → pins cleared for publisher
+  4. delete_edition → pins for that edition's content_items deleted
+  5. reset-data → all pins deleted
 
 Run: uv run python scripts/smoke_test_pin_lifecycle.py
 """
@@ -71,16 +73,22 @@ def main() -> int:
         return 1
     pub_id = pub["id"]
 
-    # Create two fresh throwaway editions for this publisher
+    # Create throwaway editions: ed1 = baseline, ed1b = SAME DATE different source
+    # (simulates paste+upload same day), ed2 = ADVANCED DATE (true new cycle).
     ed1 = insert_edition(
         publisher_id=pub_id, edition_date="2026-04-10",
         source_filename="smoke_test_ed1", issue_label=None,
+    )
+    ed1b = insert_edition(
+        publisher_id=pub_id, edition_date="2026-04-10",
+        source_filename="smoke_test_ed1b_same_date", issue_label=None,
     )
     ed2 = insert_edition(
         publisher_id=pub_id, edition_date="2026-04-17",
         source_filename="smoke_test_ed2", issue_label=None,
     )
     ci1 = insert_throwaway_content_item(ed1, pub_id)
+    ci1b = insert_throwaway_content_item(ed1b, pub_id)
     ci2 = insert_throwaway_content_item(ed2, pub_id)
 
     try:
@@ -101,16 +109,28 @@ def main() -> int:
         else:
             print("  pins preserved OK")
 
-        hr("Test 2: displacement — mark ed2 current (different edition)")
+        hr("Test 2: SAME-DATE different-source edition — pins must survive")
+        # This is the bug Trevor hit: pinned News, then uploaded Sports RTF
+        # which created a new edition_id with the SAME edition_date.
+        # Pins must NOT be wiped — it's the same editorial cycle.
+        mark_edition_current(ed1b, pub_id)
+        after = count_pins(pub_id)
+        print(f"  pins after same-date mark of ed1b: {after}")
+        if after != 1:
+            failures.append(f"same-date displacement wiped pins (was 1, now {after})")
+        else:
+            print("  pins preserved OK (same editorial cycle)")
+
+        hr("Test 3: advanced-date displacement — mark ed2 current")
         mark_edition_current(ed2, pub_id)
         after = count_pins(pub_id)
-        print(f"  pins after displacement to ed2: {after}")
+        print(f"  pins after displacement to ed2 (new date): {after}")
         if after != 0:
-            failures.append(f"displacement should clear pins, got {after}")
+            failures.append(f"date-advanced displacement should clear pins, got {after}")
         else:
             print("  pins cleared OK")
 
-        hr("Test 3: delete-edition cascade")
+        hr("Test 4: delete-edition cascade")
         upsert_homepage_pin(pub_id, "news", 2, ci2)
         before = count_pins(pub_id)
         print(f"  before delete: {before} pin (expecting 1)")
@@ -134,10 +154,13 @@ def main() -> int:
 
         # Done with ci2 — it was deleted above. Remove from cleanup list
         # so we don't try to delete it again.
-        ci_ids_to_clean = [ci1]
+        ci_ids_to_clean = [ci1, ci1b]
 
     finally:
-        cleanup_test_rows([ed1, ed2], ci_ids_to_clean if 'ci_ids_to_clean' in dir() else [ci1, ci2])
+        cleanup_test_rows(
+            [ed1, ed1b, ed2],
+            ci_ids_to_clean if 'ci_ids_to_clean' in dir() else [ci1, ci1b, ci2],
+        )
 
     print("\n" + "=" * 78)
     if failures:
