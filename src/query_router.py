@@ -103,7 +103,11 @@ _BUSINESS_PATTERNS = [
         r"open\s+positions?)\b",
         re.I,
     ),
-    re.compile(r"\b(jobs?|work|employment)\s+(in|at|near|available|open)\b", re.I),
+    # "jobs/work/employment" + optional "are/is" + preposition/adjective.
+    # Catches "jobs available", "jobs ARE available", "jobs in X", etc.
+    re.compile(r"\b(jobs?|work|employment)\s+(?:(?:are|is)\s+)?(in|at|near|available|open)\b", re.I),
+    # "What jobs/positions/openings..." — question form.
+    re.compile(r"\bwhat\s+(jobs?|positions?|openings?)\b", re.I),
     re.compile(r"\bi\s+need\s+(a\s+)?job\b", re.I),
     # Service verbs — imply need for a service provider.
     re.compile(r"\b(fix|repair|install)\s+(my|the|a|an)\b", re.I),
