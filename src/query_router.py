@@ -76,6 +76,24 @@ _BUSINESS_PATTERNS = [
     re.compile(r"\b(restaurant|store|shop|business|service)s?\s+(in|near|around)\b", re.I),
     re.compile(r"\bany\s+(good|open)\s+\w+\s+(shops?|stores?|restaurants?|places?)\b", re.I),
     re.compile(r"\bon\s+sale\b|\bdiscount\b|\bcoupon\b", re.I),
+    # "I need a/an X" — most common service-request phrasing. Typo-independent.
+    re.compile(r"\bi\s+need\s+(a|an|some|the)\b", re.I),
+    # "where do I go for/to" — directional service lookup.
+    re.compile(r"\bwhere\s+do\s+i\s+go\s+(for|to)\b", re.I),
+    # Bare trade/profession nouns — imply need for a service provider.
+    re.compile(
+        r"\b(electrician|plumber|contractor|mechanic|doctor|dentist|"
+        r"lawyer|attorney|roofer|painter|landscaper|vet|veterinarian|"
+        r"pharmacist|barber|stylist|tailor|accountant|realtor|handyman|"
+        r"carpenter|welder|hvac|chiropractor|optometrist)\b",
+        re.I,
+    ),
+    # Help-wanted / job-seeker phrasings — surface help-wanted ads.
+    re.compile(r"\b(who'?s?\s+hiring|help\s+wanted|hiring\s+now|now\s+hiring|looking\s+to\s+hire|job\s+openings?)\b", re.I),
+    re.compile(r"\b(jobs?|work|employment)\s+(in|at|near|available|open)\b", re.I),
+    re.compile(r"\bi\s+need\s+(a\s+)?job\b", re.I),
+    # Service verbs — imply need for a service provider.
+    re.compile(r"\b(fix|repair|install)\s+(my|the|a|an)\b", re.I),
 ]
 
 _EVENT_PATTERNS = [

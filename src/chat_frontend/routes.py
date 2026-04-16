@@ -208,6 +208,30 @@ async def stream_response(
                     )
                     chunks.extend(dir_results)
 
+                # Safety net: if articles lane ran but returned nothing
+                # relevant AND we didn't already run ads/directory, supplement
+                # with ad+directory search. Catches router classifier misses
+                # (novel service phrasings we haven't added patterns for yet)
+                # without reverting to v1's "merge everything" noise. Only
+                # fires when articles came up empty, so article_qa with strong
+                # evidence is unchanged.
+                elif route.use_articles and not chunks:
+                    try:
+                        logger.info(
+                            "[router-fallback] articles empty, "
+                            "supplementing with ads+directory"
+                        )
+                        ad_results = AdvertisementSearch().search(
+                            message, publisher=publisher
+                        )
+                        chunks.extend(ad_results)
+                        dir_results = SearchTools().search_directory(
+                            query=message, publisher=publisher
+                        )
+                        chunks.extend(dir_results)
+                    except Exception as fb_err:
+                        logger.warning(f"Router-fallback search error: {fb_err}")
+
                 if route.use_events:
                     # Events are network-wide by design (a calendar covers the
                     # whole region), so no publisher filter here.
