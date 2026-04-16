@@ -214,7 +214,7 @@ def ingest_articles(
             # Determine publisher and location from edition
             publisher_id = article.get("publisher_id", None)
             if publisher_id == 2:
-                publisher = "Pipestone County Star"
+                publisher = "Pipestone Star"
                 location = "Pipestone, MN"
                 publish_date = "2026-01-08"
             else:

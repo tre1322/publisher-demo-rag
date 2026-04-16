@@ -110,7 +110,7 @@ class QueryEngine:
 
         Args:
             query: The user's query.
-            publisher: Optional publisher name to filter results (e.g. "Pipestone County Star").
+            publisher: Optional publisher name to filter results (e.g. "Pipestone Star").
                        When set, only articles from this publisher are returned.
             current_edition_only: When True, restrict retrieval to chunks tagged
                        with the publisher's current edition_id. This is the

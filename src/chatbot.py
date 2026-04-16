@@ -58,7 +58,7 @@ if _quadd_db.exists() and os.environ.get("SEED_QUADD_ON_STARTUP") == "true":
             _did = f"quadd_{_eid}_{_uuid.uuid5(_uuid.NAMESPACE_DNS, f'{_eid}_{_hl}')}"
             # Determine publisher, location, and date based on publisher_id
             if _pid == 2:
-                _pub = "Pipestone County Star"
+                _pub = "Pipestone Star"
                 _loc = "Pipestone, MN"
                 _pdate = "2026-01-08"
             else:
@@ -710,7 +710,7 @@ def create_app() -> FastAPI:
 
     @app.get("/pipestone", response_class=HTMLResponse)
     async def pipestone_landing(request: Request) -> HTMLResponse:
-        """Render the Pipestone County Star landing page (green theme)."""
+        """Render the Pipestone Star landing page (green theme)."""
         return landing_templates.TemplateResponse(request=request, name="landing_pipestone.html")
 
     # ── Homepage Stories API ──

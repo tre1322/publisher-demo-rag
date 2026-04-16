@@ -65,7 +65,7 @@ def seed():
         # Determine publisher and location from publisher_id
         publisher_id = r.get("publisher_id")
         if publisher_id == 2:
-            publisher = "Pipestone County Star"
+            publisher = "Pipestone Star"
             location = "Pipestone, MN"
             publish_date = "2026-01-08"
         else:
