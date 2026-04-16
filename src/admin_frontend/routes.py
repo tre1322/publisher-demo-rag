@@ -882,7 +882,7 @@ async def sync_rss_feed(
         publisher_name=feed["publisher"],
         edition_date=articles[0].get("publish_date") or "",
         source_filename=f"rss:{feed['rss_url']}",
-        mark_current=False,
+        mark_current=True,
     )
     mark_rss_synced(feed_id)
 
@@ -931,7 +931,7 @@ async def import_urls(
         publisher_name=publisher,
         edition_date=edition_date or (articles[0].get("publish_date") or ""),
         source_filename="url_import",
-        mark_current=False,
+        mark_current=True,
     )
 
     try:
@@ -989,7 +989,7 @@ async def paste_article(
         publisher_name=publisher,
         edition_date=publish_date or "",
         source_filename="paste_form",
-        mark_current=False,
+        mark_current=True,
     )
 
     try:
@@ -1088,7 +1088,7 @@ async def upload_article_file(
         publisher_name=publisher.strip(),
         edition_date=publish_date.strip() or "",
         source_filename=f"upload:{file.filename}",
-        mark_current=False,
+        mark_current=True,
     )
 
     try:
