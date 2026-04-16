@@ -417,6 +417,21 @@ async def delete_edition(
 
     deleted = {}
 
+    # Cascade homepage_pins BEFORE content_items (the subquery needs the rows
+    # to still exist). Otherwise pins would dangle with non-existent
+    # content_item_ids — the exact bug Trevor hit tonight when 5-6 pastes
+    # were wiped and the admin UI showed blank cards.
+    cursor.execute(
+        """
+        DELETE FROM homepage_pins
+        WHERE content_item_id IN (
+            SELECT id FROM content_items WHERE edition_id = ?
+        )
+        """,
+        (edition_id,),
+    )
+    deleted["homepage_pins"] = cursor.rowcount
+
     # Delete content_items
     cursor.execute("DELETE FROM content_items WHERE edition_id = ?", (edition_id,))
     deleted["content_items"] = cursor.rowcount
@@ -2762,6 +2777,11 @@ async def reset_data(
         # Clear data tables
         cur.execute("DELETE FROM articles")
         articles_deleted = cur.rowcount
+        # Clear homepage_pins BEFORE content_items so this is symmetric with
+        # delete_edition(). Otherwise a reset leaves orphan pin rows that
+        # point at content_item_ids that no longer exist.
+        cur.execute("DELETE FROM homepage_pins")
+        pins_deleted = cur.rowcount
         cur.execute("DELETE FROM content_items")
         content_items_deleted = cur.rowcount
         cur.execute("DELETE FROM editions")

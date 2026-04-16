@@ -303,9 +303,35 @@ def get_edition_by_pdf_path(source_pdf_path: str) -> dict | None:
 
 
 def mark_edition_current(edition_id: int, publisher_id: int) -> None:
-    """Mark an edition as current, clearing is_current on all other editions for this publisher."""
+    """Mark an edition as current, clearing is_current on all other editions for this publisher.
+
+    Side effect (2026-04-16): when this call *displaces* a previously-current
+    edition (i.e. a different edition was current before this one), all
+    homepage_pins for this publisher are deleted. Rationale: Trevor's editorial
+    workflow is weekly — each new edition should start with a blank
+    Homepage Layout so stale pins from last week's paper can't linger on the
+    live site.
+
+    The displacement check is load-bearing: same-day reposts (e.g. paste #2
+    into the same edition, or re-processing the same IDML) call this with
+    the same edition_id that was already current. Blindly wiping pins on
+    every call would destroy pins the editor set between paste #1 and paste #2
+    of the same edition. We only wipe when `edition_id` is new relative to
+    whatever was current before.
+    """
     conn = get_connection()
     cursor = conn.cursor()
+
+    # Snapshot the set of currently-current editions for this publisher BEFORE
+    # we flip anything. If the target edition is already in that set, this is
+    # an idempotent re-mark and pins must not be touched.
+    cursor.execute(
+        "SELECT id FROM editions WHERE publisher_id = ? AND is_current = 1",
+        (publisher_id,),
+    )
+    previously_current = {row[0] for row in cursor.fetchall()}
+    is_displacement = bool(previously_current) and edition_id not in previously_current
+
     cursor.execute(
         "UPDATE editions SET is_current = 0 WHERE publisher_id = ?",
         (publisher_id,),
@@ -314,9 +340,28 @@ def mark_edition_current(edition_id: int, publisher_id: int) -> None:
         "UPDATE editions SET is_current = 1 WHERE id = ?",
         (edition_id,),
     )
+
+    pins_cleared = 0
+    if is_displacement:
+        cursor.execute(
+            "DELETE FROM homepage_pins WHERE publisher_id = ?",
+            (publisher_id,),
+        )
+        pins_cleared = cursor.rowcount
+
     conn.commit()
     conn.close()
-    logger.info(f"Edition {edition_id} marked as current for publisher {publisher_id}")
+
+    if is_displacement:
+        logger.info(
+            f"Edition {edition_id} marked current for publisher {publisher_id} "
+            f"(displaced {sorted(previously_current)}, cleared {pins_cleared} pins)"
+        )
+    else:
+        logger.info(
+            f"Edition {edition_id} marked current for publisher {publisher_id} "
+            f"(no displacement — pins preserved)"
+        )
 
 
 def mark_edition_current_if_latest(edition_id: int, publisher_id: int) -> bool:
