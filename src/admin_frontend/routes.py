@@ -462,6 +462,18 @@ async def delete_edition(
     except Exception:
         pass
 
+    # Delete advertisements tied to this edition (print classifieds inserted by
+    # the IDML parser — see idml_parser.py:1108). Without this, clicking Delete
+    # on an edition leaves the classifieds in the advertisements table where
+    # the chatbot's ad search still returns them with publisher matching the
+    # deleted edition.
+    cursor.execute(
+        "SELECT ad_id FROM advertisements WHERE edition_id = ?", (edition_id,)
+    )
+    ad_ids_for_edition = [row[0] for row in cursor.fetchall()]
+    cursor.execute("DELETE FROM advertisements WHERE edition_id = ?", (edition_id,))
+    deleted["advertisements"] = cursor.rowcount
+
     # Delete the edition itself
     cursor.execute("DELETE FROM editions WHERE id = ?", (edition_id,))
     deleted["editions"] = cursor.rowcount
@@ -469,7 +481,7 @@ async def delete_edition(
     conn.commit()
     conn.close()
 
-    # Delete ChromaDB vectors for this edition
+    # Delete ChromaDB vectors for this edition — BOTH collections.
     try:
         from src.modules.extraction.shared_write_layer import get_articles_collection
         collection = get_articles_collection()
@@ -479,7 +491,25 @@ async def delete_edition(
                 collection.delete(ids=results["ids"])
                 deleted["vectors"] = len(results["ids"])
     except Exception as e:
-        logger.warning(f"ChromaDB cleanup for edition {edition_id}: {e}")
+        logger.warning(f"ChromaDB articles cleanup for edition {edition_id}: {e}")
+
+    # Ads collection cleanup — classifieds from IDML aren't indexed into
+    # Chroma today, but help-wanted and display ads tied to an edition are,
+    # so clean defensively by ad_id.
+    if ad_ids_for_edition:
+        try:
+            from src.core.vector_store import get_ads_collection
+            ads_col = get_ads_collection()
+            chunk_ids: list[str] = []
+            for aid in ad_ids_for_edition:
+                res = ads_col.get(where={"doc_id": aid})
+                if res and res.get("ids"):
+                    chunk_ids.extend(res["ids"])
+            if chunk_ids:
+                ads_col.delete(ids=chunk_ids)
+                deleted["ad_vectors"] = len(chunk_ids)
+        except Exception as e:
+            logger.warning(f"ChromaDB ads cleanup for edition {edition_id}: {e}")
 
     logger.info(f"Deleted edition {edition_id}: {deleted}")
     return JSONResponse(content={"success": True, "deleted": deleted})
