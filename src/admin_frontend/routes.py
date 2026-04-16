@@ -806,6 +806,304 @@ async def purge_ads(
     })
 
 
+# ---------------------------------------------------------------------------
+# Tier 1-3 ingestion endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/api/rss-feeds")
+async def list_rss_feeds(
+    publisher: str | None = None,
+    _: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """List saved RSS feed configs."""
+    from src.core.database import get_rss_feeds
+    return JSONResponse(get_rss_feeds(publisher=publisher))
+
+
+@router.post("/api/rss-feeds")
+async def add_rss_feed(
+    request: Request,
+    _: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Save a new RSS feed config for a publisher."""
+    from src.core.database import upsert_rss_feed
+    body = await request.json()
+    publisher = (body.get("publisher") or "").strip()
+    rss_url = (body.get("rss_url") or "").strip()
+    label = (body.get("label") or "").strip()
+    if not publisher or not rss_url:
+        raise HTTPException(status_code=400, detail="publisher and rss_url required")
+    feed_id = upsert_rss_feed(publisher, rss_url, label)
+    return JSONResponse({"id": feed_id, "publisher": publisher, "rss_url": rss_url})
+
+
+@router.delete("/api/rss-feeds/{feed_id}")
+async def remove_rss_feed(
+    feed_id: int,
+    _: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Delete a saved RSS feed config."""
+    from src.core.database import delete_rss_feed
+    delete_rss_feed(feed_id)
+    return JSONResponse({"deleted": feed_id})
+
+
+@router.post("/api/sync-rss/{feed_id}")
+async def sync_rss_feed(
+    feed_id: int,
+    request: Request,
+    _: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Pull articles from a saved RSS feed and ingest them."""
+    from src.core.database import get_rss_feeds, mark_rss_synced
+    from src.modules.ingestion.rss_ingestor import RSSIngestor
+    from src.modules.extraction.shared_write_layer import write_articles
+
+    feeds = get_rss_feeds()
+    feed = next((f for f in feeds if f["id"] == feed_id), None)
+    if not feed:
+        raise HTTPException(status_code=404, detail="Feed not found")
+
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    since = body.get("since")  # optional ISO date
+
+    ingestor = RSSIngestor(feed["rss_url"])
+    articles = ingestor.fetch(since=since)
+
+    if not articles:
+        return JSONResponse({"articles_written": 0, "message": "No new articles found"})
+
+    result = write_articles(
+        articles=articles,
+        publisher_name=feed["publisher"],
+        edition_date=articles[0].get("publish_date") or "",
+        source_filename=f"rss:{feed['rss_url']}",
+        mark_current=False,
+    )
+    mark_rss_synced(feed_id)
+
+    # Rebuild FTS so new articles are lexically searchable
+    try:
+        from src.modules.articles.fts import rebuild_fts
+        rebuild_fts()
+    except Exception as e:
+        logger.warning(f"FTS rebuild after RSS sync failed (non-fatal): {e}")
+
+    return JSONResponse({
+        "articles_written": result.get("articles_written", 0),
+        "chunks_indexed": result.get("chunks_indexed", 0),
+        "feed": feed["rss_url"],
+        "publisher": feed["publisher"],
+    })
+
+
+@router.post("/api/import-urls")
+async def import_urls(
+    request: Request,
+    _: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Tier 2: fetch and ingest articles from explicit URLs."""
+    from src.modules.ingestion.url_ingestor import URLIngestor
+    from src.modules.extraction.shared_write_layer import write_articles
+
+    body = await request.json()
+    publisher = (body.get("publisher") or "").strip()
+    urls: list[str] = body.get("urls") or []
+    edition_date = (body.get("edition_date") or "").strip() or None
+
+    if not publisher:
+        raise HTTPException(status_code=400, detail="publisher required")
+    if not urls:
+        raise HTTPException(status_code=400, detail="urls list required")
+
+    ingestor = URLIngestor()
+    articles = ingestor.fetch(urls)
+
+    if not articles:
+        return JSONResponse({"articles_written": 0, "message": "No articles extracted"})
+
+    result = write_articles(
+        articles=articles,
+        publisher_name=publisher,
+        edition_date=edition_date or (articles[0].get("publish_date") or ""),
+        source_filename="url_import",
+        mark_current=False,
+    )
+
+    try:
+        from src.modules.articles.fts import rebuild_fts
+        rebuild_fts()
+    except Exception as e:
+        logger.warning(f"FTS rebuild after URL import failed (non-fatal): {e}")
+
+    return JSONResponse({
+        "articles_written": result.get("articles_written", 0),
+        "chunks_indexed": result.get("chunks_indexed", 0),
+        "urls_submitted": len(urls),
+    })
+
+
+@router.post("/api/paste-article")
+async def paste_article(
+    request: Request,
+    _: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Tier 3: ingest a single article from pasted text."""
+    from src.modules.extraction.shared_write_layer import write_articles
+
+    body = await request.json()
+    publisher = (body.get("publisher") or "").strip()
+    headline = (body.get("headline") or "").strip()
+    body_text = (body.get("body_text") or "").strip()
+    author = (body.get("author") or "").strip()
+    publish_date = (body.get("publish_date") or "").strip()
+    section = (body.get("section") or "news").strip()
+
+    if not publisher:
+        raise HTTPException(status_code=400, detail="publisher required")
+    if not headline:
+        raise HTTPException(status_code=400, detail="headline required")
+    if not body_text or len(body_text) < 50:
+        raise HTTPException(status_code=400, detail="body_text too short (min 50 chars)")
+
+    articles = [{
+        "headline": headline,
+        "body_text": body_text,
+        "byline": author,
+        "publish_date": publish_date,
+        "url": "",
+        "content_type": section,
+        "source_pipeline": "paste",
+        "extraction_confidence": 1.0,
+        "is_stitched": False,
+        "jump_pages": [],
+        "start_page": None,
+    }]
+
+    result = write_articles(
+        articles=articles,
+        publisher_name=publisher,
+        edition_date=publish_date or "",
+        source_filename="paste_form",
+        mark_current=False,
+    )
+
+    try:
+        from src.modules.articles.fts import rebuild_fts
+        rebuild_fts()
+    except Exception as e:
+        logger.warning(f"FTS rebuild after paste failed (non-fatal): {e}")
+
+    return JSONResponse({
+        "articles_written": result.get("articles_written", 0),
+        "chunks_indexed": result.get("chunks_indexed", 0),
+    })
+
+
+@router.post("/api/upload-article-file")
+async def upload_article_file(
+    file: UploadFile = File(...),
+    publisher: str = Form(""),
+    publish_date: str = Form(""),
+    section: str = Form("news"),
+    author: str = Form(""),
+    headline_override: str = Form(""),
+    dry_run: str = Form("false"),
+    _: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Upload a single .rtf or .txt file as one article.
+
+    When dry_run=true, parses the file and returns {headline, body}
+    without writing — used by the paste-form file-picker to prefill inputs.
+    """
+    from striprtf.striprtf import rtf_to_text as strip_rtf
+    from src.modules.extraction.shared_write_layer import write_articles
+
+    # Validate file extension
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in {".rtf", ".txt"}:
+        raise HTTPException(status_code=400, detail="Only .rtf and .txt files accepted")
+
+    raw = await file.read()
+
+    # Decode file contents
+    if ext == ".rtf":
+        try:
+            text = strip_rtf(raw.decode("utf-8", errors="replace"))
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"RTF parsing failed: {e}")
+    else:
+        # .txt — try utf-8, fall back to cp1252 (Windows exports)
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw.decode("cp1252", errors="replace")
+
+    # Parse: first non-empty line = headline, rest = body
+    lines = text.strip().splitlines()
+    headline = ""
+    body = ""
+    for i, line in enumerate(lines):
+        if line.strip():
+            headline = line.strip()
+            body = "\n".join(lines[i + 1:]).strip()
+            break
+
+    # Allow headline override from the form
+    if headline_override.strip():
+        headline = headline_override.strip()
+
+    is_dry_run = dry_run.lower() in ("true", "1", "yes")
+    if is_dry_run:
+        return JSONResponse({"headline": headline, "body": body})
+
+    # Validate required fields for actual write
+    if not publisher.strip():
+        raise HTTPException(status_code=400, detail="publisher required")
+    if not headline:
+        raise HTTPException(status_code=400, detail="No headline found (file may be empty)")
+    if len(body) < 50:
+        raise HTTPException(status_code=400, detail="Article body too short (min 50 chars)")
+
+    articles = [{
+        "headline": headline,
+        "body_text": body,
+        "byline": author.strip(),
+        "publish_date": publish_date.strip(),
+        "url": "",
+        "content_type": section.strip() or "news",
+        "source_pipeline": "file_upload",
+        "extraction_confidence": 1.0,
+        "is_stitched": False,
+        "jump_pages": [],
+        "start_page": None,
+    }]
+
+    result = write_articles(
+        articles=articles,
+        publisher_name=publisher.strip(),
+        edition_date=publish_date.strip() or "",
+        source_filename=f"upload:{file.filename}",
+        mark_current=False,
+    )
+
+    try:
+        from src.modules.articles.fts import rebuild_fts
+        rebuild_fts()
+    except Exception as e:
+        logger.warning(f"FTS rebuild after file upload failed (non-fatal): {e}")
+
+    return JSONResponse({
+        "articles_written": result.get("articles_written", 0),
+        "chunks_indexed": result.get("chunks_indexed", 0),
+        "filename": file.filename,
+    })
+
+
 @router.post("/api/ads/upload")
 async def upload_ads(
     files: list[UploadFile] = File(...),

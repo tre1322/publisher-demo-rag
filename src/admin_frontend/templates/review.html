@@ -127,6 +127,7 @@
     <div style="display:flex; align-items:center; gap:16px; margin-bottom:20px;">
         <div class="tabs" style="margin-bottom:0;">
             <button class="tab active" data-panel="review-panel">Review Articles</button>
+            <button class="tab" data-panel="import-panel">Import Articles</button>
             <button class="tab" data-panel="edition-upload-panel">Upload Editions</button>
             <button class="tab" data-panel="ad-upload-panel">Upload Ads</button>
             <button class="tab" data-panel="editions-panel">Editions</button>
@@ -139,6 +140,114 @@
                 <option value="Pipestone Star">Pipestone Star</option>
             </select>
         </div>
+    </div>
+
+    <!-- Import Articles panel (Tier 1 RSS / Tier 2 URL / Tier 3 Paste) -->
+    <div class="upload-panel" id="import-panel" style="display:none;">
+      <div style="display:flex; gap:16px; margin-bottom:20px; border-bottom:2px solid #e5e7eb; padding-bottom:12px;">
+        <button class="import-tab-btn active" data-import="rss-section" style="padding:8px 18px; border:1px solid #d1d5db; border-radius:8px; cursor:pointer; background:#1a1f36; color:#fff; font-weight:600;">RSS Sync</button>
+        <button class="import-tab-btn" data-import="url-section" style="padding:8px 18px; border:1px solid #d1d5db; border-radius:8px; cursor:pointer; background:#fff; color:#374151; font-weight:600;">Import URLs</button>
+        <button class="import-tab-btn" data-import="paste-section" style="padding:8px 18px; border:1px solid #d1d5db; border-radius:8px; cursor:pointer; background:#fff; color:#374151; font-weight:600;">Paste Article</button>
+        <button class="import-tab-btn" data-import="upload-file-section" style="padding:8px 18px; border:1px solid #d1d5db; border-radius:8px; cursor:pointer; background:#fff; color:#374151; font-weight:600;">Upload File</button>
+      </div>
+
+      <!-- RSS Sync section -->
+      <div id="rss-section">
+        <h3 style="margin:0 0 12px; color:#1a1f36;">RSS Feed Sync</h3>
+        <p style="color:#6b7280; margin-bottom:16px;">Add your publisher's RSS feed once. Click Sync to pull all new articles automatically — no files, no extraction errors.</p>
+
+        <div style="display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap;">
+          <input id="rss-publisher" placeholder="Publisher name" style="flex:1; min-width:180px; padding:8px 12px; border:1px solid #d1d5db; border-radius:8px;">
+          <input id="rss-url" placeholder="https://yoursite.com/feed" style="flex:2; min-width:240px; padding:8px 12px; border:1px solid #d1d5db; border-radius:8px;">
+          <input id="rss-label" placeholder="Label (optional)" style="flex:1; min-width:140px; padding:8px 12px; border:1px solid #d1d5db; border-radius:8px;">
+          <button onclick="addRssFeed()" style="padding:8px 16px; background:#059669; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600;">Add Feed</button>
+        </div>
+
+        <div id="rss-feeds-list" style="margin-bottom:16px;"></div>
+
+        <div id="rss-sync-status" style="color:#059669; font-size:0.9rem; min-height:20px;"></div>
+      </div>
+
+      <!-- URL Import section -->
+      <div id="url-section" style="display:none;">
+        <h3 style="margin:0 0 12px; color:#1a1f36;">Import by URL</h3>
+        <p style="color:#6b7280; margin-bottom:16px;">Paste article URLs (one per line). The system fetches and extracts each article automatically.</p>
+
+        <div style="margin-bottom:12px;">
+          <select id="url-publisher" style="width:100%; padding:8px 12px; border:1px solid #d1d5db; border-radius:8px; margin-bottom:8px;">
+            <option value="">Select publisher…</option>
+            <option value="Cottonwood County Citizen">Cottonwood County Citizen</option>
+            <option value="Pipestone County Star">Pipestone County Star</option>
+          </select>
+          <textarea id="url-list" rows="6" placeholder="https://site.com/article-1&#10;https://site.com/article-2&#10;..." style="width:100%; padding:8px 12px; border:1px solid #d1d5db; border-radius:8px; font-family:monospace; font-size:0.85rem; box-sizing:border-box;"></textarea>
+        </div>
+        <button onclick="importUrls()" style="padding:8px 20px; background:#1a1f36; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600;">Import Articles</button>
+        <div id="url-import-status" style="color:#059669; font-size:0.9rem; margin-top:10px; min-height:20px;"></div>
+      </div>
+
+      <!-- Paste Article section -->
+      <div id="paste-section" style="display:none;">
+        <h3 style="margin:0 0 12px; color:#1a1f36;">Paste Article</h3>
+        <p style="color:#6b7280; margin-bottom:16px;">For print-only content that's never posted online. Paste headline + body text — 2 minutes per article, 100% accurate.</p>
+
+        <div style="margin-bottom:12px;">
+          <input type="file" id="paste-file-picker" accept=".rtf,.txt" style="display:none;">
+          <button type="button" onclick="document.getElementById('paste-file-picker').click()" style="padding:6px 14px; background:#f3f4f6; border:1px solid #d1d5db; border-radius:8px; cursor:pointer; font-size:0.85rem; color:#374151;">📄 Load from file (.rtf / .txt)</button>
+          <span id="paste-file-name" style="margin-left:8px; color:#6b7280; font-size:0.85rem;"></span>
+        </div>
+
+        <div style="display:grid; gap:10px;">
+          <select id="paste-publisher" style="padding:8px 12px; border:1px solid #d1d5db; border-radius:8px;">
+            <option value="">Select publisher…</option>
+            <option value="Cottonwood County Citizen">Cottonwood County Citizen</option>
+            <option value="Pipestone County Star">Pipestone County Star</option>
+          </select>
+          <input id="paste-headline" placeholder="Headline" style="padding:8px 12px; border:1px solid #d1d5db; border-radius:8px;">
+          <div style="display:flex; gap:8px;">
+            <input id="paste-author" placeholder="Author / byline" style="flex:1; padding:8px 12px; border:1px solid #d1d5db; border-radius:8px;">
+            <input id="paste-date" type="date" style="flex:1; padding:8px 12px; border:1px solid #d1d5db; border-radius:8px;">
+            <select id="paste-section" style="flex:1; padding:8px 12px; border:1px solid #d1d5db; border-radius:8px;">
+              <option value="news">News</option>
+              <option value="sports">Sports</option>
+              <option value="obituary">Obituary</option>
+              <option value="opinion">Opinion</option>
+              <option value="features">Features</option>
+            </select>
+          </div>
+          <textarea id="paste-body" rows="12" placeholder="Paste full article text here…" style="padding:8px 12px; border:1px solid #d1d5db; border-radius:8px; font-family:inherit; font-size:0.9rem;"></textarea>
+          <button onclick="submitPasteArticle()" style="padding:8px 20px; background:#1a1f36; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600; justify-self:start;">Submit Article</button>
+        </div>
+        <div id="paste-status" style="color:#059669; font-size:0.9rem; margin-top:10px; min-height:20px;"></div>
+      </div>
+
+      <!-- Upload File section -->
+      <div id="upload-file-section" style="display:none;">
+        <h3 style="margin:0 0 12px; color:#1a1f36;">Upload Article File</h3>
+        <p style="color:#6b7280; margin-bottom:16px;">Upload a single .rtf or .txt file containing one story. First line becomes the headline, the rest becomes the body.</p>
+
+        <div style="display:grid; gap:10px;">
+          <select id="upload-file-publisher" style="padding:8px 12px; border:1px solid #d1d5db; border-radius:8px;">
+            <option value="">Select publisher…</option>
+            <option value="Cottonwood County Citizen">Cottonwood County Citizen</option>
+            <option value="Pipestone County Star">Pipestone County Star</option>
+          </select>
+          <div style="display:flex; gap:8px;">
+            <input id="upload-file-author" placeholder="Author / byline" style="flex:1; padding:8px 12px; border:1px solid #d1d5db; border-radius:8px;">
+            <input id="upload-file-date" type="date" style="flex:1; padding:8px 12px; border:1px solid #d1d5db; border-radius:8px;">
+            <select id="upload-file-section-select" style="flex:1; padding:8px 12px; border:1px solid #d1d5db; border-radius:8px;">
+              <option value="news">News</option>
+              <option value="sports">Sports</option>
+              <option value="obituary">Obituary</option>
+              <option value="opinion">Opinion</option>
+              <option value="features">Features</option>
+            </select>
+          </div>
+          <input type="file" id="upload-file-input" accept=".rtf,.txt" style="padding:8px 12px; border:1px solid #d1d5db; border-radius:8px;">
+          <input id="upload-file-headline" placeholder="Headline override (leave blank to use first line of file)" style="padding:8px 12px; border:1px solid #d1d5db; border-radius:8px;">
+          <button onclick="submitUploadFile()" style="padding:8px 20px; background:#1a1f36; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600; justify-self:start;">Upload & Submit Article</button>
+        </div>
+        <div id="upload-file-status" style="color:#059669; font-size:0.9rem; margin-top:10px; min-height:20px;"></div>
+      </div>
     </div>
 
     <!-- Edition upload panel -->
@@ -278,14 +387,249 @@
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.upload-panel').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.upload-panel').forEach(p => {
+                p.classList.remove('active');
+                p.style.display = 'none';
+            });
             tab.classList.add('active');
-            document.getElementById(tab.dataset.panel).classList.add('active');
+            const panel = document.getElementById(tab.dataset.panel);
+            panel.classList.add('active');
+            panel.style.display = '';
 
             if (tab.dataset.panel === 'review-panel') loadArticles();
             if (tab.dataset.panel === 'editions-panel') loadEditions();
+            if (tab.dataset.panel === 'import-panel') loadRssFeeds();
         });
     });
+
+    // Import sub-tab switching (RSS / URL / Paste)
+    document.querySelectorAll('.import-tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.import-tab-btn').forEach(b => {
+                b.style.background = '#fff';
+                b.style.color = '#374151';
+                b.classList.remove('active');
+            });
+            btn.style.background = '#1a1f36';
+            btn.style.color = '#fff';
+            btn.classList.add('active');
+            ['rss-section','url-section','paste-section','upload-file-section'].forEach(id => {
+                document.getElementById(id).style.display = 'none';
+            });
+            document.getElementById(btn.dataset.import).style.display = '';
+        });
+    });
+
+    // RSS feeds management
+    async function loadRssFeeds() {
+        const res = await fetch('/admin/api/rss-feeds', {
+            headers: {'Authorization': 'Basic ' + btoa('admin:' + (window._adminPw || 'admin'))}
+        });
+        const feeds = await res.json();
+        const el = document.getElementById('rss-feeds-list');
+        if (!feeds.length) {
+            el.innerHTML = '<p style="color:#9ca3af; font-size:0.85rem;">No feeds saved yet. Add one above.</p>';
+            return;
+        }
+        el.innerHTML = feeds.map(f => `
+          <div style="display:flex; align-items:center; gap:10px; padding:10px; background:#f9fafb; border-radius:8px; margin-bottom:8px;">
+            <div style="flex:1;">
+              <div style="font-weight:600; color:#1a1f36;">${f.publisher}</div>
+              <div style="font-size:0.8rem; color:#6b7280;">${f.rss_url}</div>
+              ${f.last_synced_at ? `<div style="font-size:0.75rem; color:#9ca3af;">Last synced: ${f.last_synced_at}</div>` : ''}
+            </div>
+            <input type="date" id="since-${f.id}" style="padding:6px; border:1px solid #d1d5db; border-radius:6px; font-size:0.8rem;" title="Only sync articles published on/after this date">
+            <button onclick="syncFeed(${f.id})" style="padding:6px 14px; background:#059669; color:#fff; border:none; border-radius:6px; cursor:pointer; font-weight:600; font-size:0.85rem;">Sync</button>
+            <button onclick="deleteFeed(${f.id})" style="padding:6px 10px; background:#ef4444; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:0.85rem;">✕</button>
+          </div>`).join('');
+    }
+
+    async function addRssFeed() {
+        const publisher = document.getElementById('rss-publisher').value.trim();
+        const rss_url = document.getElementById('rss-url').value.trim();
+        const label = document.getElementById('rss-label').value.trim();
+        if (!publisher || !rss_url) { alert('Publisher and RSS URL are required'); return; }
+        const res = await fetch('/admin/api/rss-feeds', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'Authorization': 'Basic ' + btoa('admin:' + (window._adminPw || 'admin'))},
+            body: JSON.stringify({publisher, rss_url, label})
+        });
+        if (res.ok) {
+            document.getElementById('rss-publisher').value = '';
+            document.getElementById('rss-url').value = '';
+            document.getElementById('rss-label').value = '';
+            await loadRssFeeds();
+        } else {
+            alert('Failed to add feed: ' + (await res.text()));
+        }
+    }
+
+    async function syncFeed(feedId) {
+        const since = document.getElementById('since-' + feedId)?.value || null;
+        const statusEl = document.getElementById('rss-sync-status');
+        statusEl.textContent = 'Syncing… this may take a minute.';
+        statusEl.style.color = '#6b7280';
+        const res = await fetch('/admin/api/sync-rss/' + feedId, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'Authorization': 'Basic ' + btoa('admin:' + (window._adminPw || 'admin'))},
+            body: JSON.stringify(since ? {since} : {})
+        });
+        const data = await res.json();
+        if (res.ok) {
+            statusEl.textContent = `✓ Synced: ${data.articles_written} articles, ${data.chunks_indexed} chunks indexed.`;
+            statusEl.style.color = '#059669';
+            await loadRssFeeds();
+        } else {
+            statusEl.textContent = '✗ Sync failed: ' + JSON.stringify(data);
+            statusEl.style.color = '#ef4444';
+        }
+    }
+
+    async function deleteFeed(feedId) {
+        if (!confirm('Remove this RSS feed config?')) return;
+        await fetch('/admin/api/rss-feeds/' + feedId, {
+            method: 'DELETE',
+            headers: {'Authorization': 'Basic ' + btoa('admin:' + (window._adminPw || 'admin'))}
+        });
+        await loadRssFeeds();
+    }
+
+    // URL import
+    async function importUrls() {
+        const publisher = document.getElementById('url-publisher').value.trim();
+        const raw = document.getElementById('url-list').value.trim();
+        const urls = raw.split('\n').map(u => u.trim()).filter(Boolean);
+        if (!publisher) { alert('Select a publisher'); return; }
+        if (!urls.length) { alert('Paste at least one URL'); return; }
+        const statusEl = document.getElementById('url-import-status');
+        statusEl.textContent = `Fetching ${urls.length} URL(s)… this may take a moment.`;
+        statusEl.style.color = '#6b7280';
+        const res = await fetch('/admin/api/import-urls', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'Authorization': 'Basic ' + btoa('admin:' + (window._adminPw || 'admin'))},
+            body: JSON.stringify({publisher, urls})
+        });
+        const data = await res.json();
+        if (res.ok) {
+            statusEl.textContent = `✓ ${data.articles_written} article(s) imported, ${data.chunks_indexed} chunks indexed.`;
+            statusEl.style.color = '#059669';
+            document.getElementById('url-list').value = '';
+        } else {
+            statusEl.textContent = '✗ Import failed: ' + JSON.stringify(data);
+            statusEl.style.color = '#ef4444';
+        }
+    }
+
+    // Paste article
+    async function submitPasteArticle() {
+        const publisher = document.getElementById('paste-publisher').value.trim();
+        const headline = document.getElementById('paste-headline').value.trim();
+        const body_text = document.getElementById('paste-body').value.trim();
+        const author = document.getElementById('paste-author').value.trim();
+        const publish_date = document.getElementById('paste-date').value.trim();
+        const section = document.getElementById('paste-section').value;
+        if (!publisher) { alert('Select a publisher'); return; }
+        if (!headline) { alert('Headline is required'); return; }
+        if (!body_text || body_text.length < 50) { alert('Article body too short'); return; }
+        const statusEl = document.getElementById('paste-status');
+        statusEl.textContent = 'Submitting…';
+        statusEl.style.color = '#6b7280';
+        const res = await fetch('/admin/api/paste-article', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'Authorization': 'Basic ' + btoa('admin:' + (window._adminPw || 'admin'))},
+            body: JSON.stringify({publisher, headline, body_text, author, publish_date, section})
+        });
+        const data = await res.json();
+        if (res.ok) {
+            statusEl.textContent = `✓ Article submitted. ${data.chunks_indexed} chunks indexed.`;
+            statusEl.style.color = '#059669';
+            document.getElementById('paste-headline').value = '';
+            document.getElementById('paste-author').value = '';
+            document.getElementById('paste-body').value = '';
+        } else {
+            statusEl.textContent = '✗ Failed: ' + JSON.stringify(data);
+            statusEl.style.color = '#ef4444';
+        }
+    }
+
+    // Fill paste form from uploaded file (dry_run parse)
+    document.getElementById('paste-file-picker').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const statusEl = document.getElementById('paste-status');
+        const nameEl = document.getElementById('paste-file-name');
+        nameEl.textContent = file.name;
+        statusEl.textContent = 'Parsing file…';
+        statusEl.style.color = '#6b7280';
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('publisher', 'placeholder');
+        fd.append('dry_run', 'true');
+        try {
+            const res = await fetch('/admin/api/upload-article-file', {
+                method: 'POST',
+                headers: {'Authorization': 'Basic ' + btoa('admin:' + (window._adminPw || 'admin'))},
+                body: fd,
+            });
+            const data = await res.json();
+            if (res.ok) {
+                document.getElementById('paste-headline').value = data.headline || '';
+                document.getElementById('paste-body').value = data.body || '';
+                statusEl.textContent = '✓ File loaded — review and submit below.';
+                statusEl.style.color = '#059669';
+            } else {
+                statusEl.textContent = '✗ Parse failed: ' + (data.detail || JSON.stringify(data));
+                statusEl.style.color = '#ef4444';
+            }
+        } catch (err) {
+            statusEl.textContent = '✗ Error: ' + err.message;
+            statusEl.style.color = '#ef4444';
+        }
+        e.target.value = '';
+    });
+
+    // Upload article file (standalone sub-tab)
+    async function submitUploadFile() {
+        const fileInput = document.getElementById('upload-file-input');
+        const publisher = document.getElementById('upload-file-publisher').value.trim();
+        const statusEl = document.getElementById('upload-file-status');
+
+        if (!publisher) { alert('Select a publisher'); return; }
+        if (!fileInput.files[0]) { alert('Choose a .rtf or .txt file'); return; }
+
+        statusEl.textContent = 'Uploading…';
+        statusEl.style.color = '#6b7280';
+
+        const fd = new FormData();
+        fd.append('file', fileInput.files[0]);
+        fd.append('publisher', publisher);
+        fd.append('publish_date', document.getElementById('upload-file-date').value);
+        fd.append('section', document.getElementById('upload-file-section-select').value);
+        fd.append('author', document.getElementById('upload-file-author').value);
+        fd.append('headline_override', document.getElementById('upload-file-headline').value);
+
+        try {
+            const res = await fetch('/admin/api/upload-article-file', {
+                method: 'POST',
+                headers: {'Authorization': 'Basic ' + btoa('admin:' + (window._adminPw || 'admin'))},
+                body: fd,
+            });
+            const data = await res.json();
+            if (res.ok) {
+                statusEl.textContent = `✓ Article "${data.filename}" submitted. ${data.chunks_indexed} chunks indexed.`;
+                statusEl.style.color = '#059669';
+                fileInput.value = '';
+                document.getElementById('upload-file-headline').value = '';
+                document.getElementById('upload-file-author').value = '';
+            } else {
+                statusEl.textContent = '✗ Failed: ' + (data.detail || JSON.stringify(data));
+                statusEl.style.color = '#ef4444';
+            }
+        } catch (err) {
+            statusEl.textContent = '✗ Error: ' + err.message;
+            statusEl.style.color = '#ef4444';
+        }
+    }
 
     // Edition upload (supports async vision jobs with polling)
     document.getElementById('edition-form').addEventListener('submit', async (e) => {
