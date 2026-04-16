@@ -294,8 +294,15 @@ _GENERIC_FILENAMES = {
 }
 
 
-def _clean_filename_as_name(filename: str) -> str:
-    """Extract a business name from a filename by removing dimensions/noise."""
+def _clean_filename_as_name(filename: str, ad_type: str | None = None) -> str:
+    """Extract a business name from a filename by removing dimensions/noise.
+
+    For help-wanted ads, preserve job-title suffixes — they ARE the headline of
+    the ad and stripping them left the LLM with only the business name, which
+    it would then confuse with unrelated body text (e.g. an EDA Executive
+    Director ad was getting summarized as "Real Estate Position" because the
+    EDA body text discusses real estate/economic development).
+    """
     import re
 
     stem = Path(filename).stem
@@ -304,14 +311,16 @@ def _clean_filename_as_name(filename: str) -> str:
     stem = re.sub(r"\s*[½¼¾]\s*$", "", stem)
     # Remove ad type suffixes: HW (help wanted), RN, FP, BW
     stem = re.sub(r"\s+(HW|hw|RN|rn|FP|fp|BW|bw)\s*$", "", stem)
-    # Remove job title suffixes
-    stem = re.sub(
-        r"\s+(Executive Director|Director|Manager|Coordinator|Supervisor|"
-        r"Technician|Specialist|Assistant|Clerk|Driver|Operator|"
-        r"Food Service Manager|Maintenance|Custodian|Teacher|"
-        r"Nurse|CNA|LPN|Aide|Cook|Housekeeper)\s*$",
-        "", stem, flags=re.IGNORECASE,
-    )
+    # Remove job title suffixes — but NOT for help-wanted ads, where the
+    # title is the most important signal for the LLM to identify the role.
+    if ad_type != "help_wanted":
+        stem = re.sub(
+            r"\s+(Executive Director|Director|Manager|Coordinator|Supervisor|"
+            r"Technician|Specialist|Assistant|Clerk|Driver|Operator|"
+            r"Food Service Manager|Maintenance|Custodian|Teacher|"
+            r"Nurse|CNA|LPN|Aide|Cook|Housekeeper)\s*$",
+            "", stem, flags=re.IGNORECASE,
+        )
     stem = re.sub(r"\s*(half|quarter|full)\s*page\s*", " ", stem, flags=re.IGNORECASE)
     stem = re.sub(r"\s+ad$", "", stem, flags=re.IGNORECASE)
     stem = stem.replace("_", " ").replace("-", " ").strip()
@@ -344,7 +353,8 @@ def _is_generic_filename(filename: str) -> bool:
 
 
 def infer_advertiser_name(
-    text: str, filename: str, pdf_bytes: bytes | None = None
+    text: str, filename: str, pdf_bytes: bytes | None = None,
+    ad_type: str | None = None,
 ) -> str:
     """Infer the advertiser/business name from filename, text, or ad image.
 
@@ -354,9 +364,12 @@ def infer_advertiser_name(
        from the ad image (logos, headers, branding)
     3. Scan extracted text for a line that looks like a business name
     4. Fall back to cleaned filename
+
+    The ad_type parameter is passed through to _clean_filename_as_name so
+    help-wanted ads keep their job-title suffix (business + role together).
     """
     # Try filename first — uploaders often name files after the business
-    cleaned_filename = _clean_filename_as_name(filename)
+    cleaned_filename = _clean_filename_as_name(filename, ad_type=ad_type)
     if not _is_generic_filename(filename) and len(cleaned_filename) >= 3:
         logger.info(f"Advertiser name from filename: '{cleaned_filename}'")
         return cleaned_filename
@@ -597,7 +610,7 @@ class AdIngester:
             result["error"] = "No text extracted from PDF (even after OCR)"
             return result
 
-        advertiser = infer_advertiser_name(best_text, filename, pdf_bytes=data)
+        advertiser = infer_advertiser_name(best_text, filename, pdf_bytes=data, ad_type=ad_type)
 
         # Categorize, locate, and enrich
         ad_category = categorize_ad(best_text, advertiser)
@@ -743,10 +756,10 @@ class AdIngester:
             return result
 
         # Infer advertiser name — try filename first, then Vision name extraction
-        advertiser = infer_advertiser_name(ocr_text, filename)
+        advertiser = infer_advertiser_name(ocr_text, filename, ad_type=ad_type)
         # If filename was generic and text scan didn't find a good name,
         # try dedicated Vision name extraction
-        if advertiser in ("Unknown", "") or advertiser == _clean_filename_as_name(filename):
+        if advertiser in ("Unknown", "") or advertiser == _clean_filename_as_name(filename, ad_type=ad_type):
             vision_name = extract_business_name_from_image_bytes(data, filename)
             if vision_name:
                 advertiser = vision_name
