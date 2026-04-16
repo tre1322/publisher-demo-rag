@@ -376,15 +376,45 @@ def write_articles(
             )
 
     publisher_id: int = pub["id"]
+    resolved_source = source_filename or f"import:{publisher_name}"
+    resolved_date = edition_date or ""
 
-    # 2. Create edition record (lightweight — no PDF, no file hash needed)
-    edition_id: int = insert_edition(
-        source_filename=source_filename or f"import:{publisher_name}",
-        publisher_id=publisher_id,
-        edition_date=edition_date or "",
-        upload_status="completed",
-        extraction_status="completed",
+    # 2. Reuse an existing edition for the same publisher+date+source if one
+    # exists (e.g. multiple pastes on the same day should land in the same
+    # synthetic edition instead of creating a new "current" one each time
+    # that overrides all earlier pastes).
+    from src.core.database import get_connection
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id FROM editions
+        WHERE publisher_id = ?
+          AND edition_date = ?
+          AND source_filename = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (publisher_id, resolved_date, resolved_source),
     )
+    row = cur.fetchone()
+    conn.close()
+
+    if row is not None:
+        edition_id = row[0] if not isinstance(row, dict) else row["id"]
+        logger.info(
+            f"write_articles: reusing existing edition {edition_id} "
+            f"for publisher={publisher_name!r} date={resolved_date!r} "
+            f"source={resolved_source!r}"
+        )
+    else:
+        edition_id = insert_edition(
+            source_filename=resolved_source,
+            publisher_id=publisher_id,
+            edition_date=resolved_date,
+            upload_status="completed",
+            extraction_status="completed",
+        )
 
     # 3. Delegate to the full writer
     force_current: bool | None = True if mark_current else False
