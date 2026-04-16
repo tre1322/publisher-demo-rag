@@ -89,7 +89,20 @@ _BUSINESS_PATTERNS = [
         re.I,
     ),
     # Help-wanted / job-seeker phrasings — surface help-wanted ads.
-    re.compile(r"\b(who'?s?\s+hiring|help\s+wanted|hiring\s+now|now\s+hiring|looking\s+to\s+hire|job\s+openings?)\b", re.I),
+    # Covers: "who hiring", "who is hiring", "who's hiring", "whos hiring",
+    # "anyone hiring", "hiring in/at/near/for/now", "now hiring",
+    # "help wanted", "looking to hire", "job opening(s)", "open positions".
+    re.compile(
+        r"\b(who(?:\s+is|'?s)?\s+hiring|"
+        r"anyone\s+hiring|"
+        r"hiring\s+(?:in|at|near|for|now)|"
+        r"now\s+hiring|"
+        r"help\s+wanted|"
+        r"looking\s+to\s+hire|"
+        r"job\s+openings?|"
+        r"open\s+positions?)\b",
+        re.I,
+    ),
     re.compile(r"\b(jobs?|work|employment)\s+(in|at|near|available|open)\b", re.I),
     re.compile(r"\bi\s+need\s+(a\s+)?job\b", re.I),
     # Service verbs — imply need for a service provider.
