@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Billing{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="h2">Billing</h1>
+  <p class="text-muted mb-0">
+    Your Amplora subscription, payment history, and tier changes.
+  </p>
+</div>
+
+<div class="row mt-4">
+  <!-- Current state card -->
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title mb-0">Current subscription</h3>
+      </div>
+      <div class="card-body">
+        {% if sub %}
+          <dl class="row mb-0">
+            <dt class="col-sm-5">Tier</dt>
+            <dd class="col-sm-7"><span class="badge bg-blue text-white">{{ sub.tier|capitalize }}</span></dd>
+            <dt class="col-sm-5">Status</dt>
+            <dd class="col-sm-7">
+              {% if sub.status == "active" %}<span class="badge bg-green text-white">Active</span>
+              {% elif sub.status == "trialing" %}<span class="badge bg-azure text-white">Trial</span>
+              {% elif sub.status == "past_due" %}<span class="badge bg-orange text-white">Past due</span>
+              {% else %}<span class="badge bg-secondary text-white">{{ sub.status }}</span>
+              {% endif %}
+            </dd>
+            <dt class="col-sm-5">Period ends</dt>
+            <dd class="col-sm-7">{{ sub.current_period_end[:10] if sub.current_period_end else "—" }}</dd>
+            <dt class="col-sm-5">Stripe sub</dt>
+            <dd class="col-sm-7"><code class="small">{{ sub.processor_subscription_id or "—" }}</code></dd>
+          </dl>
+        {% else %}
+          <p class="text-muted mb-0">
+            No active subscription yet. Pick a tier below to get started.
+          </p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Revenue share card (informational, for the business owner -->
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title mb-0">Your local newspaper</h3>
+      </div>
+      <div class="card-body">
+        {% if share %}
+          <p class="mb-1">
+            Selling publisher: <code>publisher_id={{ share.selling_publisher_id }}</code>
+          </p>
+          <p class="text-muted small mb-0">
+            They get {{ (share.share_pct * 100)|int }}% of your subscription as part
+            of their Amplora partner share. (Window opened {{ share.window_start[:10] }}.)
+          </p>
+        {% else %}
+          <p class="text-muted mb-0">No publisher attribution on file. Contact support.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tier selection -->
+<div class="row mt-4">
+  <div class="col-12">
+    <h3 class="mt-2">{% if sub %}Change your plan{% else %}Pick your plan{% endif %}</h3>
+  </div>
+  {% for t in tier_catalog %}
+  <div class="col-md-4">
+    <div class="card mt-3 {% if sub and sub.tier == t.id %}border-blue border-2{% endif %}">
+      <div class="card-body">
+        <h3 class="card-title">{{ t.name }}</h3>
+        <p class="h2 my-2">{{ t.price_display }}</p>
+        <p class="text-muted">{{ t.tagline }}</p>
+        <form action="/business/billing/checkout" method="post">
+          <input type="hidden" name="tier" value="{{ t.id }}">
+          <button type="submit" class="btn btn-primary w-100"
+            {% if sub and sub.tier == t.id and sub.status in ("active", "trialing") %}disabled{% endif %}>
+            {% if sub and sub.tier == t.id %}Current plan{% else %}Select{% endif %}
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Tier history -->
+{% if history %}
+<div class="row mt-5">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title mb-0">Tier history</h3></div>
+      <div class="card-body">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>When</th><th>Change</th><th>By</th><th>Reason</th></tr></thead>
+          <tbody>
+          {% for h in history|reverse %}
+            <tr>
+              <td>{{ h.effective_at[:16] }}</td>
+              <td>
+                {% if h.from_tier %}{{ h.from_tier }} →{% else %}initial →{% endif %}
+                <strong>{{ h.to_tier }}</strong>
+              </td>
+              <td><code class="small">{{ h.changed_by }}</code></td>
+              <td class="text-muted small">{{ h.reason or "" }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

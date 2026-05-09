@@ -194,6 +194,71 @@ async def register_submit(request: Request):
     )
     mark_invite_used(invite_code, user_id)
 
+    # W1: publisher attribution + initial revenue-share window + tier_history.
+    # Policy is invite-only (decided 2026-05-08): if the invite doesn't
+    # resolve to an active publisher, attribution raises ValueError and
+    # registration is rolled back so admin can fix the invite/publisher and
+    # the user retries cleanly.
+    from src.modules.billing.attribution import (
+        INITIAL_Y1_SHARE_PCT,
+        attribute_publisher_at_signup,
+    )
+    from src.modules.billing.database import (
+        log_tier_change,
+        open_revenue_share_window,
+    )
+
+    try:
+        pub_id, source = attribute_publisher_at_signup(
+            organization_id=org_id,
+            invite_code=invite_code,
+            business_state=state or None,
+            business_city=city or None,
+            self_serve=False,
+        )
+    except ValueError as e:
+        # Roll back the half-built signup so the user can retry once admin
+        # fixes the publisher/invite.
+        logger.error("Attribution failed for org %s: %s — rolling back", org_id, e)
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM business_users WHERE id = ?", (user_id,))
+        cur.execute("DELETE FROM organizations WHERE id = ?", (org_id,))
+        cur.execute(
+            "UPDATE business_invites SET used_at = NULL, used_by_user_id = NULL "
+            "WHERE invite_code = ?",
+            (invite_code,),
+        )
+        conn.commit()
+        conn.close()
+        return templates.TemplateResponse(
+            request=request,
+            name="register.html",
+            context={
+                "error": (
+                    "We couldn't attribute this signup to an active publisher. "
+                    "Please contact your local newspaper — they'll re-issue your "
+                    "invite or activate their account."
+                ),
+                "invite": inv,
+            },
+        )
+
+    open_revenue_share_window(
+        organization_id=org_id,
+        selling_publisher_id=pub_id,
+        share_pct=INITIAL_Y1_SHARE_PCT,
+        attribution_source=source,
+        notes=f"Y1 share opened at signup (invite={invite_code})",
+    )
+    log_tier_change(
+        organization_id=org_id,
+        from_tier=None,
+        to_tier=inv.get("tier", "growth"),
+        changed_by=f"register:user_id={user_id}",
+        reason=f"initial_signup invite={invite_code}",
+    )
+
     user = get_user_by_email(email)
     update_last_login(user["id"])
     response = RedirectResponse(url="/business/", status_code=303)
@@ -676,3 +741,128 @@ def _get_org_ads(org_id: int) -> list[dict]:
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return rows
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  BILLING (W1)
+# ═══════════════════════════════════════════════════════════════════
+#
+# Flow:
+#   1. /business/billing            -> page; shows current state + tier buttons
+#   2. /business/billing/checkout   -> POST; creates Stripe Session, redirects
+#   3. Stripe-hosted Checkout       -> user pays
+#   4. Stripe webhook fires         -> /webhooks/stripe updates DB (separate)
+#   5. /business/billing/success    -> landing; webhook may not have fired yet
+#   6. /business/billing/cancel     -> user backed out; back to billing page
+
+
+@router.get("/billing", response_class=HTMLResponse)
+async def billing_page(request: Request, user: dict = Depends(require_auth)):
+    from src.modules.billing.database import (
+        get_active_subscription,
+        get_current_revenue_share,
+        get_tier_history,
+    )
+
+    org = _get_org(user["organization_id"])
+    sub = get_active_subscription(user["organization_id"])
+    share = get_current_revenue_share(user["organization_id"])
+    history = get_tier_history(user["organization_id"])
+
+    # Tier catalog for the buy buttons. Display only — actual price comes
+    # from the Stripe Price object, not this dict.
+    tier_catalog = [
+        {"id": "starter", "name": "Starter", "price_display": "$99/mo",
+         "tagline": "Drafts only — review and post yourself."},
+        {"id": "growth", "name": "Growth", "price_display": "$299/mo",
+         "tagline": "We run social, GBP, reviews, and a website for you."},
+        {"id": "concierge", "name": "Concierge", "price_display": "$499/mo",
+         "tagline": "Growth + dedicated human review + monthly strategy call."},
+    ]
+
+    return templates.TemplateResponse(
+        request=request,
+        name="billing.html",
+        context={
+            "user": user, "org": org, "sub": sub, "share": share,
+            "history": history, "tier_catalog": tier_catalog,
+            "active_page": "billing",
+        },
+    )
+
+
+@router.post("/billing/checkout")
+async def billing_checkout(
+    request: Request, user: dict = Depends(require_auth), tier: str = Form(...)
+):
+    """Create a Stripe Checkout Session for the requested tier and redirect."""
+    from src.core.config import BASE_URL
+    from src.modules.billing.database import get_active_subscription
+    from src.modules.billing.stripe_checkout import create_checkout_session
+
+    if tier not in ("starter", "growth", "concierge"):
+        return JSONResponse(
+            content={"error": f"unknown tier: {tier}"}, status_code=400
+        )
+
+    # If they already have a subscription, reuse the Stripe Customer so
+    # the new sub attaches to the same payment method / invoice history.
+    existing_sub = get_active_subscription(user["organization_id"])
+    existing_customer_id = (
+        existing_sub.get("processor_customer_id") if existing_sub else None
+    )
+
+    try:
+        session = create_checkout_session(
+            organization_id=user["organization_id"],
+            tier=tier,
+            customer_email=user["email"],
+            base_url=BASE_URL,
+            existing_customer_id=existing_customer_id,
+        )
+    except ValueError as e:
+        # Missing env var (STRIPE_API_KEY / STRIPE_PRICE_*) — surface to admin.
+        logger.error("Checkout session config error: %s", e)
+        return JSONResponse(
+            content={"error": "billing not fully configured", "detail": str(e)},
+            status_code=503,
+        )
+    except Exception as e:
+        logger.exception("Stripe checkout failed: %s", e)
+        return JSONResponse(
+            content={"error": "checkout failed", "detail": str(e)},
+            status_code=502,
+        )
+
+    checkout_url = session.get("url")
+    if not checkout_url:
+        return JSONResponse(
+            content={"error": "stripe returned no checkout url"}, status_code=502
+        )
+    return RedirectResponse(url=checkout_url, status_code=303)
+
+
+@router.get("/billing/success", response_class=HTMLResponse)
+async def billing_success(
+    request: Request, user: dict = Depends(require_auth), session_id: str = ""
+):
+    """Landing page after Stripe redirects back. The webhook may not have
+    fired yet (race), so we show 'pending' if the subscription row hasn't
+    been created locally. Page auto-refreshes every 3s for ~30s.
+    """
+    from src.modules.billing.database import get_active_subscription
+
+    sub = get_active_subscription(user["organization_id"])
+    return templates.TemplateResponse(
+        request=request,
+        name="billing_success.html",
+        context={
+            "user": user, "org": _get_org(user["organization_id"]),
+            "sub": sub, "session_id": session_id, "active_page": "billing",
+        },
+    )
+
+
+@router.get("/billing/cancel")
+async def billing_cancel(user: dict = Depends(require_auth)):
+    return RedirectResponse(url="/business/billing", status_code=303)

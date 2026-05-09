@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Subscription confirmed{% endblock %}
+
+{% block head %}
+{# Auto-refresh every 3s for the first ~30s — gives Stripe webhook time to fire.
+   Once the subscription row exists locally, we stop refreshing. #}
+{% if not sub %}
+<meta http-equiv="refresh" content="3">
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="empty">
+  {% if sub %}
+    <div class="empty-icon" style="font-size:3rem;">✓</div>
+    <p class="empty-title">You're subscribed.</p>
+    <p class="empty-subtitle text-muted">
+      Tier: <strong>{{ sub.tier|capitalize }}</strong> ·
+      Status: <strong>{{ sub.status }}</strong>
+    </p>
+    <div class="empty-action">
+      <a href="/business/" class="btn btn-primary">Open the dashboard</a>
+    </div>
+  {% else %}
+    <div class="empty-icon" style="font-size:3rem;">…</div>
+    <p class="empty-title">Confirming your subscription</p>
+    <p class="empty-subtitle text-muted">
+      Stripe processed your payment. We're waiting for the confirmation
+      webhook (usually under 5 seconds). This page will auto-refresh.
+    </p>
+    <p class="text-muted small">Session: <code>{{ session_id or "—" }}</code></p>
+    <div class="empty-action">
+      <a href="/business/billing" class="btn btn-link">Back to billing</a>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

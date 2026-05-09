@@ -684,6 +684,16 @@ def create_app() -> FastAPI:
     except Exception as e:
         logger.warning(f"Could not mount public news routes: {e}")
 
+    # W1: Amplora Stripe webhook (subscription lifecycle). The route verifies
+    # the Stripe-Signature header against STRIPE_WEBHOOK_SECRET; tests bypass
+    # by calling apply_event() directly.
+    try:
+        from src.modules.billing.stripe_webhook import router as stripe_router
+        app.include_router(stripe_router)
+        logger.info("Stripe webhook mounted at /webhooks/stripe")
+    except Exception as e:
+        logger.warning(f"Could not mount Stripe webhook: {e}")
+
     # Serve static files (chat widget) if directory exists
     from pathlib import Path
 

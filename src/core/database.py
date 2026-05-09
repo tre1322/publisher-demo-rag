@@ -36,6 +36,7 @@ def init_all_tables() -> None:
     from src.modules.advertisements import database as ads_db
     from src.modules.analytics import database as analytics_db
     from src.modules.articles import database as articles_db
+    from src.modules.billing import database as billing_db
     from src.modules.content_items import database as content_items_db
     from src.modules.conversations import database as conversations_db
     from src.modules.editions import database as editions_db
@@ -61,6 +62,10 @@ def init_all_tables() -> None:
     analytics_db.init_table()
     editions_db.init_table()
     content_items_db.init_table()
+    # W1: Amplora multi-tenant billing — subscriptions, tier_history,
+    # publisher_revenue_share. Must come AFTER organizations + publishers
+    # because of FK references.
+    billing_db.init_table()
 
     # Seed default publishers (idempotent)
     publishers_db.seed_publishers()

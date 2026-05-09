@@ -2939,3 +2939,69 @@ async def admin_publisher_main_street(
     if publisher_slug not in _PUBLISHER_SLUGS:
         return templates.TemplateResponse(request=request, name="main_street.html", context={"request": request, "publisher": "", "publisher_slug": ""})
     return templates.TemplateResponse(request=request, name="main_street.html", context=_publisher_context(request, publisher_slug))
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  AMPLORA BILLING (W1) — admin view
+# ═══════════════════════════════════════════════════════════════════
+
+
+@router.get("/billing/{org_id}", response_class=HTMLResponse)
+async def admin_billing_detail(
+    request: Request, org_id: int, _username: str = Depends(verify_credentials),
+):
+    """Show full billing state for one org: sub + share + tier history.
+
+    Used for support, audits, and the day-30/60/90 partner check-ins.
+    """
+    from src.modules.billing.database import (
+        get_active_subscription,
+        get_current_revenue_share,
+        get_revenue_share_history,
+        get_tier_history,
+    )
+    from src.modules.organizations.database import get_organization
+
+    org = get_organization(org_id)
+    if not org:
+        raise HTTPException(status_code=404, detail=f"org {org_id} not found")
+
+    sub = get_active_subscription(org_id)
+    share = get_current_revenue_share(org_id)
+    tier_log = get_tier_history(org_id)
+    share_log = get_revenue_share_history(org_id)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="billing_detail.html",
+        context={
+            "request": request, "org": org, "sub": sub, "share": share,
+            "tier_log": tier_log, "share_log": share_log,
+        },
+    )
+
+
+@router.get("/api/billing/{org_id}")
+async def admin_billing_api(
+    org_id: int, _username: str = Depends(verify_credentials),
+):
+    """JSON view of the same data — for ops scripts and CSV exports."""
+    from src.modules.billing.database import (
+        get_active_subscription,
+        get_current_revenue_share,
+        get_revenue_share_history,
+        get_tier_history,
+    )
+    from src.modules.organizations.database import get_organization
+
+    org = get_organization(org_id)
+    if not org:
+        raise HTTPException(status_code=404, detail=f"org {org_id} not found")
+
+    return JSONResponse(content={
+        "org": org,
+        "subscription": get_active_subscription(org_id),
+        "current_revenue_share": get_current_revenue_share(org_id),
+        "tier_history": get_tier_history(org_id),
+        "revenue_share_history": get_revenue_share_history(org_id),
+    })
