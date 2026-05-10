@@ -866,3 +866,200 @@ async def billing_success(
 @router.get("/billing/cancel")
 async def billing_cancel(user: dict = Depends(require_auth)):
     return RedirectResponse(url="/business/billing", status_code=303)
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  MARKETING PROFILE (W2 — Product Marketing Context)
+# ═══════════════════════════════════════════════════════════════════
+#
+# Single-URL state machine at /business/pmc/:
+#   - no row at all       -> show prep (quantitative form + transcript paste)
+#   - row status='draft'  -> show review (editable + accept button)
+#   - row status='accepted' -> show canonical (read-only + redo-interview link)
+#
+# W2.1 captures the transcript via paste. W2.2 will replace the paste
+# block with a "schedule call" / live-agent integration; the rest of
+# this flow is unchanged by that swap.
+
+
+@router.get("/pmc/", response_class=HTMLResponse)
+@router.get("/pmc", response_class=HTMLResponse)
+async def pmc_landing(
+    request: Request, user: dict = Depends(require_auth), redo: int = 0
+):
+    from src.modules.pmc import database as pmc_db
+    from src.modules.pmc.interview_script import (
+        INTERVIEW_LENGTH_CAP_MINUTES,
+        INTERVIEW_TARGET_MINUTES,
+        pre_interview_brief,
+        quantitative_by_section,
+        topic_areas,
+    )
+
+    org_id = user["organization_id"]
+    accepted = pmc_db.get_canonical_pmc(org_id)
+    draft = pmc_db.get_latest_draft(org_id)
+
+    # ?redo=1 forces the prep page even when an accepted PMC exists, so the
+    # owner can run a fresh interview. Submitting will create a new draft;
+    # accepting that draft will supersede the current canonical.
+    if redo:
+        return templates.TemplateResponse(
+            request=request,
+            name="pmc_prep.html",
+            context={
+                "user": user, "org": _get_org(org_id),
+                "brief": pre_interview_brief(),
+                "topics": topic_areas(),
+                "form_sections": quantitative_by_section(),
+                "previous_quantitative": (accepted or {}).get("quantitative", {}),
+                "target_minutes": INTERVIEW_TARGET_MINUTES,
+                "cap_minutes": INTERVIEW_LENGTH_CAP_MINUTES,
+                "active_page": "pmc",
+                "is_redo": True,
+            },
+        )
+
+    if draft:
+        return templates.TemplateResponse(
+            request=request,
+            name="pmc_review.html",
+            context={
+                "user": user, "org": _get_org(org_id),
+                "pmc": draft, "active_page": "pmc",
+                "is_canonical": False,
+            },
+        )
+    if accepted:
+        return templates.TemplateResponse(
+            request=request,
+            name="pmc_review.html",
+            context={
+                "user": user, "org": _get_org(org_id),
+                "pmc": accepted, "active_page": "pmc",
+                "is_canonical": True,
+            },
+        )
+    # No PMC yet — show prep page.
+    return templates.TemplateResponse(
+        request=request,
+        name="pmc_prep.html",
+        context={
+            "user": user, "org": _get_org(org_id),
+            "brief": pre_interview_brief(),
+            "topics": topic_areas(),
+            "form_sections": quantitative_by_section(),
+            "target_minutes": INTERVIEW_TARGET_MINUTES,
+            "cap_minutes": INTERVIEW_LENGTH_CAP_MINUTES,
+            "active_page": "pmc",
+        },
+    )
+
+
+@router.post("/pmc/submit", response_class=HTMLResponse)
+async def pmc_submit(
+    request: Request, user: dict = Depends(require_auth)
+):
+    """Accept a filled-in pre-interview form + a pasted transcript.
+
+    Atomically:
+      1. Create an interview session (status=transcript_pasted).
+      2. Run generate_pmc_from_transcript() to produce the markdown.
+      3. Insert a 'draft' PMC row pointing at the session.
+      4. Redirect owner to /business/pmc/ for review.
+    """
+    from src.modules.pmc import database as pmc_db
+    from src.modules.pmc.interview_script import quantitative_questions
+    from src.modules.pmc.transcript_to_pmc import generate_pmc_from_transcript
+
+    form = await request.form()
+    transcript = (form.get("transcript") or "").strip()
+    if not transcript:
+        from src.modules.pmc.interview_script import quantitative_by_section
+        return templates.TemplateResponse(
+            request=request,
+            name="pmc_prep.html",
+            context={
+                "user": user, "org": _get_org(user["organization_id"]),
+                "error": "Paste the interview transcript before submitting.",
+                "form_sections": quantitative_by_section(),
+                "active_page": "pmc",
+            },
+            status_code=400,
+        )
+
+    quantitative = {
+        q.key: (form.get(f"q_{q.key}") or "").strip()
+        for q in quantitative_questions()
+    }
+
+    org_id = user["organization_id"]
+    session_id = pmc_db.create_session(org_id, voice_provider="manual_paste")
+    pmc_db.complete_session_with_transcript(session_id, transcript)
+
+    qualitative_md, meta = generate_pmc_from_transcript(quantitative, transcript)
+    pmc_id = pmc_db.create_pmc_draft(
+        organization_id=org_id,
+        qualitative_md=qualitative_md,
+        quantitative=quantitative,
+        transcript_text=transcript,
+        interview_session_id=session_id,
+        generator_model=meta["model"],
+        generator_prompt_version=meta["prompt_version"],
+        script_version=meta["script_version"],
+        created_by_user_id=user.get("id"),
+    )
+    logger.info(f"PMC draft {pmc_id} created for org {org_id} via session {session_id}")
+    return RedirectResponse(url="/business/pmc/", status_code=303)
+
+
+@router.post("/pmc/save")
+async def pmc_save(
+    request: Request, user: dict = Depends(require_auth)
+):
+    """Owner edits the draft (qualitative_md inline + quantitative form fields)."""
+    from src.modules.pmc import database as pmc_db
+    from src.modules.pmc.interview_script import quantitative_questions
+
+    form = await request.form()
+    pmc_id = int(form.get("pmc_id") or 0)
+    pmc = pmc_db.get_pmc(pmc_id)
+    if not pmc or pmc["organization_id"] != user["organization_id"]:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+
+    qualitative_md = form.get("qualitative_md")
+    quantitative = {
+        q.key: (form.get(f"q_{q.key}") or "").strip()
+        for q in quantitative_questions()
+    }
+    pmc_db.update_pmc_draft(
+        pmc_id, qualitative_md=qualitative_md, quantitative=quantitative
+    )
+    return RedirectResponse(url="/business/pmc/", status_code=303)
+
+
+@router.post("/pmc/accept")
+async def pmc_accept(
+    request: Request, user: dict = Depends(require_auth)
+):
+    """Owner accepts the draft -> becomes canonical. Prior accepted PMC superseded."""
+    from src.modules.pmc import database as pmc_db
+
+    form = await request.form()
+    pmc_id = int(form.get("pmc_id") or 0)
+    pmc = pmc_db.get_pmc(pmc_id)
+    if not pmc or pmc["organization_id"] != user["organization_id"]:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+
+    pmc_db.accept_pmc(pmc_id, user_id=user.get("id"))
+    logger.info(f"PMC {pmc_id} accepted by user {user.get('id')} for org {user['organization_id']}")
+    return RedirectResponse(url="/business/pmc/", status_code=303)
+
+
+@router.post("/pmc/restart")
+async def pmc_restart(user: dict = Depends(require_auth)):
+    """Owner wants to redo the interview. Doesn't delete the canonical PMC —
+    redirects to the prep page (?redo=1 forces prep even when canonical exists).
+    Submitting will create a new draft, which when accepted will supersede the
+    current canonical."""
+    return RedirectResponse(url="/business/pmc/?redo=1", status_code=303)

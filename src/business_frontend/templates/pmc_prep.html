@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Marketing Profile{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="h2">{% if is_redo %}Redo your marketing interview{% else %}Set up your marketing profile{% endif %}</h1>
+  <p class="text-muted mb-0">
+    The marketing profile is the canonical source every Amplora agent reads from when writing
+    posts, replying to reviews, and updating your business listings. Get it right once; the
+    system uses it everywhere.
+  </p>
+</div>
+
+{% if error %}
+<div class="alert alert-danger mt-4">{{ error }}</div>
+{% endif %}
+
+<!-- ── What to expect ────────────────────────────────────────── -->
+<div class="row mt-4">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title mb-0">Before your interview</h3>
+      </div>
+      <div class="card-body">
+        <p>
+          Estimated time: <strong>about {{ target_minutes }} minutes</strong>
+          (we won't go past <strong>{{ cap_minutes }}</strong>).
+        </p>
+        <p>We'll cover the following topics during the voice call:</p>
+        <ul>
+          {% for topic in topics %}
+          <li>{{ topic }}</li>
+          {% endfor %}
+        </ul>
+        <p class="text-muted mb-0">
+          There are no wrong answers. We can pause whenever you need to think.
+          Filling the form below in advance keeps the conversation focused on the parts
+          that only <em>you</em> can answer — who you are, who you serve, what you want
+          to grow, and what makes you different.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<form method="post" action="/business/pmc/submit" class="mt-4">
+
+<!-- ── Step 1: Quantitative form, grouped by section ─────────── -->
+<h2 class="h3 mt-4 mb-3">Step 1 — Tell us the basics</h2>
+
+{% for section_title, questions in form_sections %}
+<div class="card mb-3">
+  <div class="card-header">
+    <h3 class="card-title mb-0">{{ section_title }}</h3>
+  </div>
+  <div class="card-body">
+    {% for q in questions %}
+    <div class="mb-3">
+      <label class="form-label" for="q_{{ q.key }}">
+        <strong>{{ q.prompt }}</strong>
+      </label>
+      {% set prev = previous_quantitative.get(q.key, "") if previous_quantitative else "" %}
+      {% if q.key in (
+            "services_and_prices", "hours", "top_3_competitors",
+            "current_marketing_spend", "marketing_history_quick",
+            "owner_channel_comfort", "marketing_permissions",
+            "photos_and_assets", "current_offers", "priority_services_quick",
+            "preferred_contact_methods"
+         ) %}
+      <textarea
+        class="form-control"
+        name="q_{{ q.key }}"
+        id="q_{{ q.key }}"
+        rows="4"
+      >{{ prev }}</textarea>
+      {% else %}
+      <input
+        type="text"
+        class="form-control"
+        name="q_{{ q.key }}"
+        id="q_{{ q.key }}"
+        value="{{ prev }}"
+      >
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endfor %}
+
+<!-- ── Step 2: Transcript paste (W2.1 manual) ────────────────── -->
+<h2 class="h3 mt-5 mb-3">Step 2 — Have your interview</h2>
+<div class="card mb-5">
+  <div class="card-body">
+    <p class="text-muted">
+      Paste the full transcript of your conversation below. Once you submit,
+      we'll generate a draft of your marketing profile for you to review.
+    </p>
+    <p class="text-muted small">
+      (When voice is wired in W2.2, this paste field is replaced by a "Schedule
+      your call" button. The rest of the flow is the same.)
+    </p>
+    <textarea
+      name="transcript"
+      class="form-control font-monospace"
+      rows="14"
+      placeholder="Paste full interview transcript here..."
+    ></textarea>
+  </div>
+  <div class="card-footer text-end">
+    <button type="submit" class="btn btn-primary">
+      Generate marketing profile
+    </button>
+  </div>
+</div>
+</form>
+{% endblock %}

@@ -43,6 +43,7 @@ def init_all_tables() -> None:
     from src.modules.events import database as events_db
     from src.modules.costs.tracker import init_cost_table
     from src.modules.organizations import database as orgs_db
+    from src.modules.pmc import database as pmc_db
     from src.modules.publishers import database as publishers_db
     from src.business_frontend import auth as biz_auth
     from src.modules.sponsored import database as sponsored_db
@@ -66,6 +67,9 @@ def init_all_tables() -> None:
     # publisher_revenue_share. Must come AFTER organizations + publishers
     # because of FK references.
     billing_db.init_table()
+    # W2: Amplora PMC — product_marketing_contexts + pmc_interview_sessions.
+    # Must come AFTER organizations because of FK references.
+    pmc_db.init_table()
 
     # Seed default publishers (idempotent)
     publishers_db.seed_publishers()
