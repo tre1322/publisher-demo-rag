@@ -2,7 +2,6 @@
 
 import logging
 import re
-from datetime import datetime
 
 from src.core.database import get_connection
 

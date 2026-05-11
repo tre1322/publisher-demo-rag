@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Dashboard{% endblock %} — Main Street OS</title>
+    <title>{% block title %}Amplora{% endblock %} — Main Street OS</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0/dist/css/tabler.min.css">
     <style>
         .nav-link-icon { width: 1.5rem; }
@@ -24,10 +24,6 @@
                 </h1>
                 <div class="collapse navbar-collapse" id="sidebar-menu">
                     <ul class="navbar-nav pt-lg-3">
-                        <li class="nav-item"><a class="nav-link {% if active_page == 'dashboard' %}active{% endif %}" href="/business/"><span class="nav-link-icon">📊</span> <span class="nav-link-title">Dashboard</span></a></li>
-                        <li class="nav-item"><a class="nav-link {% if active_page == 'analytics' %}active{% endif %}" href="/business/analytics"><span class="nav-link-icon">📈</span> <span class="nav-link-title">Analytics</span></a></li>
-                        <li class="nav-item"><a class="nav-link {% if active_page == 'ads' %}active{% endif %}" href="/business/ads"><span class="nav-link-icon">📢</span> <span class="nav-link-title">My Ads</span></a></li>
-                        <li class="nav-item"><a class="nav-link {% if active_page == 'sponsored' %}active{% endif %}" href="/business/sponsored"><span class="nav-link-icon">⭐</span> <span class="nav-link-title">Sponsored Answers</span></a></li>
                         <li class="nav-item"><a class="nav-link {% if active_page == 'pmc' %}active{% endif %}" href="/business/pmc/"><span class="nav-link-icon">🧭</span> <span class="nav-link-title">Marketing Profile</span></a></li>
                         <li class="nav-item"><a class="nav-link {% if active_page == 'billing' %}active{% endif %}" href="/business/billing"><span class="nav-link-icon">💳</span> <span class="nav-link-title">Billing</span></a></li>
                         <li class="nav-item"><a class="nav-link {% if active_page == 'settings' %}active{% endif %}" href="/business/settings"><span class="nav-link-icon">⚙️</span> <span class="nav-link-title">Settings</span></a></li>
