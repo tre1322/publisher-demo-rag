@@ -1,207 +1,177 @@
-# Amplora W1 → W2 Handoff
+# Amplora — Phase 1 handoff (next session entry point)
 
-**Branch / worktree:** `zealous-ride-704e86`
-**As of:** 2026-05-09
-**Plan reference:** `~/.claude/plans/for-project-amplora-we-cozy-corbato.md`
+**Last touched:** 2026-05-11
+**Branch:** `claude/vibrant-wing-11040d` (W2 branch, built on top of W1)
+**Worktree:** `C:\Users\trevo\publisher-demo-rag\popular-network-demo\.claude\worktrees\vibrant-wing-11040d`
+**Plan file:** `~/.claude/plans/for-project-amplora-we-cozy-corbato.md`
 
 ---
 
 ## TL;DR
 
-W1 (multi-tenant foundation) is shipped and smoke-green. Two small finishing items remain (10-line policy decision + 10-minute manual Stripe click-through). W2 (voice interview agent) is the next workstream and is unblocked except for two design decisions Trevor still needs to make.
+W1 (billing) + W2.1 (PMC text pipeline + interview script v1.2.0 + prompt v2 with STRATEGIC SUMMARY) shipped. Local app scoped to Amplora-only (RAG/ingestion/Vision/publisher news moved to a separate server). End-to-end click-through verified by Trevor: admin → invite → register → Marketing Profile page renders correctly.
+
+**Next move:** real-LLM click-through with a realistic mock transcript to validate v2 prompt output quality before W3 builds on it.
 
 ---
 
-## What's done (W1)
+## Three commits on this branch (newest first)
 
-The multi-tenant billing foundation. Three new SQLite tables, a Stripe webhook, an invite-only attribution policy, business-facing Stripe Checkout, and an admin billing audit view.
-
-### Code (the file map)
-
-```
-src/modules/billing/
-├── __init__.py                 # module marker
-├── database.py                 # subscriptions / tier_history / publisher_revenue_share + CRUD
-├── attribution.py              # attribute_publisher_at_signup() — invite-only policy
-├── stripe_webhook.py           # /webhooks/stripe + testable apply_event(dict)
-├── stripe_checkout.py          # build_checkout_session_params() (pure) + create_checkout_session()
-└── policy.py                   # PAST_DUE_GRACE_DAYS / PAST_DUE_DOWNGRADE_MODE — TREVOR TO FILL
-
-src/business_frontend/
-├── routes.py                   # +/billing, /billing/checkout, /billing/success, /billing/cancel
-└── templates/
-    ├── base.html               # + Billing nav item
-    ├── billing.html            # tier picker + current state + history
-    └── billing_success.html    # auto-refreshes only while sub is None (race-tolerant)
-
-src/admin_frontend/
-├── routes.py                   # +/admin/billing/{org_id} (HTML) + /admin/api/billing/{org_id} (JSON)
-└── templates/
-    └── billing_detail.html     # full per-org audit view
-
-scripts/
-└── smoke_w1_billing.py         # 19 assertions, 9 sections, hermetic tmp DB
-```
-
-Touched but not new: `src/core/database.py` (init wiring), `src/chatbot.py` (router mount), `pyproject.toml` (`stripe>=11.0.0`), `.env.example` (5 new env vars).
-
-### Decisions encoded in the code
-
-| Decision | Choice | Where |
+| Commit | What | Lines |
 |---|---|---|
-| Billing processor | **Stripe** | `pyproject.toml`, `stripe_webhook.py`, `stripe_checkout.py` |
-| Tier names | `starter` / `growth` / `concierge` | `billing/database.py:KNOWN_TIERS`, Stripe Price metadata.tier MUST match |
-| Attribution policy | invite-only; mismatch raises | `billing/attribution.py:75-138` |
-| Geography enforcement | deferred to county-licensing | TODO block in `billing/attribution.py:99-128` |
-| Past-due policy | **NOT YET** — see open items | `billing/policy.py:32, 43` |
+| `756018d` | Scope down to Amplora-only (RAG/ingestion/news removed) | -37,897 net |
+| `4bcf546` | W2.1 PMC pipeline (interview script v1.2.0, prompt v2) | +2,224 |
+| `cf42f41` | W1 multi-tenant billing foundation | +2,195 |
 
-### How to run the smoke test
+`bfc1ea2` = master tip we branched from.
 
-```
-uv run python scripts/smoke_w1_billing.py
-```
+---
 
-Hermetic — uses a tmp DB, never touches `data/articles.db`. Should print `=== W1 smoke PASSED ===` after 19 green assertions across 9 sections.
+## How to boot + click through
 
-### How to run the live app
-
-```
+```powershell
+cd C:\Users\trevo\publisher-demo-rag\popular-network-demo\.claude\worktrees\vibrant-wing-11040d
 uv run python src/chatbot.py
 ```
 
-Boots at `http://localhost:7860`. The 7 W1 routes register automatically; you'll see `Stripe webhook mounted at /webhooks/stripe` in the logs. Without `STRIPE_*` env vars set, the webhook returns 503 (intentional) but the app boots fine.
+App boots in ~1s, binds `0.0.0.0:8080`. `.env` must have `ANTHROPIC_API_KEY` for live PMC generation; the rest is optional.
+
+**Click path:**
+
+1. `http://localhost:8080/admin/cottonwood/main-street` → basic auth `admin` / `admin` → publisher-scoped admin.
+2. Create invite (Westbrook Auto, tier `growth`) → copy the invite link.
+3. Open invite link in **incognito** → register a business (any email + password).
+4. After register, lands on `/business/pmc/` — the Marketing Profile page.
+5. Fill the 23-field form (5 sections), paste a transcript at the bottom, submit.
+6. PMC draft renders → review/edit → accept.
+
+For the admin URL with Pipestone instead: `/admin/pipestone/main-street`.
 
 ---
 
-## Open items on W1 (NOT blocking W2)
+## What's working (verified)
 
-### 1. Trevor's contribution: past-due policy constants
+- ✅ W1 + W2 smoke tests green (19/19 + 38/38)
+- ✅ `ruff check` clean
+- ✅ App boots, all surviving routes return correct codes
+- ✅ End-to-end click-through (admin invite → register → PMC page)
+- ✅ Form renders 23 fields grouped into 5 sections
+- ✅ PMC schema invariants (one accepted per org, supersession atomic)
 
-**File:** `src/modules/billing/policy.py`
-**Lines:** 32 (`PAST_DUE_GRACE_DAYS`) and 43 (`PAST_DUE_DOWNGRADE_MODE`)
+---
 
-```python
-PAST_DUE_GRACE_DAYS: int | None = None       # set me
-PAST_DUE_DOWNGRADE_MODE: str | None = None   # one of: "freeze" | "pause" | "cancel"
+## What's open
+
+### 1. (HIGH) Real-LLM click-through never run
+
+The PMC pipeline has been smoke-tested with a `FakeAnthropicClient` only — we've never seen what Claude actually produces against the v2 prompt + script v1.2.0. **This is the highest-information next step.** Until we look at real output, every assumption about whether the STRATEGIC SUMMARY synthesis is decisive, whether AGENT NOTEs help, whether the [NEEDS REVIEW] flag triggers properly, is unvalidated.
+
+**Recommended flow:** generate a realistic ~2000-word Westbrook Auto transcript covering the 21 voice questions, paste into the form, see the PMC, critique together. Trevor's CMO-tier review (the 2026-05-10 conversation that produced v1.2.0) is the bar for what the output should look like.
+
+### 2. (LOW) W1 past-due policy constants still None
+
+`src/modules/billing/policy.py:32, 43` — `PAST_DUE_GRACE_DAYS` and `PAST_DUE_DOWNGRADE_MODE` are `None`. Until set, `assert_past_due_policy()` raises (blocks any cron sweeper). Webhook itself unaffected.
+
+Recommended defaults: `7` + `"freeze"`. ~2-minute fix.
+
+### 3. (LOW) Manual Stripe test-mode click-through never run
+
+Full W1 round-trip with real Stripe test keys. Documented in W1 ship log at `~/.claude/projects/C--Users-trevo-publisher-demo-rag/memory/project_amplora_w1_shipped.md`. ~10 min if Stripe test account is ready.
+
+---
+
+## What to do next (priority order)
+
+1. **Real-LLM click-through.** See above. Generate mock transcript, paste, critique. ~30 min.
+2. **W3 — Marketing plan generator.** Reads STRATEGIC SUMMARY → produces Marketing Plan view (audience, value prop, channel goals, monthly themes, switching incentives). 1-2 days. Highest leverage next workstream — it's where the system finally outputs something the owner sees as "their marketing plan."
+3. **W2.2 — Voice integration** (Twilio or LiveKit). Best after #1 + #2 so we know what the text path actually produces and what the plan consumes.
+4. Past-due policy constants (`policy.py`).
+5. W4 — Approval queue + scheduler (depends on W3).
+
+---
+
+## Critical files / locations
+
+**Plan + strategy:**
+- `~/.claude/plans/for-project-amplora-we-cozy-corbato.md` — canonical Phase 1 plan
+- `popular-network-demo/docs/amplora_business_plan.md`
+- `popular-network-demo/docs/amplora_phases.md`
+- `popular-network-demo/docs/amplora_partner_brief.md`
+- `popular-network-demo/docs/amplora_pitch_script.md`
+
+**W1 (billing):**
+- `src/modules/billing/database.py` — schema + CRUD
+- `src/modules/billing/stripe_webhook.py` — webhook
+- `src/modules/billing/stripe_checkout.py` — checkout session
+- `src/modules/billing/attribution.py` — invite-only attribution
+- `src/modules/billing/policy.py` — **past-due policy: Trevor's open slot**
+- `scripts/smoke_w1_billing.py` — 19 hermetic assertions
+
+**W2.1 (PMC):**
+- `src/modules/pmc/interview_script.py` — **interview script v1.2.0** (21 voice + 23 form questions, 5 form sections, 8-decision plan framework). Trevor's CMO contributions encoded.
+- `src/modules/pmc/transcript_to_pmc.py` — prompt v2 with STRATEGIC SUMMARY block (12 fields)
+- `src/modules/pmc/database.py` — schema + CRUD + supersession state machine
+- `src/business_frontend/templates/pmc_prep.html` — 5-section form + transcript paste
+- `src/business_frontend/templates/pmc_review.html` — review/edit/accept
+- `scripts/smoke_w2_pmc.py` — 38 hermetic assertions
+
+**App entry + routing:**
+- `src/chatbot.py` — FastAPI app (93 lines, Amplora-only)
+- `src/core/database.py` — `init_all_tables` (Amplora tables only)
+- `src/admin_frontend/routes.py` — invite creation + billing audit
+- `src/business_frontend/routes.py` — login/register/billing/pmc/settings
+- `src/business_frontend/templates/base.html` — 3-item nav (Marketing Profile / Billing / Settings)
+
+---
+
+## Ground rules (Trevor's non-negotiables — from global CLAUDE.md)
+
+- **Test before handoff.** Smoke + real path before declaring done. `python -c 'import x'` is not testing.
+- **Verify the user hits the file I edited.** Multi-host deploys / env-var defaults / filename mismatch can route around your edit.
+- **Disabled-visible > hidden-until-ready** for UI chrome. Failures should be diagnosable, not invisible.
+
+---
+
+## Decisions encoded (don't relitigate without cause)
+
+- **Decision 1 (billing processor):** Stripe.
+- **Decision 2 (interview tone):** warm-personal.
+- **Decision 3 (interview length cap):** adaptive, 35m target, 60m hard cap.
+- **Tier names:** `starter` / `growth` / `concierge`. Stripe Price `metadata.tier` MUST match.
+- **Attribution policy v1:** invite-only. Self-serve raises ValueError. Mismatch raises.
+- **Geography enforcement:** deferred to future `publisher_county_licenses` schema.
+- **Pre-interview prep:** required (Trevor 2026-05-09 — "we will definitely let them know them before they start").
+- **PMC has two layers:** STRATEGIC SUMMARY (12 fields, decisive synthesis) + question-by-question sections (with AGENT NOTE on each). Summary is the contract with W3 plan generator.
+
+---
+
+## How to verify the world hasn't rotted (5 minute check)
+
+```bash
+# Smoke
+uv run python scripts/smoke_w1_billing.py     # expect 19/19 PASSED
+uv run python scripts/smoke_w2_pmc.py         # expect 38/38 PASSED
+
+# Lint
+uv run ruff check src/ scripts/               # expect: All checks passed
+
+# Boot
+uv run python src/chatbot.py                  # expect: Uvicorn on 0.0.0.0:8080 in ~1s
+
+# Hit the routes
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/                 # 303
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/business/login   # 200
+curl -s -o /dev/null -w "%{http_code}\n" -u admin:admin http://localhost:8080/admin/main-street  # 200
 ```
 
-**Recommended defaults** (if you don't want to think about it now): `7` + `"freeze"`.
-
-**Why it matters:** when a Stripe webhook reports `invoice.payment_failed`, the subscription rolls to `past_due`. The grace period decides how many days the business keeps service before we downgrade. The mode decides what "downgrade" means:
-- `"freeze"` — stop drafting new posts, keep existing content + chatbot answers visible (network-friendly)
-- `"pause"` — yank the business from chatbot answers entirely (revenue-hard, network-hostile)
-- `"cancel"` — flip status to canceled (harshest, same UX as deletion)
-
-**Until set:** `assert_past_due_policy()` raises `RuntimeError`, blocking any future cron/sweeper that acts on past-due subs. Webhook itself is unaffected.
-
-### 2. Manual Stripe test-mode click-through
-
-The smoke test verifies the parameter shape and webhook event handling, but nothing has yet exercised a real Stripe round-trip. To close the loop:
-
-1. Create a Stripe **test-mode** account (or use an existing one) and get `sk_test_*`.
-2. Create 3 recurring Prices in Stripe (for $99, $299, $499 — amounts arbitrary in test mode) and set `metadata.tier` on each to `starter`, `growth`, `concierge` respectively.
-3. Set in `.env`:
-   ```
-   STRIPE_API_KEY=sk_test_...
-   STRIPE_PRICE_STARTER=price_...
-   STRIPE_PRICE_GROWTH=price_...
-   STRIPE_PRICE_CONCIERGE=price_...
-   ```
-4. Run `stripe listen --forward-to localhost:7860/webhooks/stripe` in a side terminal — it prints a `whsec_*` for `STRIPE_WEBHOOK_SECRET`.
-5. Boot the app: `uv run python src/chatbot.py`
-6. Generate an invite: visit `/admin` (basic-auth `admin`/`$ADMIN_PASSWORD`) → Main Street OS section → create an invite under `Cottonwood County Citizen` or `Pipestone Star`.
-7. Open the invite URL in an incognito window: `http://localhost:7860/business/register?invite=<code>` — register a test business.
-8. After registration, visit `/business/billing` → click **Select** on the Growth tier.
-9. Complete Stripe Checkout with `4242 4242 4242 4242` (test card).
-10. Watch the `stripe listen` terminal — you should see `customer.subscription.created` + `invoice.payment_succeeded` forward to the webhook.
-11. Refresh `/business/billing` — the page should show `Tier: Growth, Status: Active`.
-12. Verify in admin: `/admin/billing/<org_id>` should show the subscription row, the revenue_share window, and the tier_history row(s).
-
-**Estimated time:** 10 minutes if you have a Stripe test account ready, 20-30 if you have to create one.
-
 ---
 
-## Latent bug found and queued
+## Memory entries that document this work
 
-`src/modules/advertisements/search.py:340` — `AD_TOOLS_SCHEMA = get_ad_tools_schema()` runs at *import time* and queries the `advertisements` table. This crashes `init_all_tables()` on a truly empty DB because the import side-effect fires before `ads_db.init_table()`. Production has always had the table from prior deploys, masking it.
+- `project_amplora.md` — strategic context (Amplora rebrand, three-product platform)
+- `project_amplora_implementation_plan.md` — Phase 1 plan + workstream status table
+- `project_amplora_w1_shipped.md` — W1 ship log
+- `project_amplora_w2_1_shipped.md` — W2.1 ship log
+- `project_amplora_scope_reduction.md` — this latest commit (756018d)
 
-The W1 smoke worked around it by calling `orgs / publishers / billing` `init_table()` directly. A separate task chip is queued to fix via lazy initialization (defer schema computation until first use, or `try/except OperationalError` and return `[]`).
-
-This is **not** a W1 regression — it's been latent the whole time. Just a heads-up that fresh-DB bootstrap currently requires this workaround.
-
----
-
-## Next: W2 — Voice interview agent
-
-### Goal
-
-A 30-45 minute AI voice call produces the canonical *Product Marketing Context* (`pmc.md`) for each business. Every downstream agent (plan generator, content drafter, GBP manager, review responder) reads from `pmc.md`. Get it right, the system handles 5 customers the same way it handles 500.
-
-### Scope (per the plan)
-
-- Inbound voice call (Twilio or LiveKit) → streaming transcription → conversational LLM agent following an interview script
-- Output: structured markdown file `pmc.md` per business — hours, services, prices, voice/tone, switching incentives, photos, owner story, target customers, geographic territory
-- Owner reviews the draft in the dashboard, edits inline, accepts → file becomes canonical input
-
-### Decisions you still need to make (blockers)
-
-- **Decision 2 — Interview tone**: warm-personal ("Tell me how you got into the business — I want to get this right") or efficient-professional ("I have 12 questions about your operation; this should take 35 minutes")? Affects script + voice model choice.
-- **Decision 3 — Interview length cap**: hard 45 min (forces brevity, frustrates verbose owners) or adaptive (capped at 60 min, agent narrates its own pacing)?
-
-### Things W2 inherits from W1 (zero re-work)
-
-- The `organizations` row is already created at registration (Main Street OS register flow). W2 reads it, calls the business owner, writes `pmc.md`.
-- No schema dependency. W2 will likely add a `pmc_drafts` table or filesystem path; that's a W2 internal design decision.
-- The auth + session cookie story is solved — W2's review-and-edit UI just needs `Depends(require_auth)` like the existing `/business/*` routes.
-
-### Risk register copied from the plan
-
-1. **Interview brittleness** — if the agent loses the thread, `pmc.md` is garbage and every downstream agent inherits it. Mitigation: scripted skeleton + LLM flexibility, NOT free-form LLM. Owner-review gate before `pmc.md` is canonical.
-2. **Voice provider lock-in** — Twilio vs LiveKit pick. Twilio is the safer "boring" pick; LiveKit is faster and more modern. Probably want to prototype with whichever is faster to spin up.
-3. **Cost per interview** — if streaming transcription + LLM round-trips run hot, a 45-minute call could be $5-10. At 5 pilot customers that's noise; at 500 customers it's $5k/mo and worth right-sizing.
-
----
-
-## Other open W1 items (not blocking)
-
-- Stripe Customer Portal integration — when a business needs to update their card or download invoices, they should hit `https://billing.stripe.com/p/login/...` rather than building it in-app. ~30 min add when you want it.
-- Quarterly settlement script — there's no automation yet for "generate the publisher payout CSV at end of quarter." `/admin/api/billing/{org_id}` returns the JSON each org needs; a 50-line script in `scripts/generate_settlement_csv.py` would aggregate it. Q3 2026 problem.
-- Past-due sweeper cron — once Trevor sets `policy.py`, write a cron job that selects past_due subs older than `PAST_DUE_GRACE_DAYS` and applies the chosen `PAST_DUE_DOWNGRADE_MODE`. Until then, intentionally absent.
-
----
-
-## Files in this worktree changed but uncommitted
-
-```
-modified:   .env.example
-modified:   pyproject.toml
-modified:   src/admin_frontend/routes.py
-modified:   src/business_frontend/routes.py
-modified:   src/business_frontend/templates/base.html
-modified:   src/chatbot.py
-modified:   src/core/database.py
-
-new file:   handoff.md  ← this file
-new file:   scripts/smoke_w1_billing.py
-new file:   src/admin_frontend/templates/billing_detail.html
-new file:   src/business_frontend/templates/billing.html
-new file:   src/business_frontend/templates/billing_success.html
-new file:   src/modules/billing/__init__.py
-new file:   src/modules/billing/attribution.py
-new file:   src/modules/billing/database.py
-new file:   src/modules/billing/policy.py
-new file:   src/modules/billing/stripe_checkout.py
-new file:   src/modules/billing/stripe_webhook.py
-```
-
-`uv.lock` is also touched because `stripe` was added.
-
----
-
-## Where to look first when you come back
-
-1. This file (`handoff.md`).
-2. `~/.claude/plans/for-project-amplora-we-cozy-corbato.md` — the canonical plan.
-3. `~/.claude/projects/C--Users-trevo-publisher-demo-rag/memory/project_amplora_w1_shipped.md` — full W1 ship log.
-4. `scripts/smoke_w1_billing.py` — re-run to confirm nothing rotted.
-5. `src/modules/billing/policy.py` — Trevor's open item.
+Read those before assuming things, especially the W2.1 entry — it documents the interview script v1.2.0 design decisions in full (8-decision plan framework, anti-customer phrasing, offer_boundaries, STRATEGIC SUMMARY structure).
