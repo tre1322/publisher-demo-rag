@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}Marketing Interview{% endblock %}
+
+{% block head %}
+<style>
+  /* Disabled-visible pattern (Trevor's CLAUDE.md): everything renders on first
+     paint; failures stay diagnosable. Greyed pills and muted icons communicate
+     "not yet" instead of hide-until-ready. */
+  .interview-stage {
+    display: grid;
+    gap: 1.5rem;
+    grid-template-columns: 1fr;
+  }
+  @media (min-width: 992px) {
+    .interview-stage { grid-template-columns: 2fr 1fr; }
+  }
+  .state-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.85rem;
+    border-radius: 999px;
+    background: #e9ecef;
+    color: #6c757d;
+    font-weight: 500;
+    font-size: 0.875rem;
+  }
+  .state-pill.live { background: #d1f7e6; color: #0d8050; }
+  .state-pill.error { background: #fde0e0; color: #b3261e; }
+  .state-pill.dot {
+    width: 0.55rem; height: 0.55rem; padding: 0; border-radius: 50%;
+    background: currentColor; display: inline-block;
+  }
+  .transcript-ticker {
+    background: #f8f9fa;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    max-height: 360px;
+    overflow-y: auto;
+    font-size: 0.95rem;
+    line-height: 1.5;
+  }
+  .transcript-turn { margin-bottom: 0.75rem; }
+  .transcript-turn .speaker { font-weight: 600; color: #495057; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .transcript-turn.you .speaker { color: #1565c0; }
+  .transcript-turn.agent .speaker { color: #0d8050; }
+  .progress-dots {
+    display: flex; flex-wrap: wrap; gap: 0.35rem;
+    margin: 0.5rem 0;
+  }
+  .progress-dots .dot {
+    width: 0.65rem; height: 0.65rem; border-radius: 50%;
+    background: #dee2e6;
+  }
+  .progress-dots .dot.covered { background: #0d8050; }
+  .progress-dots .dot.current { background: #1565c0; }
+  .mic-meter {
+    height: 0.4rem; background: #e9ecef; border-radius: 999px; overflow: hidden;
+  }
+  .mic-meter > .level {
+    height: 100%; background: linear-gradient(90deg, #28a745, #ffc107, #dc3545);
+    width: 0%; transition: width 80ms linear;
+  }
+  .disclosure-card { border-left: 4px solid #1565c0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="h2">Your marketing interview</h1>
+  <p class="text-muted mb-0">
+    A friendly conversation about your business. About 30 minutes — we'll cover
+    your customers, your services, what you want to grow, and what makes you
+    different.
+  </p>
+</div>
+
+<!-- ── Recording disclosure (Trevor 2026-05-11: yes/30 days) ────────── -->
+<div id="disclosure-section" class="card mt-4 disclosure-card">
+  <div class="card-body">
+    <h3 class="card-title">Before we start</h3>
+    <p>
+      This call is recorded so we can improve your marketing profile and
+      review the conversation if anything sounds off. Recordings are stored
+      securely and deleted automatically after 30 days. You can ask us to
+      delete it sooner anytime.
+    </p>
+    <label class="form-check">
+      <input type="checkbox" id="disclosure-ack" class="form-check-input">
+      <span class="form-check-label">
+        I understand this conversation is recorded and stored for up to 30 days.
+      </span>
+    </label>
+  </div>
+</div>
+
+<!-- ── Pre-call: mic + start button ────────────────────────────────── -->
+<div id="pre-call" class="card mt-3">
+  <div class="card-body">
+    <h3 class="card-title">Ready when you are</h3>
+    <p class="text-muted">
+      Click <strong>Start interview</strong> and your browser will ask for
+      microphone permission. Then your interviewer will say hello.
+    </p>
+    <div class="d-flex align-items-center gap-3 mb-2">
+      <span id="mic-state" class="state-pill">
+        <span class="dot"></span> Mic not yet active
+      </span>
+      <div class="flex-grow-1 mic-meter">
+        <div id="mic-level" class="level"></div>
+      </div>
+    </div>
+    <div class="d-flex gap-2 mt-3">
+      <button id="btn-start" type="button" class="btn btn-primary" disabled>
+        Start interview
+      </button>
+      <a href="/business/pmc/" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+    <div id="pre-call-error" class="text-danger small mt-2" style="display:none;"></div>
+  </div>
+</div>
+
+<!-- ── In-call: transcript + progress + end ────────────────────────── -->
+<div id="in-call" class="mt-3" style="display:none;">
+  <div class="interview-stage">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span id="call-state" class="state-pill">
+          <span class="dot"></span> Connecting…
+        </span>
+        <span id="call-timer" class="text-muted small">0:00</span>
+      </div>
+      <div class="card-body">
+        <div id="transcript" class="transcript-ticker">
+          <p class="text-muted small">
+            Your conversation will appear here as you talk. The interviewer
+            will speak first — give it a few seconds.
+          </p>
+        </div>
+      </div>
+      <div class="card-footer text-end">
+        <button id="btn-end" type="button" class="btn btn-outline-danger">
+          End interview
+        </button>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title mb-0">Coverage</h3>
+        </div>
+        <div class="card-body">
+          <p class="text-muted small mb-2">
+            Each dot is one topic. Green when we've covered it, blue while
+            we're on it.
+          </p>
+          <div id="progress-dots" class="progress-dots">
+            <!-- Filled by JS once the agent reports script size -->
+          </div>
+          <p id="weight3-remaining" class="text-muted small mt-3 mb-0"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Post-call: generating PMC ───────────────────────────────────── -->
+<div id="post-call" class="card mt-3" style="display:none;">
+  <div class="card-body text-center py-5">
+    <div class="spinner-border text-primary mb-3" role="status"></div>
+    <h3 class="card-title">Generating your marketing profile…</h3>
+    <p class="text-muted">
+      We're synthesizing what we heard. This usually takes 20–30 seconds.
+    </p>
+  </div>
+</div>
+
+<!-- LiveKit JS SDK from CDN (Day 4 will vendor to /static/js/ for production resilience).
+     Pinning to major version 2 — jsdelivr resolves to latest 2.x at request time. -->
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Connection info from server — never trust client-side overrides for these.
+  window.PMC_INTERVIEW = {
+    livekitUrl: {{ livekit_url | tojson }},
+    roomName:   {{ room_name | tojson }},
+    token:      {{ participant_token | tojson }},
+    sessionId:  {{ session_id | tojson }},
+    statusUrl:  "/business/pmc/voice/status?sid=" + encodeURIComponent({{ session_id | tojson }}),
+    redirectTo: "/business/pmc/"
+  };
+</script>
+<script src="/static/js/pmc_interview.js"></script>
+{% endblock %}

@@ -726,3 +726,331 @@ async def pmc_restart(user: dict = Depends(require_auth)):
     Submitting will create a new draft, which when accepted will supersede the
     current canonical."""
     return RedirectResponse(url="/business/pmc/?redo=1", status_code=303)
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  VOICE INTERVIEW (W2.2 — LiveKit + Claude + Deepgram + Cartesia)
+# ═══════════════════════════════════════════════════════════════════
+#
+# Flow (see plan: ~/.claude/plans/yes-ticklish-sparkle.md):
+#   POST /pmc/voice/start
+#       form data (q_*)  →  save quantitative on session
+#                      →  create LiveKit room + dispatch agent
+#                      →  redirect to /pmc/interview?sid=N
+#
+#   GET  /pmc/interview?sid=N
+#                      →  re-mint participant token (cheap)
+#                      →  render pmc_interview.html (browser joins room)
+#
+#   POST /pmc/voice/complete   (agent worker → server, HMAC-auth)
+#                      →  verify X-Agent-Callback-Token
+#                      →  generate_pmc_from_transcript()
+#                      →  create_pmc_draft()
+#                      →  return JSON; agent signals browser to redirect
+#
+#   GET  /pmc/voice/status?sid=N   (browser watchdog poll)
+#                      →  read session status, return as JSON
+
+
+@router.post("/pmc/voice/start")
+async def pmc_voice_start(
+    request: Request, user: dict = Depends(require_auth)
+):
+    """Step 1 form submit → create voice session → LiveKit room + dispatch agent.
+
+    Replaces the old paste-transcript /pmc/submit path.
+    """
+    from src.modules.pmc import database as pmc_db
+    from src.modules.pmc.interview_script import quantitative_questions
+    from src.modules.pmc.voice_callback_auth import mint_callback_token
+    from src.modules.pmc.voice_provisioning import (
+        VoiceProvisioningError,
+        is_configured,
+        start_voice_session,
+    )
+
+    if not is_configured():
+        logger.warning("Voice interview attempted but LiveKit not configured")
+        return JSONResponse(
+            {
+                "error": "voice_unconfigured",
+                "detail": (
+                    "LiveKit isn't configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, "
+                    "and LIVEKIT_API_SECRET in .env, then restart."
+                ),
+            },
+            status_code=503,
+        )
+
+    form = await request.form()
+    quantitative = {
+        q.key: (form.get(f"q_{q.key}") or "").strip()
+        for q in quantitative_questions()
+    }
+    # Sanity: require at least the business name. The pre-interview form
+    # has weight=3 fields the owner shouldn't skip.
+    if not quantitative.get("business_name"):
+        from src.modules.pmc.interview_script import (
+            INTERVIEW_LENGTH_CAP_MINUTES,
+            INTERVIEW_TARGET_MINUTES,
+            pre_interview_brief,
+            quantitative_by_section,
+            topic_areas,
+        )
+        return templates.TemplateResponse(
+            request=request,
+            name="pmc_prep.html",
+            context={
+                "user": user, "org": _get_org(user["organization_id"]),
+                "error": "Please fill in your business name before starting the interview.",
+                "brief": pre_interview_brief(),
+                "topics": topic_areas(),
+                "form_sections": quantitative_by_section(),
+                "previous_quantitative": quantitative,
+                "target_minutes": INTERVIEW_TARGET_MINUTES,
+                "cap_minutes": INTERVIEW_LENGTH_CAP_MINUTES,
+                "active_page": "pmc",
+            },
+            status_code=400,
+        )
+
+    org_id = user["organization_id"]
+    org = _get_org(org_id)
+    owner_name = user.get("name") or user.get("email") or "there"
+    org_name = (org or {}).get("name") or quantitative.get("business_name") or "your business"
+
+    # 1. Create session with voice_provider='livekit' and persist quantitative.
+    session_id = pmc_db.create_session(org_id, voice_provider="livekit")
+    pmc_db.save_session_quantitative(session_id, quantitative)
+
+    # 2. Mint a callback token the agent will return on /voice/complete.
+    callback_token = mint_callback_token(session_id, org_id)
+
+    # 3. Create the LiveKit room with metadata + dispatch the agent.
+    try:
+        await start_voice_session(
+            session_id=session_id,
+            organization_id=org_id,
+            owner_name=owner_name,
+            org_name=org_name,
+            callback_token=callback_token,
+        )
+    except VoiceProvisioningError as e:
+        logger.error("Voice provisioning failed for session %s: %s", session_id, e)
+        return JSONResponse(
+            {"error": "voice_provisioning_failed", "detail": str(e)},
+            status_code=503,
+        )
+
+    return RedirectResponse(
+        url=f"/business/pmc/interview?sid={session_id}", status_code=303
+    )
+
+
+@router.get("/pmc/interview", response_class=HTMLResponse)
+async def pmc_interview_page(
+    request: Request, user: dict = Depends(require_auth), sid: int = 0
+):
+    """Render the voice interview page (mic prompt + transcript ticker)."""
+    from src.core.config import LIVEKIT_URL
+    from src.modules.pmc import database as pmc_db
+    from src.modules.pmc.voice_provisioning import (
+        VoiceProvisioningError,
+        is_configured,
+        mint_participant_token,
+        room_name_for_session,
+    )
+
+    if not is_configured():
+        return JSONResponse(
+            {"error": "voice_unconfigured"}, status_code=503
+        )
+    if not sid:
+        return RedirectResponse(url="/business/pmc/", status_code=303)
+
+    session = pmc_db.get_session_for_org(sid, user["organization_id"])
+    if not session:
+        logger.info("Voice page denied: session=%s not found for org=%s",
+                    sid, user["organization_id"])
+        return RedirectResponse(url="/business/pmc/", status_code=303)
+    # Allow voice_awaiting (first load) and voice_in_progress (refresh during call).
+    # Completed sessions go back to /business/pmc/ where review/canonical renders.
+    if session["status"] not in {"voice_awaiting", "voice_in_progress"}:
+        return RedirectResponse(url="/business/pmc/", status_code=303)
+
+    room_name = room_name_for_session(sid)
+    identity = f"owner-{user['id']}-s{sid}"
+    display_name = user.get("name") or user.get("email") or "Owner"
+    try:
+        token = mint_participant_token(room_name, identity, display_name)
+    except VoiceProvisioningError as e:
+        logger.error("Token mint failed for session %s: %s", sid, e)
+        return JSONResponse(
+            {"error": "voice_provisioning_failed", "detail": str(e)},
+            status_code=503,
+        )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="pmc_interview.html",
+        context={
+            "user": user,
+            "org": _get_org(user["organization_id"]),
+            "livekit_url": LIVEKIT_URL,
+            "room_name": room_name,
+            "participant_token": token,
+            "session_id": sid,
+            "active_page": "pmc",
+        },
+    )
+
+
+@router.post("/pmc/voice/complete")
+async def pmc_voice_complete(request: Request):
+    """Agent worker callback — finalize the session and create the PMC draft.
+
+    Auth: HMAC-signed X-Agent-Callback-Token header (NOT cookie auth).
+    The token's payload determines which session this transcript belongs to.
+
+    Idempotent on session_id: if a draft PMC already exists for this session,
+    we return the existing draft id without re-running the LLM.
+    """
+    from src.modules.pmc import database as pmc_db
+    from src.modules.pmc.transcript_to_pmc import generate_pmc_from_transcript
+    from src.modules.pmc.voice_callback_auth import verify_callback_token
+
+    token = request.headers.get("X-Agent-Callback-Token") or ""
+    payload = verify_callback_token(token)
+    if not payload:
+        return JSONResponse(
+            {"error": "invalid_token"}, status_code=401
+        )
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "bad_json"}, status_code=400)
+
+    transcript = (body.get("transcript") or "").strip()
+    if not transcript:
+        return JSONResponse({"error": "empty_transcript"}, status_code=400)
+
+    duration_seconds = body.get("duration_seconds")
+    recording_url = body.get("recording_url")
+    partial = bool(body.get("partial", False))
+
+    session = pmc_db.get_session_for_org(
+        payload["session_id"], payload["org_id"]
+    )
+    if not session:
+        # Token verified but session doesn't exist or org mismatch — defense
+        # in depth. Don't leak whether the session existed.
+        logger.warning(
+            "voice/complete: token valid but session=%s for org=%s not found",
+            payload["session_id"], payload["org_id"],
+        )
+        return JSONResponse({"error": "session_not_found"}, status_code=404)
+
+    # Idempotency: if a draft already exists pointing at this session, return it.
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id FROM product_marketing_contexts "
+        "WHERE interview_session_id=? AND organization_id=?",
+        (session["id"], session["organization_id"]),
+    )
+    existing = cursor.fetchone()
+    conn.close()
+    if existing:
+        logger.info(
+            "voice/complete: idempotent return — draft %s already exists for session %s",
+            existing["id"], session["id"],
+        )
+        return JSONResponse(
+            {"ok": True, "pmc_id": existing["id"], "redirect_to": "/business/pmc/"},
+            status_code=200,
+        )
+
+    # Run the existing pipeline. The transcript: str blob contract is the
+    # same as the W2.1 paste path — no prompt/template changes needed.
+    quantitative = session.get("quantitative") or {}
+    try:
+        qualitative_md, meta = generate_pmc_from_transcript(quantitative, transcript)
+    except Exception as e:
+        logger.exception(
+            "generate_pmc_from_transcript failed for session %s: %s",
+            session["id"], e,
+        )
+        return JSONResponse(
+            {"error": "pmc_generation_failed", "detail": str(e)},
+            status_code=502,
+        )
+
+    pmc_db.complete_voice_session(
+        session["id"],
+        transcript_text=transcript,
+        duration_seconds=duration_seconds,
+        recording_url=recording_url,
+        partial=partial,
+    )
+    pmc_id = pmc_db.create_pmc_draft(
+        organization_id=session["organization_id"],
+        qualitative_md=qualitative_md,
+        quantitative=quantitative,
+        transcript_text=transcript,
+        interview_session_id=session["id"],
+        generator_model=meta["model"],
+        generator_prompt_version=meta["prompt_version"],
+        script_version=meta["script_version"],
+        created_by_user_id=None,  # callback is agent-initiated, not user-initiated
+    )
+    logger.info(
+        "PMC draft %s created via voice session %s (org %s)",
+        pmc_id, session["id"], session["organization_id"],
+    )
+    return JSONResponse(
+        {"ok": True, "pmc_id": pmc_id, "redirect_to": "/business/pmc/"},
+        status_code=201,
+    )
+
+
+@router.get("/pmc/voice/status")
+async def pmc_voice_status(
+    user: dict = Depends(require_auth), sid: int = 0
+):
+    """Browser watchdog poll — used if the agent's redirect data message is lost.
+
+    Returns the session status + (if completed) the PMC draft id so the
+    browser can navigate to the review page.
+    """
+    from src.modules.pmc import database as pmc_db
+
+    if not sid:
+        return JSONResponse({"error": "missing_sid"}, status_code=400)
+
+    session = pmc_db.get_session_for_org(sid, user["organization_id"])
+    if not session:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+
+    pmc_id = None
+    if session["status"] in {"voice_completed", "voice_partial"}:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id FROM product_marketing_contexts "
+            "WHERE interview_session_id=? AND organization_id=?",
+            (session["id"], session["organization_id"]),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            pmc_id = row["id"]
+
+    return JSONResponse(
+        {
+            "status": session["status"],
+            "pmc_id": pmc_id,
+            "redirect_to": "/business/pmc/" if pmc_id else None,
+        },
+        status_code=200,
+    )

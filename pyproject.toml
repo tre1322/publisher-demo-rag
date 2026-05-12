@@ -27,6 +27,15 @@ dependencies = [
     "itsdangerous>=2.1.0",
     "bcrypt>=4.1.0",
     "stripe>=11.0.0",
+    # W2.2 — voice interview stack. LiveKit Agents had a major API break
+    # at 1.0; lower bounds are pinned to the v1 line. If `uv sync` resolves
+    # something incompatible, refresh the Day 0 SDK spike before debugging.
+    "livekit-api>=1.0.0",
+    "livekit-agents>=1.0.0",
+    "livekit-plugins-anthropic>=1.0.0",
+    "livekit-plugins-deepgram>=1.0.0",
+    "livekit-plugins-cartesia>=1.0.0",
+    "livekit-plugins-silero>=1.0.0",
 ]
 
 [dependency-groups]

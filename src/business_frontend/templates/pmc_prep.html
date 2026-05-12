@@ -44,7 +44,7 @@
   </div>
 </div>
 
-<form method="post" action="/business/pmc/submit" class="mt-4">
+<form method="post" action="/business/pmc/voice/start" class="mt-4">
 
 <!-- ── Step 1: Quantitative form, grouped by section ─────────── -->
 <h2 class="h3 mt-4 mb-3">Step 1 — Tell us the basics</h2>
@@ -89,28 +89,28 @@
 </div>
 {% endfor %}
 
-<!-- ── Step 2: Transcript paste (W2.1 manual) ────────────────── -->
+<!-- ── Step 2: Voice interview (W2.2) ─────────────────────────── -->
 <h2 class="h3 mt-5 mb-3">Step 2 — Have your interview</h2>
 <div class="card mb-5">
   <div class="card-body">
-    <p class="text-muted">
-      Paste the full transcript of your conversation below. Once you submit,
-      we'll generate a draft of your marketing profile for you to review.
+    <p>
+      When you're ready, click <strong>Save and start interview</strong>.
+      We'll save your answers above, and on the next page your browser will
+      ask for microphone permission. Then your interviewer — an AI trained
+      on the questions only you can answer — will say hello.
     </p>
-    <p class="text-muted small">
-      (When voice is wired in W2.2, this paste field is replaced by a "Schedule
-      your call" button. The rest of the flow is the same.)
+    <p class="text-muted small mb-0">
+      About 30 minutes. The conversation is recorded so we can review it if
+      anything sounds off; recordings are deleted automatically after 30 days.
     </p>
-    <textarea
-      name="transcript"
-      class="form-control font-monospace"
-      rows="14"
-      placeholder="Paste full interview transcript here..."
-    ></textarea>
   </div>
-  <div class="card-footer text-end">
+  <div class="card-footer d-flex justify-content-between align-items-center">
+    <span class="text-muted small">
+      Mic not working? Phone interview support is coming soon — contact us
+      at <a href="mailto:support@amplora.app">support@amplora.app</a>.
+    </span>
     <button type="submit" class="btn btn-primary">
-      Generate marketing profile
+      Save and start interview
     </button>
   </div>
 </div>

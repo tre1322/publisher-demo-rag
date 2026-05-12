@@ -31,6 +31,10 @@ KNOWN_SESSION_STATUSES = {
     "completed",
     "failed",
     "transcript_pasted",  # W2.1 manual entry path
+    "voice_awaiting",     # W2.2 — quantitative saved, owner about to start call
+    "voice_in_progress",  # W2.2 — agent connected, call live
+    "voice_completed",    # W2.2 — agent posted transcript back
+    "voice_partial",      # W2.2 — owner dropped mid-call, partial transcript saved
 }
 KNOWN_VOICE_PROVIDERS = {"manual_paste", "twilio", "livekit"}
 
@@ -67,7 +71,11 @@ def init_table() -> None:
         )
     """)
     for col, coltype in [
-        # placeholder for future columns; keeps the migration discipline visible
+        # W2.2 — quantitative answers persisted on the session so they
+        # survive the round trip while the owner is in the voice call.
+        # The /voice/complete handler reads them back to feed
+        # generate_pmc_from_transcript().
+        ("quantitative_json", "TEXT"),
     ]:
         try:
             cursor.execute(
@@ -205,7 +213,112 @@ def get_session(session_id: int) -> dict | None:
     cursor.execute("SELECT * FROM pmc_interview_sessions WHERE id=?", (session_id,))
     row = cursor.fetchone()
     conn.close()
-    return dict(row) if row else None
+    if not row:
+        return None
+    d = dict(row)
+    # Decode quantitative_json eagerly so callers don't have to think about it.
+    if d.get("quantitative_json"):
+        try:
+            d["quantitative"] = json.loads(d["quantitative_json"])
+        except (TypeError, ValueError):
+            d["quantitative"] = {}
+    else:
+        d["quantitative"] = {}
+    return d
+
+
+# ── W2.2 voice session helpers ──────────────────────────────────────
+
+
+def save_session_quantitative(
+    session_id: int, quantitative: dict[str, Any]
+) -> None:
+    """Stash the pre-interview form answers on the session.
+
+    Called from /pmc/voice/start. The /pmc/voice/complete handler reads
+    them back to feed generate_pmc_from_transcript().
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE pmc_interview_sessions "
+        "SET quantitative_json=?, status='voice_awaiting', updated_at=? "
+        "WHERE id=?",
+        (json.dumps(quantitative), _now(), session_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def mark_session_voice_started(session_id: int) -> None:
+    """Agent has joined the room and started the conversation."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now = _now()
+    cursor.execute(
+        "UPDATE pmc_interview_sessions "
+        "SET status='voice_in_progress', started_at=COALESCE(started_at, ?), updated_at=? "
+        "WHERE id=?",
+        (now, now, session_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def complete_voice_session(
+    session_id: int,
+    transcript_text: str,
+    duration_seconds: int | None = None,
+    recording_url: str | None = None,
+    partial: bool = False,
+) -> None:
+    """Finalize a voice session after the agent posts the transcript back.
+
+    `recording_url` is the LiveKit Egress output URL (DigitalOcean Spaces).
+    `partial=True` records that the owner disconnected before the agent
+    judged the interview complete; downstream PMC generation still runs.
+    """
+    status = "voice_partial" if partial else "voice_completed"
+    conn = get_connection()
+    cursor = conn.cursor()
+    now = _now()
+    cursor.execute(
+        """
+        UPDATE pmc_interview_sessions
+           SET status=?,
+               transcript_text=?,
+               transcript_url=?,
+               duration_seconds=?,
+               ended_at=?,
+               updated_at=?
+         WHERE id=?
+        """,
+        (
+            status,
+            transcript_text,
+            recording_url,
+            duration_seconds,
+            now,
+            now,
+            session_id,
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_session_for_org(session_id: int, organization_id: int) -> dict | None:
+    """Same as get_session but enforces org ownership. Returns None on mismatch.
+
+    Used by the /voice/complete callback to ensure the HMAC-signed session_id
+    actually belongs to the org_id encoded in the same token (defense in depth).
+    """
+    s = get_session(session_id)
+    if not s:
+        return None
+    if s["organization_id"] != organization_id:
+        return None
+    return s
 
 
 # ── PMC drafts and acceptance ───────────────────────────────────────

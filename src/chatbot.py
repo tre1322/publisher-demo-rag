@@ -36,6 +36,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 import src.core.config  # noqa: E402, F401  (load .env via dotenv side-effect)
 from fastapi import FastAPI  # noqa: E402
 from fastapi.responses import RedirectResponse  # noqa: E402
+from fastapi.staticfiles import StaticFiles  # noqa: E402
 from src.core.database import init_all_tables  # noqa: E402
 
 logging.basicConfig(
@@ -84,6 +85,17 @@ def create_app() -> FastAPI:
         logger.info("Stripe webhook mounted at /webhooks/stripe")
     except Exception as e:
         logger.warning(f"Stripe webhook NOT mounted: {e}")
+
+    # ── W2.2 — static assets for the voice interview client ──────────
+    # Browser-side JS for pmc_interview.html lives in business_frontend/static.
+    # Mount last so it doesn't shadow any /business or /admin route. If the
+    # directory doesn't exist (fresh checkout pre-W2.2), skip rather than crash.
+    static_dir = _PROJECT_ROOT / "src" / "business_frontend" / "static"
+    if static_dir.is_dir():
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+        logger.info("Static assets mounted at /static (dir=%s)", static_dir)
+    else:
+        logger.warning("Static dir missing: %s — voice interview JS won't load", static_dir)
 
     return app
 

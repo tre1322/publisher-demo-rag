@@ -93,3 +93,43 @@ BRAVE_SEARCH_API_KEY = os.getenv("BRAVE_SEARCH_API_KEY", "")
 
 # Server Settings
 BASE_URL = os.getenv("BASE_URL", "http://localhost:7860")
+
+# ── W2.2 voice interview ──────────────────────────────────────────────
+# LiveKit Cloud — owner browser connects here for WebRTC. Agent worker
+# registers with this URL too. Get from the LiveKit Cloud dashboard.
+LIVEKIT_URL = os.getenv("LIVEKIT_URL", "")
+LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY", "")
+LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET", "")
+
+# Voice provider keys. STT via Deepgram Nova-3, TTS via Cartesia Sonic-2.
+DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
+CARTESIA_API_KEY = os.getenv("CARTESIA_API_KEY", "")
+# Cartesia voice id. Pick during Day 2 testing; this is the warm-personal
+# baseline. Swap by setting CARTESIA_VOICE_ID in .env.
+CARTESIA_VOICE_ID = os.getenv("CARTESIA_VOICE_ID", "a0e99841-438c-4a64-b679-ae501e7d6091")
+
+# Interview pacing. The agent's pacing rule fires at >=0.75 of this.
+PMC_INTERVIEW_TARGET_SECONDS = int(os.getenv("PMC_INTERVIEW_TARGET_SECONDS", "1800"))
+
+# Agent dispatch name. The /voice/start route dispatches by this name; the
+# worker process registers with the same name. Keep aligned.
+PMC_AGENT_NAME = os.getenv("PMC_AGENT_NAME", "amplora-pmc-interviewer")
+
+# Where the agent worker POSTs the transcript when the call ends. In dev,
+# the worker runs on the same machine as the FastAPI app so localhost works.
+# In production (Railway), set this to the internal/private URL of the app
+# service so the callback doesn't egress to the public internet.
+PMC_VOICE_CALLBACK_BASE_URL = os.getenv(
+    "PMC_VOICE_CALLBACK_BASE_URL", "http://localhost:8080"
+)
+
+# Recording — LiveKit Egress writes to DigitalOcean Spaces (S3-compatible).
+# 30-day lifecycle rule should be set on the bucket.
+PMC_VOICE_RECORDING_ENABLED = (
+    os.getenv("PMC_VOICE_RECORDING_ENABLED", "true").lower() == "true"
+)
+SPACES_ENDPOINT = os.getenv("SPACES_ENDPOINT", "")  # e.g. https://nyc3.digitaloceanspaces.com
+SPACES_ACCESS_KEY = os.getenv("SPACES_ACCESS_KEY", "")
+SPACES_SECRET_KEY = os.getenv("SPACES_SECRET_KEY", "")
+SPACES_BUCKET = os.getenv("SPACES_BUCKET", "amplora-pmc-recordings")
+SPACES_REGION = os.getenv("SPACES_REGION", "us-east-1")
