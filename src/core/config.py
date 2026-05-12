@@ -6,7 +6,12 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# override=True: in dev, .env is the source of truth. Without override, an
+# empty ANTHROPIC_API_KEY (or similar) leaked from the shell would silently
+# win over the file value and the LLM call would fail with an opaque
+# "Could not resolve authentication method" deep in the Anthropic client.
+# In prod (Railway), .env doesn't exist, so override does nothing.
+load_dotenv(override=True)
 
 # Logging configuration with timestamps
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

@@ -9,21 +9,23 @@
 
 ## TL;DR
 
-W1 (billing) + W2.1 (PMC text pipeline + interview script v1.2.0 + prompt v2 with STRATEGIC SUMMARY) shipped. Local app scoped to Amplora-only (RAG/ingestion/Vision/publisher news moved to a separate server). End-to-end click-through verified by Trevor: admin → invite → register → Marketing Profile page renders correctly.
+W1 (billing) + W2.1 PMC text pipeline shipped, then hardened from a real-LLM click-through (Westbrook Auto, 2026-05-11) into script v1.3.0 + prompt v4. Two iteration commits encoded a real prompt-engineering pattern: **ASK the owner when they're reliable narrators (services), OBSERVE the transcript when they're systematically biased (voice).** PMC contract for downstream agents is now 14 strategic fields, internally consistent. Local app scoped to Amplora-only.
 
-**Next move:** real-LLM click-through with a realistic mock transcript to validate v2 prompt output quality before W3 builds on it.
+**Next move:** W3 Marketing Plan generator. The STRATEGIC SUMMARY contract is now mature enough to read from. ~1-2 days per the plan.
 
 ---
 
-## Three commits on this branch (newest first)
+## Commits on this branch (newest first)
 
 | Commit | What | Lines |
 |---|---|---|
+| `ac94c5b` | PMC v4: VOICE field + observe-not-ask rule for owner self-description bias | +37 / -3 |
+| `d819f51` | PMC v3: MAINTAIN bucket + owner-driven AMPLIFY/MAINTAIN/MUTE classification | +60 / -14 |
 | `756018d` | Scope down to Amplora-only (RAG/ingestion/news removed) | -37,897 net |
-| `4bcf546` | W2.1 PMC pipeline (interview script v1.2.0, prompt v2) | +2,224 |
+| `4bcf546` | W2.1 PMC pipeline (interview script v1.2.0, prompt v2) — **superseded by v3+v4** | +2,224 |
 | `cf42f41` | W1 multi-tenant billing foundation | +2,195 |
 
-`bfc1ea2` = master tip we branched from.
+Plus an uncommitted dotenv `override=True` fix in `src/core/config.py:9` (will land with this handoff update). `bfc1ea2` = master tip we branched from.
 
 ---
 
@@ -51,22 +53,25 @@ For the admin URL with Pipestone instead: `/admin/pipestone/main-street`.
 
 ## What's working (verified)
 
-- ✅ W1 + W2 smoke tests green (19/19 + 38/38)
+- ✅ W1 + W2 smoke tests green (19/19 + 38/38) across v2 → v3 → v4
 - ✅ `ruff check` clean
 - ✅ App boots, all surviving routes return correct codes
 - ✅ End-to-end click-through (admin invite → register → PMC page)
 - ✅ Form renders 23 fields grouped into 5 sections
 - ✅ PMC schema invariants (one accepted per org, supersession atomic)
+- ✅ **Real-LLM click-through verified** (Westbrook Auto mock transcript through v4) — 4 PMC artifacts saved to `C:\Users\trevo\AppData\Local\Temp\westbrook_pmc_*.md`
+- ✅ **Decisiveness on AMPLIFY/MAINTAIN/MUTE** — v3 owner-classification working
+- ✅ **Voice gap detection** — v4 catches owner self-description vs. transcript evidence mismatches
+- ✅ **[NEEDS REVIEW] calibration** — fires on silence (e.g. seasonality skipped by agent) without fabrication
+- ✅ **Dotenv override** — `load_dotenv(override=True)` fixes the silent-shell-leak failure mode
 
 ---
 
 ## What's open
 
-### 1. (HIGH) Real-LLM click-through never run
+### 1. (MEDIUM) CHANNEL PRIORITY field still hedges
 
-The PMC pipeline has been smoke-tested with a `FakeAnthropicClient` only — we've never seen what Claude actually produces against the v2 prompt + script v1.2.0. **This is the highest-information next step.** Until we look at real output, every assumption about whether the STRATEGIC SUMMARY synthesis is decisive, whether AGENT NOTEs help, whether the [NEEDS REVIEW] flag triggers properly, is unvalidated.
-
-**Recommended flow:** generate a realistic ~2000-word Westbrook Auto transcript covering the 21 voice questions, paste into the form, see the PMC, critique together. Trevor's CMO-tier review (the 2026-05-10 conversation that produced v1.2.0) is the bar for what the output should look like.
+v3 + v4 testing observed CHANNEL PRIORITY producing soft synthesis like "Facebook unclear ROI but maintained." This is the same failure mode v3 fixed for services — owners can sort their channels into the same three piles (more spend / fine where they are / cut). Likely fix: add a three-way channel question to the interview script (mirror the `priority_services` pattern) + use owner's classification in the prompt. ~1 hour of work; can be done before W3 starts so W3 inherits a sturdier CHANNEL PRIORITY field.
 
 ### 2. (LOW) W1 past-due policy constants still None
 
@@ -82,9 +87,9 @@ Full W1 round-trip with real Stripe test keys. Documented in W1 ship log at `~/.
 
 ## What to do next (priority order)
 
-1. **Real-LLM click-through.** See above. Generate mock transcript, paste, critique. ~30 min.
-2. **W3 — Marketing plan generator.** Reads STRATEGIC SUMMARY → produces Marketing Plan view (audience, value prop, channel goals, monthly themes, switching incentives). 1-2 days. Highest leverage next workstream — it's where the system finally outputs something the owner sees as "their marketing plan."
-3. **W2.2 — Voice integration** (Twilio or LiveKit). Best after #1 + #2 so we know what the text path actually produces and what the plan consumes.
+1. **W3 — Marketing plan generator.** Reads STRATEGIC SUMMARY (now 14 fields, owner-validated where it matters) → produces Marketing Plan view (audience, value prop, channel goals, monthly themes, switching incentives). 1-2 days. **This is the next big workstream.** When designing W3 prompts, apply the ask-vs-observe heuristic from `feedback_amplora_prompt_patterns.md` per field.
+2. **CHANNEL PRIORITY owner-classification.** Apply the v3 priority_services pattern to channel mix. ~1 hour; do this before W3 starts so the synthesis field W3 reads is decisive.
+3. **W2.2 — Voice integration** (Twilio or LiveKit). Best after #1 so we know what the plan consumes.
 4. Past-due policy constants (`policy.py`).
 5. W4 — Approval queue + scheduler (depends on W3).
 
@@ -141,7 +146,8 @@ Full W1 round-trip with real Stripe test keys. Documented in W1 ship log at `~/.
 - **Attribution policy v1:** invite-only. Self-serve raises ValueError. Mismatch raises.
 - **Geography enforcement:** deferred to future `publisher_county_licenses` schema.
 - **Pre-interview prep:** required (Trevor 2026-05-09 — "we will definitely let them know them before they start").
-- **PMC has two layers:** STRATEGIC SUMMARY (12 fields, decisive synthesis) + question-by-question sections (with AGENT NOTE on each). Summary is the contract with W3 plan generator.
+- **PMC has two layers:** STRATEGIC SUMMARY (14 fields as of v4, decisive synthesis) + question-by-question sections (with AGENT NOTE on each). Summary is the contract with W3 plan generator.
+- **PMC field synthesis pattern is per-field ASK vs OBSERVE** (v3 + v4, 2026-05-11). Owners reliable narrators on services → ASK (priority_services classification used verbatim). Owners systematically biased on voice → OBSERVE (transcript evidence wins; gap flagged in AGENT NOTE). See `feedback_amplora_prompt_patterns.md` for the cheat sheet — apply to every new W3+ prompt that synthesizes from interview text.
 
 ---
 
