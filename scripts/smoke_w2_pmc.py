@@ -351,8 +351,8 @@ def main() -> int:
             fail(f"STRATEGIC SUMMARY field {f!r} not in prompt")
     ok(f"v2 prompt instructs all {len(STRATEGIC_SUMMARY_FIELDS)} STRATEGIC SUMMARY fields")
 
-    if GENERATOR_PROMPT_VERSION != "v3":
-        fail(f"GENERATOR_PROMPT_VERSION expected 'v3', got {GENERATOR_PROMPT_VERSION!r}")
+    if GENERATOR_PROMPT_VERSION != "v4":
+        fail(f"GENERATOR_PROMPT_VERSION expected 'v4', got {GENERATOR_PROMPT_VERSION!r}")
     ok(f"GENERATOR_PROMPT_VERSION = {GENERATOR_PROMPT_VERSION!r}")
 
     # ── Step 7: empty transcript rejected ─────────────────────────

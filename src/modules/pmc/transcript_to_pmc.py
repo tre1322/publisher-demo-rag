@@ -36,7 +36,7 @@ from src.modules.pmc.interview_script import (
 logger = logging.getLogger(__name__)
 
 
-GENERATOR_PROMPT_VERSION = "v3"
+GENERATOR_PROMPT_VERSION = "v4"
 DEFAULT_MODEL = os.getenv("PMC_MODEL", "claude-sonnet-4-20250514")
 
 
@@ -54,6 +54,18 @@ DEFAULT_MODEL = os.getenv("PMC_MODEL", "claude-sonnet-4-20250514")
 #   MAINTAIN — keep serving customers who ask, do not headline
 #   MUTE     — actively refer out or sunset
 # Adds 1 field; field count: 12 → 13.
+#
+# v4 (2026-05-11) adds VOICE. Westbrook real-LLM round 3 (with engineered
+# voice mismatch) showed the voice_and_tone AGENT NOTE parroting the
+# owner's self-description ("warm, welcoming, family-friendly") even
+# when the transcript voice was clearly dry/blunt and brand_guardrails
+# explicitly prohibited "family" language. The PMC ended up internally
+# contradictory: same document said "be warm" and "no family language."
+# v4 forces a synthesis-layer voice signal grounded in transcript
+# evidence (not the owner's self-description) and asks the prompt to
+# explicitly flag the gap when the owner's self-description disagrees.
+# Owners systematically over-warm — for VOICE we observe, not ask.
+# Adds 1 field; field count: 13 → 14.
 STRATEGIC_SUMMARY_FIELDS: list[str] = [
     "TARGET",            # who we're trying to reach (primary persona)
     "ANTI-TARGET",       # whose attention we don't want
@@ -66,6 +78,7 @@ STRATEGIC_SUMMARY_FIELDS: list[str] = [
     "SEASONALITY",       # the calendar shape
     "CONVERSION ACTION", # primary CTA + lead handling
     "COMPETITIVE FRAME", # who we differentiate against
+    "VOICE",             # actual voice from transcript (NOT self-description)
     "BRAND GUARDRAILS",  # what we never say or do
     "SUCCESS METRIC",    # owner's own definition of success
 ]
@@ -145,6 +158,27 @@ RULES — LAYER 1 (STRATEGIC SUMMARY):
      signals (margin, capacity, owner enthusiasm, funnel value) and
      flag the inference with "[NEEDS REVIEW] — owner did not classify;
      inferred from <signal>."
+
+  E. VOICE specifically — owners systematically describe themselves as
+     warmer, friendlier, and more polished than they actually sound.
+     For voice we OBSERVE, not ask.
+
+     Synthesize the VOICE field from the owner's ACTUAL TRANSCRIPT TEXT
+     across the whole interview, not from their self-description in the
+     `voice_and_tone` answer. Inspect:
+       - How they answer hard questions (clipped, warm, defensive?)
+       - Vocabulary register (technical, plain, slangy, formal)
+       - Self-deprecation, dry humor, pride, urgency markers
+       - Anything in `brand_guardrails` that prohibits a voice trait
+         (e.g. "no 'family' language" rules out a family-friendly voice
+         even if the owner described themselves that way)
+
+     If the owner's self-description in `voice_and_tone` disagrees with
+     the transcript evidence, the EVIDENCE WINS. In both the Layer 1
+     VOICE field AND the Layer 2 `voice_and_tone` AGENT NOTE, flag the
+     gap explicitly: "Owner described voice as X; transcript evidence
+     is Y; write to Y." When they agree, no special flag — just describe
+     the voice plainly.
 
 RULES — LAYER 2 (question-by-question sections):
   1. Each topic gets its own H2 section. Use the section key from the
