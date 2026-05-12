@@ -36,7 +36,7 @@ from src.modules.pmc.interview_script import (
 logger = logging.getLogger(__name__)
 
 
-GENERATOR_PROMPT_VERSION = "v2"
+GENERATOR_PROMPT_VERSION = "v3"
 DEFAULT_MODEL = os.getenv("PMC_MODEL", "claude-sonnet-4-20250514")
 
 
@@ -45,11 +45,21 @@ DEFAULT_MODEL = os.getenv("PMC_MODEL", "claude-sonnet-4-20250514")
 # and downstream agents. Synthesized from the question answers, NOT a
 # new question to the owner. Adding/removing fields here means bumping
 # GENERATOR_PROMPT_VERSION.
+#
+# v3 (2026-05-11) splits the old AMPLIFY/MUTE binary into three buckets.
+# The Westbrook real-LLM test showed the LLM correctly hedging when the
+# owner's "muted" service was actually the cash cow — a hedge the v2
+# prompt forbade. v3 acknowledges the third state operationally:
+#   AMPLIFY  — headline this, build campaigns around it
+#   MAINTAIN — keep serving customers who ask, do not headline
+#   MUTE     — actively refer out or sunset
+# Adds 1 field; field count: 12 → 13.
 STRATEGIC_SUMMARY_FIELDS: list[str] = [
     "TARGET",            # who we're trying to reach (primary persona)
     "ANTI-TARGET",       # whose attention we don't want
     "AMPLIFY",           # services/products to push hard
-    "MUTE / DO NOT PUSH",  # services we offer but don't want to grow
+    "MAINTAIN",          # cash-cow services to keep, but not headline
+    "MUTE / DO NOT PUSH",  # services to refer out or sunset
     "POSITIONING",       # one-sentence positioning statement
     "PROOF",             # the credibility evidence we lead with
     "CHANNEL PRIORITY",  # ordered channel mix recommendation
@@ -113,8 +123,28 @@ RULES — LAYER 1 (STRATEGIC SUMMARY):
      cover it, or answer was unclear), write "[NEEDS REVIEW] — short
      reason." Don't fabricate.
   D. The STRATEGIC SUMMARY is the contract with the plan generator.
-     Be decisive — "Push transmission work, mute oil changes" not
-     "could focus on transmission work potentially."
+     Be decisive.
+
+     AMPLIFY / MAINTAIN / MUTE: the owner's own classification from
+     the `priority_services` answer is authoritative. Use what they
+     said.
+
+       AMPLIFY  = services the owner placed in the "more customers"
+                  pile. Headline these — every campaign is built
+                  around them.
+       MAINTAIN = services the owner placed in the "fine where they
+                  are" pile. Keep serving customers who ask for them;
+                  do NOT headline. Usually the cash-cow or funnel
+                  services that sustain the business but aren't the
+                  growth story.
+       MUTE     = services the owner placed in the "refer out / stop
+                  offering" pile. Redirect customers who ask; do not
+                  promote.
+
+     If the owner skipped a service entirely, infer from transcript
+     signals (margin, capacity, owner enthusiasm, funnel value) and
+     flag the inference with "[NEEDS REVIEW] — owner did not classify;
+     inferred from <signal>."
 
 RULES — LAYER 2 (question-by-question sections):
   1. Each topic gets its own H2 section. Use the section key from the

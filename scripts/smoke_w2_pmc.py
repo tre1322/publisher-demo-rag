@@ -164,8 +164,8 @@ def main() -> int:
         fail("target minutes greater than cap — that's wrong")
     ok(f"target {INTERVIEW_TARGET_MINUTES}m, cap {INTERVIEW_LENGTH_CAP_MINUTES}m (Decision 3 adaptive)")
 
-    if SCRIPT_VERSION != "1.2.0":
-        fail(f"SCRIPT_VERSION expected '1.2.0', got {SCRIPT_VERSION!r}")
+    if SCRIPT_VERSION != "1.3.0":
+        fail(f"SCRIPT_VERSION expected '1.3.0', got {SCRIPT_VERSION!r}")
     ok(f"SCRIPT_VERSION = {SCRIPT_VERSION!r}")
 
     quant = quantitative_questions()
@@ -351,8 +351,8 @@ def main() -> int:
             fail(f"STRATEGIC SUMMARY field {f!r} not in prompt")
     ok(f"v2 prompt instructs all {len(STRATEGIC_SUMMARY_FIELDS)} STRATEGIC SUMMARY fields")
 
-    if GENERATOR_PROMPT_VERSION != "v2":
-        fail(f"GENERATOR_PROMPT_VERSION expected 'v2', got {GENERATOR_PROMPT_VERSION!r}")
+    if GENERATOR_PROMPT_VERSION != "v3":
+        fail(f"GENERATOR_PROMPT_VERSION expected 'v3', got {GENERATOR_PROMPT_VERSION!r}")
     ok(f"GENERATOR_PROMPT_VERSION = {GENERATOR_PROMPT_VERSION!r}")
 
     # ── Step 7: empty transcript rejected ─────────────────────────

@@ -48,6 +48,16 @@ VERSION HISTORY:
     framework drives the question set:
       who to target / what to amplify / why us / where to show up /
       when / how to convert / against whom / success target
+  1.3.0 (2026-05-11) — owner-driven service classification. Rewrote
+    `priority_services` from two-way ("amplify / don't promote") to
+    three-way ("amplify / maintain / mute"), letting the owner sort
+    their own service list rather than asking the LLM to infer the
+    bucket from indirect signals. Pairs with prompt v3, which uses
+    the owner's pile assignments verbatim and only falls back to
+    inference when the owner skipped a service. Driven by a real-LLM
+    test (Westbrook Auto, 2026-05-11) where v2's binary push/mute
+    framing forced the LLM to either fabricate decisiveness on a
+    cash-cow service or hedge against the prompt's instructions.
 """
 
 from dataclasses import dataclass, field
@@ -57,7 +67,7 @@ from enum import Enum
 #  VERSION + KNOBS
 # ──────────────────────────────────────────────────────────────────────
 
-SCRIPT_VERSION = "1.2.0"
+SCRIPT_VERSION = "1.3.0"
 
 INTERVIEW_TONE = "warm-personal"
 INTERVIEW_TARGET_MINUTES = 35
@@ -413,12 +423,18 @@ INTERVIEW_SCRIPT: list[Question] = [
     Question(
         key="priority_services",
         category=Category.GROWTH,
-        prompt="Of everything you sell or offer, what do you most want more customers for — and what do you NOT want to promote heavily?",
+        prompt=(
+            "Let's sort every service you offer into three piles. "
+            "First — which ones do you want more customers for? "
+            "Second — which ones are fine right where they are? "
+            "And third — which ones would you rather refer out or stop offering entirely?"
+        ),
         follow_up_hints=[
-            "Which services are most profitable?",
-            "Which ones are easiest for your team to deliver?",
-            "Which ones bring in repeat customers?",
-            "Anything you offer only because people expect it, but you don't really want more of it?",
+            "For the 'more customers' pile — what makes those the ones you want to grow?",
+            "For the 'fine where they are' pile — is it capacity, margin, or you just don't love that work?",
+            "For the 'refer out / stop' pile — where would those customers go instead?",
+            "Anything you offer only because people expect it, but wish you didn't?",
+            "Any service you'd love to add but don't yet?",
         ],
         weight=3,
     ),
