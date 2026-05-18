@@ -1,67 +1,44 @@
-# Use Python 3.13 slim image
+# Amplafai production image — FastAPI web app + LiveKit voice worker.
+# One image, two start commands:
+#   web    (default): uv run python src/chatbot.py            (binds $PORT)
+#   worker (override): uv run python -m src.modules.pmc.voice_agent start
+#
+# No RAG/ingestion/vision stack, no init.sh, no ChromaDB, no quadd DB.
 FROM python:3.13-slim
 
-# Set working directory
 WORKDIR /app
 
-# Set environment variables to reduce disk usage
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PYTORCH_ENABLE_MPS_FALLBACK=1
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
 
-# Install system dependencies, s3cmd, and uv in one layer
+# uv + minimal system libs (ca-certificates for outbound TLS to Stripe /
+# Anthropic / LiveKit / Deepgram / Cartesia).
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl s3cmd && \
+    apt-get install -y --no-install-recommends curl ca-certificates && \
     curl -LsSf https://astral.sh/uv/install.sh | sh && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
 ENV PATH="/root/.local/bin:$PATH"
 
-# Copy dependency files first (for better layer caching)
-COPY pyproject.toml ./
+# Dependency layer (cache-friendly): resolve from the committed lockfile,
+# excluding the dev group (pyright/pytest/ruff).
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
 
-# Install all dependencies with pip using CPU index for PyTorch
-# This avoids triton and CUDA packages that uv sync was pulling in
-RUN uv venv && \
-    . .venv/bin/activate && \
-    pip install --no-cache-dir \
-      --index-url https://download.pytorch.org/whl/cpu \
-      --extra-index-url https://pypi.org/simple \
-      torch sentence-transformers transformers && \
-    pip install --no-cache-dir \
-      anthropic bcrypt beautifulsoup4 boto3 chromadb fastapi feedparser gradio \
-      httpx itsdangerous llama-index llama-index-embeddings-huggingface \
-      llama-index-llms-anthropic openai pandas pdfplumber Pillow pymupdf \
-      python-dotenv striprtf uvicorn
-
-# Copy application files
-COPY README.md .
+# Application code. scripts/ is included so the W1/W2/voice smoke +
+# verify scripts can be run inside the container for verification.
 COPY src/ src/
 COPY scripts/ scripts/
-COPY static/ static/
-COPY .env.example .env.example
+COPY README.md ./
 
-# Copy pre-extracted quadd database to a STAGING location
-# NOTE: Railway mounts a persistent volume at data/ which hides baked files.
-# We stage it here, then init.sh copies it into data/ at runtime.
-COPY data/quadd_articles.db /app/staged/quadd_articles.db
-RUN ls -la /app/staged/quadd_articles.db && echo "quadd DB staged OK"
+# SQLite + recording staging live here. On Railway a persistent volume is
+# mounted at /app/data so orgs/invites/billing/PMC survive deploys.
+RUN mkdir -p data
 
-# Create data directories and fix line endings for shell scripts
-RUN mkdir -p data/documents data/ads data/events data/editions && \
-    touch data/ingested_files.json && \
-    sed -i 's/\r$//' scripts/*.sh && \
-    chmod +x scripts/init.sh scripts/*.sh && \
-    find /root/.local -type f -name "*.pyc" -delete && \
-    find /root/.local -type d -name "__pycache__" -delete
+# Documentation only — Railway injects $PORT and the app reads it
+# (src/chatbot.py defaults to 8080 when $PORT is unset).
+EXPOSE 8080
 
-# Expose Gradio ports (7860 = chatbot, 7861 = admin dashboard)
-EXPOSE 7860 7861
-
-# Set Gradio environment variables
-ENV GRADIO_SERVER_NAME=0.0.0.0 \
-    GRADIO_SERVER_PORT=7860
-
-# Run initialization script (ingests data, then starts chatbot)
-CMD ["./scripts/init.sh"]
+CMD ["uv", "run", "--no-dev", "python", "src/chatbot.py"]

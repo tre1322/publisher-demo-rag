@@ -4,29 +4,23 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
+# Amplafai runtime deps only. The RAG/ingestion/vision stack
+# (chromadb, gradio, llama-index, sentence-transformers, torch, pymupdf,
+# pdfplumber, feedparser, beautifulsoup4, striprtf, openai, Pillow, boto3)
+# was dropped: nothing in the surviving import graph uses it (verified by
+# a clean `create_app()` boot). fastapi/uvicorn/python-multipart used to
+# come transitively via gradio — now declared explicitly.
 dependencies = [
-    "anthropic>=0.74.1",
-    "beautifulsoup4>=4.14.2",
-    "boto3>=1.35.0",
-    "chromadb>=1.3.5",
-    "feedparser>=6.0.12",
-    "gradio>=5.50.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "python-multipart>=0.0.9",
     "jinja2>=3.1.6",
-    "llama-index>=0.14.8",
-    "llama-index-embeddings-huggingface>=0.6.1",
-    "llama-index-llms-anthropic>=0.10.2",
-    "pdfplumber>=0.11.8",
-    "pymupdf>=1.27.2.2",
     "python-dotenv>=1.2.1",
-    "sentence-transformers>=5.1.2",
-    # Note: torch is installed separately in Dockerfile with CPU-only index
-    "striprtf>=0.0.26",
-    "openai>=1.50.0",
-    "Pillow>=10.0.0",
-    "httpx>=0.27.0",
-    "itsdangerous>=2.1.0",
     "bcrypt>=4.1.0",
+    "itsdangerous>=2.1.0",
+    "anthropic>=0.74.1",
     "stripe>=11.0.0",
+    "httpx>=0.27.0",
     # W2.2 — voice interview stack. LiveKit Agents had a major API break
     # at 1.0; lower bounds are pinned to the v1 line. If `uv sync` resolves
     # something incompatible, refresh the Day 0 SDK spike before debugging.
