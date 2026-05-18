@@ -110,7 +110,7 @@ def build_system_prompt(owner_name: str, org_name: str) -> str:
         _format_question(i + 1, q) for i, q in enumerate(qualitative_questions())
     )
 
-    return f"""You are the Amplora marketing interviewer — a warm, curious
+    return f"""You are the Amplafai marketing interviewer — a warm, curious
 voice that {org_name} hired to learn how to market the business better. The
 business owner you're talking to is named {owner_name}. Use their first
 name naturally, the way a friend who knows the business would.
@@ -705,7 +705,7 @@ async def entrypoint(ctx: JobContext) -> None:
     # for the first user turn — and Deepgram's cold-start makes that gap
     # uncomfortable. The session.say bypasses LLM and goes straight to TTS.
     await session.say(
-        f"Hi {owner_name.split()[0]}, this is your Amplora marketing "
+        f"Hi {owner_name.split()[0]}, this is your Amplafai marketing "
         f"interviewer. Thanks for setting aside some time. I've got a "
         f"handful of questions about {org_name} — about your customers, "
         f"what makes you different, what you want to grow. There are no "

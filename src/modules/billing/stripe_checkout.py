@@ -56,7 +56,7 @@ def build_checkout_session_params(
         customer_email: email to seed Stripe Customer creation if the org
             doesn't already have a processor_customer_id.
         base_url: external URL where Stripe will redirect users
-            (e.g., 'https://app.amplora.com'). Trailing slash optional.
+            (e.g., 'https://app.amplafai.com'). Trailing slash optional.
         existing_customer_id: Stripe cus_* if this org already has one.
             When provided, skips `customer_email` and reuses the customer.
 

@@ -51,7 +51,7 @@ def create_app() -> FastAPI:
     """Build and return the Amplora FastAPI app."""
     init_all_tables()
 
-    app = FastAPI(title="Amplora", description="Main Street marketing OS")
+    app = FastAPI(title="Amplafai", description="Main Street marketing OS")
 
     # Root → bounce to /business/ so visitors land on the owner console.
     @app.get("/", include_in_schema=False)
@@ -103,7 +103,7 @@ def create_app() -> FastAPI:
 def main() -> None:
     # Railway / Docker expects PORT from env; local default 8080.
     port = int(os.environ.get("PORT", "8080"))
-    print(f"Starting Amplora on port {port}", flush=True)
+    print(f"Starting Amplafai on port {port}", flush=True)
 
     app = create_app()
 
