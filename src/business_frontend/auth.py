@@ -229,6 +229,27 @@ def mark_invite_used(code: str, user_id: int) -> None:
     conn.close()
 
 
+def delete_invite(code: str) -> bool:
+    """Delete an invite row by code. Returns True if a row was deleted.
+
+    Does NOT cascade to the enrolled business (organization + user + PMC
+    + billing). If the invite was redeemed, the registered org keeps
+    working — admin must delete the business separately if they want a
+    full teardown. The invite history is just gone after this call.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "DELETE FROM business_invites WHERE invite_code = ?", (code,)
+    )
+    rows = cursor.rowcount
+    conn.commit()
+    conn.close()
+    if rows:
+        logger.info("Deleted invite %s", code)
+    return bool(rows)
+
+
 # ── Session management ──────────────────────────────────────────────
 def create_session(user: dict) -> str:
     """Return a signed session token for the given user."""

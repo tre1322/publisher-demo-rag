@@ -51,6 +51,10 @@
 
         .empty { text-align: center; padding: 40px; color: #999; }
 
+        .btn-delete { background: transparent; border: 1px solid #fca5a5; color: #b91c1c; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; line-height: 1; }
+        .btn-delete:hover { background: #fee2e2; border-color: #ef4444; }
+        .btn-delete:disabled { opacity: 0.5; cursor: not-allowed; }
+
         .toast { position: fixed; bottom: 24px; right: 24px; background: #059669; color: white; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 500; display: none; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
         .toast.error { background: #dc2626; }
         .toast.show { display: block; animation: fadeInUp 0.3s ease; }
@@ -188,7 +192,7 @@
         } else {
             invBody.innerHTML = '<table><thead><tr><th>Business</th>' +
                 (MS_PUBLISHER ? '' : '<th>Publisher</th>') +
-                '<th>Tier</th><th>Status</th><th>Created</th><th>Note</th></tr></thead><tbody>' +
+                '<th>Tier</th><th>Status</th><th>Created</th><th>Note</th><th></th></tr></thead><tbody>' +
                 invites.map(i => '<tr>' +
                     '<td><strong>' + esc(i.business_name) + '</strong></td>' +
                     (MS_PUBLISHER ? '' : '<td>' + esc(i.publisher) + '</td>') +
@@ -198,7 +202,14 @@
                         : '<span class="badge badge-pending">Pending</span>') + '</td>' +
                     '<td>' + (i.created_at || '').slice(0,10) + '</td>' +
                     '<td style="color:#888;">' + esc(i.note || '') + '</td>' +
+                    '<td style="text-align:right;">' +
+                        '<button class="btn-delete js-delete-invite" data-code="' + esc(i.invite_code) +
+                        '" data-name="' + esc(i.business_name || '(no name)') + '" title="Delete invite">Delete</button>' +
+                    '</td>' +
                     '</tr>').join('') + '</tbody></table>';
+            invBody.querySelectorAll('.js-delete-invite').forEach(btn => {
+                btn.addEventListener('click', () => deleteInvite(btn.dataset.code, btn.dataset.name));
+            });
         }
 
         // Enrolled businesses
@@ -213,7 +224,7 @@
         } else {
             bizBody.innerHTML = '<table><thead><tr><th>Business</th><th>Owner</th>' +
                 (MS_PUBLISHER ? '' : '<th>Publisher</th>') +
-                '<th>Tier</th><th>Location</th><th>Enrolled</th><th>Last Login</th></tr></thead><tbody>' +
+                '<th>Tier</th><th>Location</th><th>Enrolled</th><th>Last Login</th><th></th></tr></thead><tbody>' +
                 businesses.map(b => '<tr>' +
                     '<td><strong>' + esc(b.business_name) + '</strong></td>' +
                     '<td>' + esc(b.owner_name) + '<br><span style="color:#888;font-size:12px;">' + esc(b.email) + '</span></td>' +
@@ -222,7 +233,68 @@
                     '<td>' + (b.city ? esc(b.city) + (b.state ? ', ' + esc(b.state) : '') : '—') + '</td>' +
                     '<td>' + (b.enrolled_at || '').slice(0,10) + '</td>' +
                     '<td>' + (b.last_login ? b.last_login.slice(0,10) : '<span style="color:#999;">Never</span>') + '</td>' +
+                    '<td style="text-align:right;">' +
+                        '<button class="btn-delete js-delete-business" data-org="' + esc(String(b.org_id)) +
+                        '" data-name="' + esc(b.business_name || '(no name)') + '" title="Delete business + cascade">Delete</button>' +
+                    '</td>' +
                     '</tr>').join('') + '</tbody></table>';
+            bizBody.querySelectorAll('.js-delete-business').forEach(btn => {
+                btn.addEventListener('click', () => deleteBusiness(btn.dataset.org, btn.dataset.name));
+            });
+        }
+    }
+
+    async function deleteInvite(code, name) {
+        const msg = 'Delete invite for "' + name + '"?\n\n' +
+            'Removes the invite row only. If the business already registered, ' +
+            'the enrolled business is NOT affected — delete it from the ' +
+            'Businesses table separately.';
+        if (!confirm(msg)) return;
+        try {
+            const res = await fetch('/admin/api/main-street/invites/' + encodeURIComponent(code), {
+                method: 'DELETE',
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                showToast('Invite deleted');
+                loadAll();
+            } else {
+                showToast(data.error || 'Failed to delete invite', true);
+            }
+        } catch (e) {
+            showToast('Network error: ' + e.message, true);
+        }
+    }
+
+    async function deleteBusiness(orgId, name) {
+        const msg = 'Delete business "' + name + '"?\n\n' +
+            'This permanently removes:\n' +
+            '  - The owner login\n' +
+            '  - All PMC drafts and interview sessions\n' +
+            '  - All billing history (subscriptions, tier history, revenue share)\n' +
+            '  - Linked publications\n\n' +
+            'Does NOT cancel Stripe subscriptions — handle those separately if any are live.\n' +
+            'Recordings on Spaces are left to auto-expire (30 days).\n\n' +
+            'Cannot be undone.';
+        if (!confirm(msg)) return;
+        try {
+            const res = await fetch('/admin/api/main-street/businesses/' + encodeURIComponent(orgId), {
+                method: 'DELETE',
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                const counts = data.counts || {};
+                const summary = Object.keys(counts)
+                    .filter(k => counts[k] > 0)
+                    .map(k => counts[k] + ' ' + k)
+                    .join(', ');
+                showToast('Deleted "' + name + '"' + (summary ? ' (' + summary + ')' : ''));
+                loadAll();
+            } else {
+                showToast(data.error || 'Failed to delete business', true);
+            }
+        } catch (e) {
+            showToast('Network error: ' + e.message, true);
         }
     }
 

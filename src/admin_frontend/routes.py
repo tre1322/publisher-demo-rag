@@ -208,6 +208,123 @@ async def list_enrolled_businesses(
     return JSONResponse(content={"businesses": rows})
 
 
+# ── Delete actions (admin cleanup) ──────────────────────────────────
+
+
+# Tables referencing organizations.id, in delete order. Children first
+# so the org row is the last thing to go. Add new org-scoped tables here.
+# (SQLite doesn't enforce FKs by default; we cascade by hand to keep
+# behavior predictable regardless of PRAGMA settings.)
+_ORG_CHILD_TABLES: tuple[tuple[str, str], ...] = (
+    ("product_marketing_contexts", "organization_id"),
+    ("pmc_interview_sessions", "organization_id"),
+    ("subscriptions", "organization_id"),
+    ("tier_history", "organization_id"),
+    ("publisher_revenue_share", "organization_id"),
+    ("publications", "organization_id"),
+    ("business_users", "organization_id"),
+    # business_invites is unlinked rather than deleted — see the route.
+)
+
+
+def _delete_business_cascade(org_id: int) -> dict[str, int]:
+    """Hard-delete an org and every row that references it.
+
+    Returns a per-table count of deleted rows so the admin UI can confirm
+    what got cleaned up (and so we have a paper trail in the logs).
+
+    Recordings already written to DigitalOcean Spaces are NOT deleted —
+    they outlive the row that pointed at them and age out via the
+    bucket's 30-day lifecycle rule. Stripe-side subscriptions are also
+    NOT cancelled here; cancel via the Stripe dashboard or API
+    separately if needed.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    counts: dict[str, int] = {}
+    try:
+        for table, col in _ORG_CHILD_TABLES:
+            cursor.execute(f"DELETE FROM {table} WHERE {col} = ?", (org_id,))
+            counts[table] = cursor.rowcount
+        # Unlink invites that pointed at any of the deleted users. The
+        # invite history stays so we can see "this invite was redeemed
+        # but the business was later cleaned up."
+        cursor.execute(
+            "UPDATE business_invites SET used_by_user_id = NULL "
+            "WHERE used_by_user_id IN ("
+            "  SELECT id FROM business_users WHERE organization_id = ?"
+            ")",
+            (org_id,),
+        )
+        # Finally the org row itself.
+        cursor.execute("DELETE FROM organizations WHERE id = ?", (org_id,))
+        counts["organizations"] = cursor.rowcount
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    logger.info("Deleted business org=%s cascade counts=%s", org_id, counts)
+    return counts
+
+
+@router.delete("/api/main-street/invites/{code}")
+async def delete_main_street_invite(
+    code: str, _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Delete an invite row. Returns 404 if no such invite.
+
+    Does NOT cascade to a redeemed business — if the invite was used,
+    the enrolled org keeps working. Use DELETE /businesses/{org_id} to
+    fully tear down a redeemed business.
+    """
+    from src.business_frontend.auth import delete_invite
+
+    if not delete_invite(code):
+        return JSONResponse(
+            content={"success": False, "error": "Invite not found"},
+            status_code=404,
+        )
+    return JSONResponse(content={"success": True})
+
+
+@router.delete("/api/main-street/businesses/{org_id}")
+async def delete_main_street_business(
+    org_id: int, _username: str = Depends(verify_credentials),
+) -> JSONResponse:
+    """Cascade-delete an enrolled business and everything that references it.
+
+    Returns per-table deletion counts so the admin UI can show what was
+    removed. See `_delete_business_cascade` for the cascade order and
+    the Spaces/Stripe caveats.
+    """
+    from src.modules.organizations.database import get_organization
+
+    org = get_organization(org_id)
+    if not org:
+        return JSONResponse(
+            content={"success": False, "error": f"Org {org_id} not found"},
+            status_code=404,
+        )
+    try:
+        counts = _delete_business_cascade(org_id)
+    except Exception as e:
+        logger.exception("Failed to delete business org=%s: %s", org_id, e)
+        return JSONResponse(
+            content={"success": False, "error": str(e)},
+            status_code=500,
+        )
+    return JSONResponse(
+        content={
+            "success": True,
+            "org_id": org_id,
+            "business_name": org.get("name"),
+            "counts": counts,
+        }
+    )
+
+
 # ═══════════════════════════════════════════════════════════════════
 #  AMPLORA BILLING (W1) — admin audit view
 # ═══════════════════════════════════════════════════════════════════

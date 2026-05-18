@@ -45,10 +45,14 @@ import httpx
 from livekit.agents import (
     Agent,
     AgentSession,
+    ChatContext,
+    ChatMessage,
     ConversationItemAddedEvent,
     JobContext,
+    RunContext,
     WorkerOptions,
     cli,
+    function_tool,
 )
 from livekit.plugins import anthropic, cartesia, deepgram, silero
 
@@ -58,13 +62,20 @@ from src.core.config import (
     CARTESIA_VOICE_ID,
     DEEPGRAM_API_KEY,
     PMC_AGENT_NAME,
+    PMC_INTERVIEW_PAUSE_CAP_SECONDS,
+    PMC_INTERVIEW_TARGET_SECONDS,
     PMC_VOICE_CALLBACK_BASE_URL,
+    PMC_VOICE_RECORDING_ENABLED,
 )
 from src.modules.pmc.interview_script import (
     INTERVIEW_LENGTH_CAP_MINUTES,
     INTERVIEW_TARGET_MINUTES,
     INTERVIEW_TONE,
     qualitative_questions,
+)
+from src.modules.pmc.voice_provisioning import (
+    recording_is_configured,
+    start_recording_egress,
 )
 
 logger = logging.getLogger(__name__)
@@ -120,15 +131,50 @@ transcript of this conversation feeds the marketing plan we'll build for
 - No markdown, no bullet points, no headers. Speak in complete sentences.
 - One question at a time. Wait for a real answer before moving on.
 
-## Pacing
+## Tracking what you've covered — the mark_question_covered tool
+You have one tool: `mark_question_covered(question_key, brief_summary)`.
+Call it AS SOON as the owner has given a substantive answer to a question
+and you're moving on — not at the end of the call, not in batches.
+
+DO call it for: any answer that gives you a fact, a story, or a judgment
+you could write into the marketing plan. Brief answers count if they're
+real ("we mostly serve farmers within 20 miles" is enough for
+ideal_customer).
+
+DO NOT call it for: pure deflection ("I don't know", "skip that one").
+If the owner truly passes, move on without marking.
+
+The `question_key` is the Q-block key (lowercase, snake_case) — e.g.
+`origin_story`, `ideal_customer`, `priority_services`. Use the exact key
+from the question headings below. The `brief_summary` is a one-sentence
+note about what they said.
+
+## Pacing — adaptive, data-driven
 - Target ~{INTERVIEW_TARGET_MINUTES} minutes. Hard cap {INTERVIEW_LENGTH_CAP_MINUTES}.
-- If a "MUST COVER" question gets a thin answer, use the follow-up hints
-  below to probe. If an "important" or "nice-to-have" question gets a
-  thin answer and time is tight, accept it and move on.
-- When you've covered all the MUST COVER questions OR you're approaching
-  the hard cap, thank {owner_name} and wrap up. Say something like
-  "We've covered everything I needed — thank you, {owner_name}. I'll have
-  your marketing profile ready for you to review in a couple minutes."
+- Before each of your turns you'll see a PACING SNAPSHOT showing
+  elapsed time, percent of target consumed, and how many must-cover
+  and nice-to-have questions remain. Use it to make a judgment.
+- If a "MUST COVER" question gets a thin answer, use the follow-up
+  hints to probe — those are the questions the marketing plan depends on.
+- If an "important" (nice-to-have) question gets a thin answer and
+  time is tight, accept it and move on.
+
+### When elapsed_pct ≥ 75 AND must-cover remain
+Narrate pacing out loud — naturally, like a friend keeping an eye on
+the clock — and offer to defer nice-to-have items so you can still
+get the must-covers. Something like:
+
+  "We're about three-quarters of the way through and I still want
+  to make sure I get [X, Y, Z]. Mind if we save [the nice-to-have
+  topic] for another time?"
+
+Don't lecture about the schedule. Don't list every remaining question.
+One natural sentence, then continue.
+
+### When all MUST COVER are marked OR elapsed ≥ hard cap
+Thank {owner_name} and wrap up. One closing line, e.g. "We've covered
+everything I needed — thank you, {owner_name}. I'll have your marketing
+profile ready for you to review in a couple minutes."
 
 ## When to wrap
 After your closing line, the call ends and we generate the marketing
@@ -185,6 +231,167 @@ class TranscriptAccumulator:
         return "\n\n".join(self.lines)
 
 
+# ── Coverage tracker (drives pacing + browser dots) ───────────────────
+
+
+class CoverageTracker:
+    """Accumulates which qualitative questions Claude has marked covered.
+
+    Owns:
+        - the canonical question list (frozen at agent start)
+        - the ordered list of covered keys
+        - the start_monotonic baseline used for elapsed_seconds
+
+    Lifetime: one per voice job. Not thread-safe — only touched from the
+    asyncio loop, which serializes accesses for us.
+    """
+
+    def __init__(self, target_seconds: int) -> None:
+        self.questions = list(qualitative_questions())
+        self.target_seconds = max(target_seconds, 60)  # don't divide by zero
+        self.start_monotonic = time.monotonic()
+        self.covered_keys: list[str] = []
+        self.summaries: dict[str, str] = {}
+        self._known_keys = {q.key for q in self.questions}
+        # Pause state: while paused, elapsed_seconds() freezes so the
+        # pacing rule doesn't penalize the interview for time the owner
+        # spent dealing with whatever interrupted them.
+        self._paused_seconds = 0.0
+        self._pause_start: float | None = None
+
+    def pause(self) -> bool:
+        """Begin a pause. Returns True iff newly paused (idempotent)."""
+        if self._pause_start is not None:
+            return False
+        self._pause_start = time.monotonic()
+        return True
+
+    def resume(self) -> bool:
+        """End the current pause. Returns True iff there was a pause to end."""
+        if self._pause_start is None:
+            return False
+        self._paused_seconds += time.monotonic() - self._pause_start
+        self._pause_start = None
+        return True
+
+    @property
+    def is_paused(self) -> bool:
+        return self._pause_start is not None
+
+    def mark(self, key: str, summary: str) -> bool:
+        """Record `key` as covered. Returns True iff this was the first time.
+
+        Unknown keys are accepted (with a WARNING) so Claude hallucinating
+        a key doesn't crash the interview — the marketing plan can still
+        be generated from the transcript even if the dots are slightly off.
+        """
+        if key not in self._known_keys:
+            logger.warning(
+                "mark_question_covered: unknown key %r (accepted)", key
+            )
+        if key in self.covered_keys:
+            return False
+        self.covered_keys.append(key)
+        if summary:
+            self.summaries[key] = summary[:240]
+        return True
+
+    def elapsed_seconds(self) -> int:
+        """Wall-clock seconds since interview start, excluding paused time.
+
+        While paused, this freezes at the pause-start timestamp — the
+        pacing snapshot is read every turn but no turns happen while
+        paused, so the freeze is mostly a safety net for any code path
+        that reads the snapshot independently.
+        """
+        baseline = self._pause_start if self._pause_start is not None else time.monotonic()
+        return int(baseline - self.start_monotonic - self._paused_seconds)
+
+    def _remaining_keys(self, weight: int) -> list[str]:
+        covered = set(self.covered_keys)
+        return [
+            q.key
+            for q in self.questions
+            if q.weight == weight and q.key not in covered
+        ]
+
+    def snapshot(self) -> dict[str, Any]:
+        """Pacing context — what the InterviewAgent injects per turn."""
+        elapsed = self.elapsed_seconds()
+        w3 = self._remaining_keys(3)
+        w2 = self._remaining_keys(2)
+        return {
+            "elapsed_seconds": elapsed,
+            "target_seconds": self.target_seconds,
+            "elapsed_pct": round(elapsed / self.target_seconds * 100, 1),
+            "weight3_remaining": w3,
+            "weight2_remaining": w2,
+            "covered_count": len(self.covered_keys),
+            "total": len(self.questions),
+        }
+
+    def browser_coverage_msg(self) -> dict[str, Any]:
+        """Data-message payload — pmc_interview.js handleAgentMessage('coverage')."""
+        snap = self.snapshot()
+        return {
+            "type": "coverage",
+            "total": snap["total"],
+            "covered": snap["covered_count"],
+            # "current" tells the JS which dot to paint blue. One past
+            # the covered count is the question Claude is presumably on.
+            "current": min(snap["covered_count"], snap["total"] - 1),
+            "weight3_remaining": len(snap["weight3_remaining"]),
+        }
+
+
+# ── Interview agent (injects pacing snapshot per turn) ────────────────
+
+
+class InterviewAgent(Agent):
+    """Agent subclass with a `on_user_turn_completed` hook that prepends a
+    PACING SNAPSHOT system message to the chat context before Claude
+    generates a reply.
+
+    The snapshot is what makes the pacing rule in the system prompt
+    actionable — without live timing data, Claude has no way to know
+    when 75% of target has elapsed.
+    """
+
+    def __init__(
+        self,
+        *,
+        instructions: str,
+        tracker: CoverageTracker,
+        tools: list[Any],
+    ) -> None:
+        super().__init__(instructions=instructions, tools=tools)
+        self.tracker = tracker
+
+    async def on_user_turn_completed(
+        self, turn_ctx: ChatContext, new_message: ChatMessage
+    ) -> None:
+        snap = self.tracker.snapshot()
+        m, s = divmod(snap["elapsed_seconds"], 60)
+        target_m = snap["target_seconds"] // 60
+        total_w3 = sum(1 for q in self.tracker.questions if q.weight == 3)
+        total_w2 = sum(1 for q in self.tracker.questions if q.weight == 2)
+        # Note: this snapshot is fresh-per-turn; older snapshots remain
+        # in chat_ctx but Claude treats the most recent one as ground
+        # truth. ~6 lines × ~20 turns = negligible token overhead vs
+        # Sonnet's 200K context. We could prune prior snapshots, but
+        # the historical trail gives Claude a sense of how time is moving.
+        content = (
+            "PACING SNAPSHOT (visible to you, not to the owner):\n"
+            f"  elapsed: {m}m{s:02d}s of {target_m}m target ({snap['elapsed_pct']}%)\n"
+            f"  must-cover remaining: {len(snap['weight3_remaining'])} of {total_w3}\n"
+            f"  nice-to-have remaining: {len(snap['weight2_remaining'])} of {total_w2}\n"
+            f"  covered so far: {snap['covered_count']} of {snap['total']}\n"
+        )
+        if snap["weight3_remaining"]:
+            content += f"  must-cover keys left: {', '.join(snap['weight3_remaining'])}\n"
+        turn_ctx.add_message(role="system", content=content)
+
+
 # ── Callback POST to /voice/complete ──────────────────────────────────
 
 
@@ -194,6 +401,7 @@ async def post_transcript(
     transcript: str,
     duration_seconds: int,
     partial: bool,
+    recording_url: str | None = None,
 ) -> dict[str, Any]:
     """POST the assembled transcript to the FastAPI app.
 
@@ -206,6 +414,7 @@ async def post_transcript(
         "transcript": transcript,
         "duration_seconds": duration_seconds,
         "partial": partial,
+        "recording_url": recording_url,
     }
     headers = {"X-Agent-Callback-Token": callback_token}
     timeout = httpx.Timeout(60.0, connect=10.0)
@@ -255,10 +464,65 @@ async def entrypoint(ctx: JobContext) -> None:
     participant = await ctx.wait_for_participant()
     logger.info("participant joined: %s", participant.identity)
 
-    # Build agent and session.
+    # Build agent + tracker + tool. The tracker has to outlive every turn
+    # but be scoped to this one job — so it's constructed here, not at
+    # module top-level.
     instructions = build_system_prompt(owner_name=owner_name, org_name=org_name)
+    tracker = CoverageTracker(target_seconds=PMC_INTERVIEW_TARGET_SECONDS)
 
-    agent = Agent(instructions=instructions)
+    async def publish_coverage_to_browser() -> None:
+        """Send a fresh coverage update to the browser dots. Non-fatal on error."""
+        try:
+            data_payload = json.dumps(tracker.browser_coverage_msg()).encode("utf-8")
+            await ctx.room.local_participant.publish_data(
+                data_payload, reliable=True
+            )
+        except Exception as e:
+            logger.warning("coverage data-message publish failed: %s", e)
+
+    @function_tool(
+        name="mark_question_covered",
+        description=(
+            "Record that the owner has substantively answered one of the "
+            "interview questions. Call AS SOON as you have a real answer "
+            "and are moving on (not in batches at the end). Pass the exact "
+            "question_key (lowercase, snake_case, from the Q-block headings) "
+            "and a one-sentence brief_summary of what they said. Skip "
+            "calling this if the owner truly passed on a question — just "
+            "move on. Calling this twice on the same key is harmless."
+        ),
+    )
+    async def mark_question_covered(
+        context: RunContext,
+        question_key: str,
+        brief_summary: str,
+    ) -> str:
+        newly = tracker.mark(question_key, brief_summary)
+        snap = tracker.snapshot()
+        logger.info(
+            "mark_question_covered: key=%r newly=%s covered=%d/%d w3_left=%d",
+            question_key, newly, snap["covered_count"], snap["total"],
+            len(snap["weight3_remaining"]),
+        )
+        # Update browser dots immediately so coverage feels live.
+        await publish_coverage_to_browser()
+        if newly:
+            return (
+                f"Marked '{question_key}' as covered. "
+                f"{len(snap['weight3_remaining'])} must-cover topics left, "
+                f"{len(snap['weight2_remaining'])} nice-to-have left, "
+                f"{snap['elapsed_pct']}% of target time elapsed."
+            )
+        return (
+            f"'{question_key}' was already marked earlier. "
+            f"{len(snap['weight3_remaining'])} must-cover topics left."
+        )
+
+    agent = InterviewAgent(
+        instructions=instructions,
+        tracker=tracker,
+        tools=[mark_question_covered],
+    )
 
     session = AgentSession(
         stt=deepgram.STT(
@@ -277,6 +541,16 @@ async def entrypoint(ctx: JobContext) -> None:
         tts=cartesia.TTS(
             api_key=CARTESIA_API_KEY,
             voice=CARTESIA_VOICE_ID,
+            # sonic-2 is older but more consistent across network conditions
+            # than sonic-3 (default). sonic-3's slightly higher quality on a
+            # good day isn't worth shaky audio on a real-world connection.
+            model="sonic-2",
+            # Without this, Cartesia synthesizes audio in lockstep with
+            # Claude's token bursts — uneven token timing → uneven audio
+            # → "shaky and choppy" agent voice. text_pacing puts a paced
+            # buffer between LLM and TTS so audio comes out at a constant
+            # rate regardless of upstream jitter.
+            text_pacing=True,
         ),
         vad=silero.VAD.load(),
     )
@@ -284,10 +558,16 @@ async def entrypoint(ctx: JobContext) -> None:
     transcript = TranscriptAccumulator(owner_name=owner_name)
     start_time = time.monotonic()
     end_requested = asyncio.Event()
+    owner_first_name = owner_name.split()[0] if owner_name else "there"
+    pause_watchdog_task: asyncio.Task[None] | None = None
 
-    # Capture each finalized turn for the transcript blob.
+    # Capture each finalized turn for the transcript blob — but only when
+    # not paused (mic is muted client-side during pause, so this is a
+    # belt-and-suspenders check).
     @session.on("conversation_item_added")
     def _on_item(ev: ConversationItemAddedEvent) -> None:
+        if tracker.is_paused:
+            return
         item = ev.item
         role = getattr(item, "role", "")
         # ChatMessage.content is a list of ChatContent objects; concat the
@@ -307,8 +587,63 @@ async def entrypoint(ctx: JobContext) -> None:
             transcript.add(role, joined)
             logger.debug("turn captured: %s: %s", role, joined[:80])
 
-    # Listen for end-of-call signals from the browser (End button, tab close).
+    async def _do_pause() -> None:
+        """Stop in-flight TTS and freeze the tracker. Idempotent."""
+        if not tracker.pause():
+            return
+        logger.info("interview paused")
+        try:
+            await session.interrupt()
+        except Exception as e:
+            # Non-fatal — interrupt may fail if agent wasn't speaking.
+            logger.debug("session.interrupt during pause: %s", e)
+        # Echo state to the browser for telemetry; the JS already handled
+        # the local UI on click but a confirming message helps diagnosis.
+        try:
+            ack = json.dumps({"type": "state", "pill": "Paused", "live": False}).encode("utf-8")
+            await ctx.room.local_participant.publish_data(ack, reliable=True)
+        except Exception as e:
+            logger.debug("paused-ack publish failed: %s", e)
+
+    async def _do_resume() -> None:
+        """Un-freeze the tracker and say a brief welcome-back. Idempotent."""
+        if not tracker.resume():
+            return
+        logger.info(
+            "interview resumed (pause cap was %ds)", PMC_INTERVIEW_PAUSE_CAP_SECONDS
+        )
+        # Echo state.
+        try:
+            ack = json.dumps({"type": "state", "pill": "Listening", "live": True}).encode("utf-8")
+            await ctx.room.local_participant.publish_data(ack, reliable=True)
+        except Exception as e:
+            logger.debug("resumed-ack publish failed: %s", e)
+        # Brief welcome-back so the owner knows the agent is back online.
+        # Kept short so Claude can take over naturally on the owner's next turn.
+        try:
+            await session.say(
+                f"Welcome back, {owner_first_name}. Whenever you're ready to keep going.",
+                allow_interruptions=True,
+            )
+        except Exception as e:
+            logger.warning("welcome-back say failed: %s", e)
+
+    async def _pause_watchdog() -> None:
+        """Auto-end the interview if the pause exceeds PMC_INTERVIEW_PAUSE_CAP_SECONDS."""
+        try:
+            await asyncio.sleep(PMC_INTERVIEW_PAUSE_CAP_SECONDS)
+        except asyncio.CancelledError:
+            return
+        if tracker.is_paused:
+            logger.warning(
+                "pause cap %ds reached without resume — auto-ending interview",
+                PMC_INTERVIEW_PAUSE_CAP_SECONDS,
+            )
+            end_requested.set()
+
+    # Listen for end-of-call + pause/resume signals from the browser.
     def _on_data(packet) -> None:
+        nonlocal pause_watchdog_task
         try:
             data = packet.data if hasattr(packet, "data") else packet
             text = bytes(data).decode("utf-8")
@@ -320,12 +655,51 @@ async def entrypoint(ctx: JobContext) -> None:
         if msg_type in {"end_requested", "user_disconnected"}:
             logger.info("end signal from browser: %s", msg_type)
             end_requested.set()
+        elif msg_type == "pause_requested":
+            logger.info("pause signal from browser")
+            asyncio.create_task(_do_pause())
+            # Cancel any prior watchdog (defensive — shouldn't happen)
+            if pause_watchdog_task and not pause_watchdog_task.done():
+                pause_watchdog_task.cancel()
+            pause_watchdog_task = asyncio.create_task(_pause_watchdog())
+        elif msg_type == "resume_requested":
+            logger.info("resume signal from browser")
+            if pause_watchdog_task and not pause_watchdog_task.done():
+                pause_watchdog_task.cancel()
+                pause_watchdog_task = None
+            asyncio.create_task(_do_resume())
 
     ctx.room.on("data_received", _on_data)
 
-    # Start the session — Day 2 has no recording (Day 3 adds Egress to Spaces).
     await session.start(agent=agent, room=ctx.room)
     logger.info("agent session started")
+
+    # Kick off the LiveKit Egress recording (Day 3). The interview can
+    # continue if this fails — we log a warning, the disclosure banner
+    # on the page is honest about "if recording is unavailable", and
+    # the marketing-profile generation is unaffected.
+    recording_url: str | None = None
+    if PMC_VOICE_RECORDING_ENABLED and recording_is_configured():
+        try:
+            _egress_id, recording_url = await start_recording_egress(
+                room_name=ctx.room.name,
+                session_id=session_id,
+                organization_id=meta["org_id"],
+            )
+            logger.info("recording egress started: %s", recording_url)
+        except Exception as e:
+            logger.warning(
+                "egress start failed (interview continues without recording): %s", e
+            )
+    elif not PMC_VOICE_RECORDING_ENABLED:
+        logger.info("recording disabled by PMC_VOICE_RECORDING_ENABLED")
+    else:
+        logger.warning(
+            "recording skipped: Spaces not configured (see SPACES_* env vars)"
+        )
+
+    # Paint the initial dot row in the browser (all dots empty, current=0).
+    await publish_coverage_to_browser()
 
     # Greet first. Without this, owner sits in silence while Claude waits
     # for the first user turn — and Deepgram's cold-start makes that gap
@@ -380,6 +754,7 @@ async def entrypoint(ctx: JobContext) -> None:
                 transcript=blob,
                 duration_seconds=duration,
                 partial=partial,
+                recording_url=recording_url,
             )
             logger.info(
                 "callback succeeded (attempt %d): pmc_id=%s",

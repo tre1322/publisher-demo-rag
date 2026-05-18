@@ -33,6 +33,7 @@
     inCall: document.getElementById("in-call"),
     postCall: document.getElementById("post-call"),
     btnStart: document.getElementById("btn-start"),
+    btnPause: document.getElementById("btn-pause"),
     btnEnd: document.getElementById("btn-end"),
     micState: document.getElementById("mic-state"),
     micLevel: document.getElementById("mic-level"),
@@ -53,6 +54,11 @@
     statusPollHandle: null,
     audioContext: null,
     redirectFired: false,
+    // Pause: pauseStartedMs is the wall-clock time the current pause
+    // began (null if not paused). totalPausedMs accumulates across
+    // multiple pause/resume cycles so the elapsed timer stays honest.
+    pauseStartedMs: null,
+    totalPausedMs: 0,
   };
 
   // ── Helpers ────────────────────────────────────────────────────────
@@ -89,28 +95,34 @@
     el.transcript.scrollTop = el.transcript.scrollHeight;
   }
 
-  function renderProgressDots(total, coveredKeys, currentKey, weight3RemainingKeys) {
-    // total is # of qualitative questions reported by the agent
+  function renderProgressDots(total, coveredCount, currentIndex, weight3RemainingCount) {
+    // The agent (CoverageTracker.browser_coverage_msg) sends counts +
+    // a current index, not arrays. The dots are anonymous — we don't
+    // try to label them with question text on the client.
+    if (typeof total !== "number" || total <= 0) return;
     el.progressDots.innerHTML = "";
     for (let i = 0; i < total; i++) {
       const d = document.createElement("span");
       d.className = "dot";
-      // We don't have per-key info on the browser side; the agent sends
-      // a coveredCount + currentIndex + weight3Remaining count instead.
       el.progressDots.appendChild(d);
     }
-    if (Array.isArray(coveredKeys)) {
-      for (let i = 0; i < coveredKeys; i++) {
-        if (el.progressDots.children[i]) el.progressDots.children[i].classList.add("covered");
+    if (typeof coveredCount === "number") {
+      for (let i = 0; i < coveredCount && i < total; i++) {
+        el.progressDots.children[i].classList.add("covered");
       }
     }
-    if (typeof currentKey === "number" && el.progressDots.children[currentKey]) {
-      el.progressDots.children[currentKey].classList.add("current");
+    if (
+      typeof currentIndex === "number" &&
+      currentIndex >= 0 &&
+      currentIndex < total &&
+      el.progressDots.children[currentIndex]
+    ) {
+      el.progressDots.children[currentIndex].classList.add("current");
     }
-    if (typeof weight3RemainingKeys === "number") {
+    if (typeof weight3RemainingCount === "number") {
       el.weight3Remaining.textContent =
-        weight3RemainingKeys > 0
-          ? weight3RemainingKeys + " important topic" + (weight3RemainingKeys === 1 ? "" : "s") + " to go"
+        weight3RemainingCount > 0
+          ? weight3RemainingCount + " important topic" + (weight3RemainingCount === 1 ? "" : "s") + " to go"
           : "All important topics covered — we're wrapping up.";
     }
   }
@@ -124,14 +136,61 @@
 
   function startTimer() {
     state.callStartMs = Date.now();
+    state.totalPausedMs = 0;
+    state.pauseStartedMs = null;
     state.timerHandle = setInterval(function () {
-      el.callTimer.textContent = formatElapsed(Date.now() - state.callStartMs);
+      // Don't tick while paused — but keep the interval alive so we
+      // resume cleanly without re-creating it.
+      if (state.pauseStartedMs !== null) return;
+      const elapsed = Date.now() - state.callStartMs - state.totalPausedMs;
+      el.callTimer.textContent = formatElapsed(elapsed);
     }, 1000);
   }
 
   function stopTimer() {
     if (state.timerHandle) clearInterval(state.timerHandle);
     state.timerHandle = null;
+  }
+
+  // ── Pause / resume ─────────────────────────────────────────────────
+  async function setPaused(paused) {
+    if (!state.room || !state.micTrack) return;
+    if (paused && state.pauseStartedMs !== null) return;   // already paused
+    if (!paused && state.pauseStartedMs === null) return;  // already live
+
+    if (paused) {
+      state.pauseStartedMs = Date.now();
+      // Mute mic locally — privacy during the interruption + ensures
+      // STT doesn't see anything the agent might transcribe.
+      try { await state.micTrack.mute(); } catch (e) { console.warn("[pmc_interview] mic mute failed:", e); }
+      setMicPill("Mic muted (paused)");
+      setCallPill("Paused", null);
+      el.btnPause.textContent = "Resume";
+      el.btnPause.classList.remove("btn-outline-secondary");
+      el.btnPause.classList.add("btn-primary");
+      // Tell the agent so it can interrupt in-flight TTS + freeze pacing.
+      try {
+        const payload = new TextEncoder().encode(JSON.stringify({ type: "pause_requested" }));
+        await state.room.localParticipant.publishData(payload, { reliable: true });
+      } catch (e) {
+        console.warn("[pmc_interview] pause signal publish failed:", e);
+      }
+    } else {
+      state.totalPausedMs += Date.now() - state.pauseStartedMs;
+      state.pauseStartedMs = null;
+      try { await state.micTrack.unmute(); } catch (e) { console.warn("[pmc_interview] mic unmute failed:", e); }
+      setMicPill("Mic active", "live");
+      setCallPill("Listening", "live");
+      el.btnPause.textContent = "Pause";
+      el.btnPause.classList.remove("btn-primary");
+      el.btnPause.classList.add("btn-outline-secondary");
+      try {
+        const payload = new TextEncoder().encode(JSON.stringify({ type: "resume_requested" }));
+        await state.room.localParticipant.publishData(payload, { reliable: true });
+      } catch (e) {
+        console.warn("[pmc_interview] resume signal publish failed:", e);
+      }
+    }
   }
 
   // ── Mic level meter (visual feedback that mic is actually working) ─
@@ -382,6 +441,12 @@
 
   el.btnStart.addEventListener("click", startCall);
   el.btnEnd.addEventListener("click", function () { endCall("user_clicked"); });
+  if (el.btnPause) {
+    el.btnPause.addEventListener("click", function () {
+      // Toggle: paused → resume, live → pause.
+      setPaused(state.pauseStartedMs === null);
+    });
+  }
 
   // Defensive: if the page is closed mid-call, try to notify the agent.
   window.addEventListener("beforeunload", function () {

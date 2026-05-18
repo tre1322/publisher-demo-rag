@@ -111,6 +111,15 @@ CARTESIA_VOICE_ID = os.getenv("CARTESIA_VOICE_ID", "a0e99841-438c-4a64-b679-ae50
 # Interview pacing. The agent's pacing rule fires at >=0.75 of this.
 PMC_INTERVIEW_TARGET_SECONDS = int(os.getenv("PMC_INTERVIEW_TARGET_SECONDS", "1800"))
 
+# Pause cap: if the owner pauses the interview and doesn't resume within
+# this many seconds, the agent auto-ends the call. Prevents a forgotten
+# pause from holding the LiveKit room (and the agent worker slot) open.
+# Owner sees "interview interrupted — you can restart anytime" on the
+# /business/pmc/ page after auto-end.
+PMC_INTERVIEW_PAUSE_CAP_SECONDS = int(
+    os.getenv("PMC_INTERVIEW_PAUSE_CAP_SECONDS", "600")
+)
+
 # Agent dispatch name. The /voice/start route dispatches by this name; the
 # worker process registers with the same name. Keep aligned.
 PMC_AGENT_NAME = os.getenv("PMC_AGENT_NAME", "amplora-pmc-interviewer")
