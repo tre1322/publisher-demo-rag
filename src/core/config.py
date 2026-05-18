@@ -122,7 +122,7 @@ PMC_INTERVIEW_PAUSE_CAP_SECONDS = int(
 
 # Agent dispatch name. The /voice/start route dispatches by this name; the
 # worker process registers with the same name. Keep aligned.
-PMC_AGENT_NAME = os.getenv("PMC_AGENT_NAME", "amplora-pmc-interviewer")
+PMC_AGENT_NAME = os.getenv("PMC_AGENT_NAME", "amplafai-pmc-interviewer")
 
 # Where the agent worker POSTs the transcript when the call ends. In dev,
 # the worker runs on the same machine as the FastAPI app so localhost works.
