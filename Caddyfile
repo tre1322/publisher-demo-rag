@@ -1,0 +1,11 @@
+# Caddy auto-provisions + renews a Let's Encrypt cert for this hostname.
+# Requires: app.amplafai.com A-record -> droplet IP, Cloudflare proxy
+# OFF (grey cloud / DNS only), and ports 80 + 443 open on the droplet.
+{
+	email windomnews@gmail.com
+}
+
+app.amplafai.com {
+	encode zstd gzip
+	reverse_proxy web:8080
+}

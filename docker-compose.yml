@@ -1,32 +1,54 @@
+# Amplafai production stack — DigitalOcean Droplet.
+#
+#   web    : FastAPI app (business + /admin), SQLite on a named volume
+#   voice  : LiveKit voice-interview worker (same image, different cmd)
+#   caddy  : reverse proxy + automatic Let's Encrypt TLS for the domain
+#
+# Secrets come from a local `.env` file next to this one (NOT committed).
+# Put amplafai-railway-env.txt on the droplet as `.env` here.
+#
+# Bring up:   docker compose up -d --build
+# Update:     git pull && docker compose up -d --build   (volume persists)
 services:
-  publisher-rag-demo:
+  web:
     build: .
-    image: publisher-rag-demo:latest
-    container_name: publisher-rag-demo
-    ports:
-      - "7860:7860"
+    image: amplafai:latest
+    env_file: .env
     environment:
-      # Required: Set your Anthropic API key
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-
-      # Optional: Override defaults
-      - LLM_MODEL=${LLM_MODEL:-claude-sonnet-4-20250514}
-      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.3}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-all-MiniLM-L6-v2}
-      - SIMILARITY_THRESHOLD=${SIMILARITY_THRESHOLD:-0.7}
+      - PORT=8080
     volumes:
-      # Persist vector database
-      - ./data/chroma_db:/app/data/chroma_db
-      # Persist SQLite database
-      - ./data/articles.db:/app/data/articles.db
-      # Mount documents directory for ingestion
-      - ./data/documents:/app/data/documents
-      # Persist ingestion tracking
-      - ./data/ingested_files.json:/app/data/ingested_files.json
+      - amplafai-data:/app/data
+    expose:
+      - "8080"
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7860"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+
+  voice:
+    image: amplafai:latest
+    depends_on:
+      - web
+    env_file: .env
+    environment:
+      # Post the finished transcript to the web service over the private
+      # compose network — no public hairpin, and it keeps working even
+      # if DNS/TLS is mid-change. HMAC signing is host-agnostic.
+      - PMC_VOICE_CALLBACK_BASE_URL=http://web:8080
+    command: ["uv", "run", "--no-dev", "python", "-m", "src.modules.pmc.voice_agent", "start"]
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    depends_on:
+      - web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+
+volumes:
+  amplafai-data:   # SQLite (orgs/invites/billing/PMC) — survives redeploys
+  caddy-data:      # TLS certs — persist so renewals don't hit LE limits
+  caddy-config:
