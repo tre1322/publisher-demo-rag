@@ -421,6 +421,7 @@ async def api_update_settings(request: Request, user: dict = Depends(require_aut
 
 @router.get("/billing", response_class=HTMLResponse)
 async def billing_page(request: Request, user: dict = Depends(require_auth)):
+    from src.core.config import BILLING_ENABLED
     from src.modules.billing.database import (
         get_active_subscription,
         get_current_revenue_share,
@@ -449,6 +450,7 @@ async def billing_page(request: Request, user: dict = Depends(require_auth)):
         context={
             "user": user, "org": org, "sub": sub, "share": share,
             "history": history, "tier_catalog": tier_catalog,
+            "billing_enabled": BILLING_ENABLED,
             "active_page": "billing",
         },
     )
@@ -459,9 +461,19 @@ async def billing_checkout(
     request: Request, user: dict = Depends(require_auth), tier: str = Form(...)
 ):
     """Create a Stripe Checkout Session for the requested tier and redirect."""
-    from src.core.config import BASE_URL
+    from src.core.config import BASE_URL, BILLING_ENABLED
     from src.modules.billing.database import get_active_subscription
     from src.modules.billing.stripe_checkout import create_checkout_session
+
+    # Pilot kill-switch: payments closed → no-op back to the billing page
+    # (which renders the "no charge during the pilot" panel) instead of
+    # attempting a Stripe call that would 503 without keys.
+    if not BILLING_ENABLED:
+        logger.info(
+            "Checkout requested for tier=%s while BILLING_ENABLED=false; no-op",
+            tier,
+        )
+        return RedirectResponse(url="/business/billing", status_code=303)
 
     if tier not in ("starter", "growth", "concierge"):
         return JSONResponse(

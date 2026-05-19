@@ -94,6 +94,13 @@ BRAVE_SEARCH_API_KEY = os.getenv("BRAVE_SEARCH_API_KEY", "")
 # Server Settings
 BASE_URL = os.getenv("BASE_URL", "http://localhost:7860")
 
+# Payments kill-switch. Pilot default is OFF: the billing page shows a
+# "no charge during the pilot" panel instead of tier/checkout buttons,
+# and /business/billing/checkout no-ops. Registration, PMC onboarding,
+# and admin are unaffected. Flip to true (and set the STRIPE_* env) to
+# open billing — no code change needed.
+BILLING_ENABLED = os.getenv("BILLING_ENABLED", "false").lower() == "true"
+
 # ── W2.2 voice interview ──────────────────────────────────────────────
 # LiveKit Cloud — owner browser connects here for WebRTC. Agent worker
 # registers with this URL too. Get from the LiveKit Cloud dashboard.

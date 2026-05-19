@@ -35,9 +35,15 @@
             <dd class="col-sm-7"><code class="small">{{ sub.processor_subscription_id or "—" }}</code></dd>
           </dl>
         {% else %}
+          {% if billing_enabled %}
           <p class="text-muted mb-0">
             No active subscription yet. Pick a tier below to get started.
           </p>
+          {% else %}
+          <p class="text-muted mb-0">
+            You&rsquo;re in the Amplafai pilot &mdash; no charge during onboarding.
+          </p>
+          {% endif %}
         {% endif %}
       </div>
     </div>
@@ -66,6 +72,7 @@
   </div>
 </div>
 
+{% if billing_enabled %}
 <!-- Tier selection -->
 <div class="row mt-4">
   <div class="col-12">
@@ -90,6 +97,26 @@
   </div>
   {% endfor %}
 </div>
+{% else %}
+<!-- Pilot mode: payments not open yet -->
+<div class="row mt-4">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-body text-center py-4">
+        <h3 class="card-title mb-2">You&rsquo;re in the Amplafai pilot</h3>
+        <p class="text-muted mb-1">
+          There&rsquo;s no charge during onboarding. Build your marketing
+          profile and let the agent get to work &mdash; we&rsquo;ll walk you
+          through plans &amp; billing later in the pilot.
+        </p>
+        <p class="text-muted small mb-0">
+          Questions? <a href="mailto:support@amplafai.com">support@amplafai.com</a>
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <!-- Tier history -->
 {% if history %}
