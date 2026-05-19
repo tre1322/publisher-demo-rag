@@ -44,6 +44,9 @@ tests/
 Dockerfile
 .dockerignore
 docker-compose.yml
+Caddyfile
 
-# Lock file (generated with Mac CUDA packages, not suitable for Linux deployment)
-uv.lock
+# NOTE: uv.lock is intentionally NOT ignored — the slim Dockerfile does
+# `COPY pyproject.toml uv.lock` + `uv sync --frozen`. The old "Mac CUDA"
+# warning is obsolete: torch/CUDA were dropped, the lockfile is lean and
+# resolves correct Linux wheels.
