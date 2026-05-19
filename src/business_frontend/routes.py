@@ -52,6 +52,62 @@ def _set_session_cookie(response, user: dict) -> None:
     )
 
 
+# Tier catalog for the billing UI. Display only — real price comes from
+# the Stripe Price object, not this dict. Shared by billing_page and the
+# dashboard bootstrap API so the two never drift apart.
+TIER_CATALOG = [
+    {"id": "starter", "name": "Starter", "price_display": "$99/mo",
+     "tagline": "Drafts only — review and post yourself."},
+    {"id": "growth", "name": "Growth", "price_display": "$299/mo",
+     "tagline": "We run social, GBP, reviews, and a website for you."},
+    {"id": "concierge", "name": "Concierge", "price_display": "$499/mo",
+     "tagline": "Growth + dedicated human review + monthly strategy call."},
+]
+
+
+def _pmc_public(pmc: dict | None) -> dict | None:
+    """Browser-safe PMC: drop the raw transcript + raw quantitative JSON.
+
+    _row_to_dict() leaves transcript_text and quantitative_json on the
+    row; neither should ever reach the client.
+    """
+    if not pmc:
+        return None
+    return {
+        "id": pmc.get("id"),
+        "version": pmc.get("version"),
+        "status": pmc.get("status"),
+        "qualitative_md": pmc.get("qualitative_md"),
+        "quantitative": pmc.get("quantitative") or {},
+        "created_at": pmc.get("created_at"),
+        "updated_at": pmc.get("updated_at"),
+        "accepted_at": pmc.get("accepted_at"),
+        "interview_session_id": pmc.get("interview_session_id"),
+    }
+
+
+def _pmc_state(org_id: int) -> dict:
+    """Owner-facing PMC view state. Draft wins over the accepted canonical,
+    mirroring the /business/pmc/ server state machine (a fresh draft is what
+    the owner is meant to review next)."""
+    from src.modules.pmc import database as pmc_db
+
+    accepted = pmc_db.get_canonical_pmc(org_id)
+    draft = pmc_db.get_latest_draft(org_id)
+    if draft:
+        state, current = "draft", draft
+    elif accepted:
+        state, current = "accepted", accepted
+    else:
+        state, current = "none", None
+    return {
+        "state": state,
+        "current": _pmc_public(current),
+        "has_accepted": accepted is not None,
+        "has_draft": draft is not None,
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════
 #  REGISTRATION (invite-based)
 # ═══════════════════════════════════════════════════════════════════
@@ -309,14 +365,20 @@ async def logout():
 
 
 @router.get("/", response_class=HTMLResponse)
-async def dashboard(user: dict = Depends(require_auth)):
-    """Amplora business console root → bounce to the Marketing Profile.
+async def dashboard(request: Request, user: dict = Depends(require_auth)):
+    """Amplafai business console — the React single-page dashboard.
 
-    Phase 0 used to render a dashboard.html with chatbot impression
-    stats + recent ads. Both are gone (moved to the publisher server);
-    the owner's primary surface is now the PMC + billing pages.
+    Auth-gated shell only; every byte of data is loaded client-side from
+    /business/api/bootstrap (one fat call, one auth checkpoint). The 3
+    live domains (Marketing Profile/Plan, Billing, Settings) are wired
+    to real endpoints; the other views are labeled roadmap previews.
+    No CSP on this route by design — the cookie auth gating it (and the
+    data endpoints) is the real boundary; a CSP loose enough for the
+    Babel/Tailwind/React CDNs would add no security.
     """
-    return RedirectResponse(url="/business/pmc/", status_code=303)
+    return templates.TemplateResponse(
+        request=request, name="dashboard.html", context={}
+    )
 
 
 @router.get("/settings", response_class=HTMLResponse)
@@ -406,6 +468,146 @@ async def api_update_settings(request: Request, user: dict = Depends(require_aut
     return JSONResponse({"ok": True})
 
 
+@router.get("/api/bootstrap")
+async def api_bootstrap(user: dict = Depends(require_auth)):
+    """One-shot session/org/flags + the 3 live domains for the React shell.
+
+    A single fat call (not a fetch waterfall) = one auth checkpoint and
+    no flash of empty UI before the dashboard paints.
+    """
+    from src.core.config import BILLING_ENABLED
+    from src.modules.billing.database import (
+        get_active_subscription,
+        get_current_revenue_share,
+        get_tier_history,
+    )
+
+    org_id = user["organization_id"]
+
+    voice_configured = False
+    try:
+        from src.modules.pmc.voice_provisioning import is_configured
+
+        voice_configured = bool(is_configured())
+    except Exception:
+        logger.exception("voice_provisioning.is_configured() failed")
+
+    sub = get_active_subscription(org_id)
+    share = get_current_revenue_share(org_id)
+    history = get_tier_history(org_id) or []
+
+    return JSONResponse(
+        {
+            "user": {
+                "id": user.get("id"),
+                "name": user.get("name"),
+                "email": user.get("email"),
+                "role": user.get("role"),
+            },
+            "org": _get_org(org_id),
+            "flags": {
+                "billing_enabled": BILLING_ENABLED,
+                "voice_configured": voice_configured,
+            },
+            "billing": {
+                "subscription": (
+                    {
+                        "tier": sub.get("tier"),
+                        "status": sub.get("status"),
+                        "current_period_end": sub.get("current_period_end"),
+                    }
+                    if sub
+                    else None
+                ),
+                "revenue_share": (
+                    {
+                        "share_pct": share.get("share_pct"),
+                        "attribution_source": share.get("attribution_source"),
+                    }
+                    if share
+                    else None
+                ),
+                "tier_history": [
+                    {
+                        "from_tier": h.get("from_tier"),
+                        "to_tier": h.get("to_tier"),
+                        "effective_at": h.get("effective_at"),
+                        "reason": h.get("reason"),
+                    }
+                    for h in history
+                ],
+                "tier_catalog": TIER_CATALOG,
+            },
+            "pmc": _pmc_state(org_id),
+        }
+    )
+
+
+@router.get("/api/pmc")
+async def api_pmc(user: dict = Depends(require_auth)):
+    """Re-fetch current PMC state (post-voice handoff polling / refresh)."""
+    return JSONResponse(_pmc_state(user["organization_id"]))
+
+
+@router.put("/api/pmc/draft")
+async def api_pmc_draft(request: Request, user: dict = Depends(require_auth)):
+    """JSON twin of POST /pmc/save — owner edits to the draft.
+
+    Delegates to the same pmc_db.update_pmc_draft as the form path, so
+    there is no duplicated write logic. Returns the refreshed PMC state
+    so the SPA can update both the Profile and Plan views in one go.
+    """
+    from src.modules.pmc import database as pmc_db
+
+    data = await request.json()
+    pmc_id = int(data.get("pmc_id") or 0)
+    pmc = pmc_db.get_pmc(pmc_id)
+    if not pmc or pmc["organization_id"] != user["organization_id"]:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+
+    quantitative = data.get("quantitative")
+    if quantitative is not None and not isinstance(quantitative, dict):
+        return JSONResponse({"error": "bad_quantitative"}, status_code=400)
+
+    try:
+        pmc_db.update_pmc_draft(
+            pmc_id,
+            qualitative_md=data.get("qualitative_md"),
+            quantitative=quantitative,
+        )
+    except ValueError:
+        return JSONResponse({"error": "not_draft"}, status_code=409)
+
+    return JSONResponse(
+        {"ok": True, "pmc": _pmc_state(user["organization_id"])}
+    )
+
+
+@router.post("/api/pmc/accept")
+async def api_pmc_accept(request: Request, user: dict = Depends(require_auth)):
+    """JSON twin of POST /pmc/accept — draft → canonical (atomic supersede)."""
+    from src.modules.pmc import database as pmc_db
+
+    data = await request.json()
+    pmc_id = int(data.get("pmc_id") or 0)
+    pmc = pmc_db.get_pmc(pmc_id)
+    if not pmc or pmc["organization_id"] != user["organization_id"]:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+
+    try:
+        pmc_db.accept_pmc(pmc_id, user_id=user.get("id"))
+    except ValueError:
+        return JSONResponse({"error": "not_draft"}, status_code=409)
+
+    logger.info(
+        f"PMC {pmc_id} accepted via API by user {user.get('id')} "
+        f"for org {user['organization_id']}"
+    )
+    return JSONResponse(
+        {"ok": True, "pmc": _pmc_state(user["organization_id"])}
+    )
+
+
 # ═══════════════════════════════════════════════════════════════════
 #  BILLING (W1)
 # ═══════════════════════════════════════════════════════════════════
@@ -433,16 +635,8 @@ async def billing_page(request: Request, user: dict = Depends(require_auth)):
     share = get_current_revenue_share(user["organization_id"])
     history = get_tier_history(user["organization_id"])
 
-    # Tier catalog for the buy buttons. Display only — actual price comes
-    # from the Stripe Price object, not this dict.
-    tier_catalog = [
-        {"id": "starter", "name": "Starter", "price_display": "$99/mo",
-         "tagline": "Drafts only — review and post yourself."},
-        {"id": "growth", "name": "Growth", "price_display": "$299/mo",
-         "tagline": "We run social, GBP, reviews, and a website for you."},
-        {"id": "concierge", "name": "Concierge", "price_display": "$499/mo",
-         "tagline": "Growth + dedicated human review + monthly strategy call."},
-    ]
+    # Display only — actual price comes from the Stripe Price object.
+    tier_catalog = TIER_CATALOG
 
     return templates.TemplateResponse(
         request=request,
@@ -979,7 +1173,7 @@ async def pmc_voice_complete(request: Request):
             existing["id"], session["id"],
         )
         return JSONResponse(
-            {"ok": True, "pmc_id": existing["id"], "redirect_to": "/business/pmc/"},
+            {"ok": True, "pmc_id": existing["id"], "redirect_to": "/business/?view=profile"},
             status_code=200,
         )
 
@@ -1021,7 +1215,7 @@ async def pmc_voice_complete(request: Request):
         pmc_id, session["id"], session["organization_id"],
     )
     return JSONResponse(
-        {"ok": True, "pmc_id": pmc_id, "redirect_to": "/business/pmc/"},
+        {"ok": True, "pmc_id": pmc_id, "redirect_to": "/business/?view=profile"},
         status_code=201,
     )
 
@@ -1062,7 +1256,7 @@ async def pmc_voice_status(
         {
             "status": session["status"],
             "pmc_id": pmc_id,
-            "redirect_to": "/business/pmc/" if pmc_id else None,
+            "redirect_to": "/business/?view=profile" if pmc_id else None,
         },
         status_code=200,
     )

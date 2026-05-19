@@ -1,0 +1,3233 @@
+<!doctype html>
+<!--
+  Popular Network — Marketing Agent dashboard demo
+  ================================================
+  WHAT THIS IS
+    A static, self-contained sample of what a Tier 2 / Tier 3 small business
+    owner sees when they log into the Popular Network Marketing Agent. Built
+    as a partner demo to communicate product vision. No backend, no APIs —
+    every value on screen is mock data hardcoded below.
+
+  HOW TO OPEN
+    Double-click this file. It opens in any modern browser. No build, no
+    install. React 18, Tailwind, and Lucide are loaded via CDN.
+
+  THE FICTIONAL BUSINESS
+    Westbrook Auto & Tire — Westbrook, Minnesota
+    Owner: Dale Henderson, Tier 2, day 47 with Popular Network.
+
+  EIGHT VIEWS
+    1. Home / Overview
+    2. Content Calendar
+    3. Approvals Queue
+    4. Performance
+    5. Reviews
+    6. Marketing Plan
+    7. AI Agent Chat
+    8. Settings
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=1280, initial-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>Popular Network — Westbrook Auto &amp; Tire</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    // Tailwind Play CDN expects `tailwind.config` to be set AFTER its script
+    // has loaded — earlier ordering caused a race where the brand color
+    // palette would silently fail to register on some loads, leaving the
+    // sidebar with no background and white text on white.
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50:  '#E9F2F4',
+              100: '#CCE0E4',
+              200: '#9DC3CB',
+              300: '#5E97A4',
+              400: '#2F7682',
+              500: '#0E5E6F',
+              600: '#0A4D5C',
+              700: '#083F4A',
+              800: '#06313A',
+              900: '#04232A'
+            },
+            accent: { DEFAULT: '#F4A261', soft: '#FBE3CB' },
+            ink:    { DEFAULT: '#1A2A2E', soft: '#4A5C61', faint: '#8B9CA0' },
+            surface:{ DEFAULT: '#F7F7F5', card: '#FFFFFF', edge: '#E7E5E0' },
+            ok:     '#2A9D8F',
+            warn:   '#E9A53D',
+            bad:    '#D63A3A'
+          },
+          fontFamily: {
+            sans:  ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
+            serif: ['"Playfair Display"', 'Georgia', 'serif']
+          },
+          boxShadow: {
+            card:   '0 1px 2px rgba(15, 30, 40, 0.04), 0 1px 1px rgba(15, 30, 40, 0.03)',
+            cardLg: '0 4px 12px rgba(15, 30, 40, 0.06), 0 2px 4px rgba(15, 30, 40, 0.04)',
+            modal:  '0 20px 60px rgba(15, 30, 40, 0.18), 0 8px 18px rgba(15, 30, 40, 0.10)'
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    html { font-size: 19px; }
+    html, body { background: #F7F7F5; color: #1A2A2E; font-family: 'Inter', system-ui, sans-serif; }
+    body { -webkit-font-smoothing: antialiased; }
+    .scroll-fade { mask-image: linear-gradient(to bottom, black 90%, transparent); }
+    .nav-active   { background: rgba(255,255,255,0.10); border-left: 3px solid #F4A261; padding-left: 13px; }
+    .nav-inactive { border-left: 3px solid transparent; padding-left: 13px; }
+    .nav-inactive:hover { background: rgba(255,255,255,0.06); }
+    .chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 500; line-height: 1; }
+    .platform-fb  { background: #E8F0FB; color: #1B4F9A; }
+    .platform-ig  { background: #FBE9F1; color: #9F2A6E; }
+    .platform-gbp { background: #E7F3EA; color: #1F6E3D; }
+    .platform-meta{ background: #EFEAFA; color: #4A2F9A; }
+    .platform-web { background: #E6F1F3; color: #0E5E6F; }
+    .status-draft     { background: #ECEFF1; color: #4A5C61; }
+    .status-pending   { background: #FBE9D6; color: #8C5A1A; }
+    .status-approved  { background: #DDEFE9; color: #1F6E55; }
+    .status-published { background: #D8EAEE; color: #0A4D5C; }
+    /* fade transitions */
+    .fade-in { animation: fadeIn 220ms ease-out both; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(2px);} to { opacity: 1; transform: none; } }
+    .slide-in-right { animation: slideInRight 220ms ease-out both; }
+    @keyframes slideInRight { from { opacity: 0; transform: translateX(8px);} to { opacity: 1; transform: none; } }
+    /* hide babel transform flash */
+    #root:empty::before {
+      content: 'Loading…';
+      display: block; padding: 24px; color: #8B9CA0; font-size: 13px;
+    }
+  </style>
+  <!-- Markdown rendering for the PMC-driven Marketing Plan view. CDN tags,
+       consistent with the no-build single-file approach. -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+  <style>
+    /* R1 fallback: if the Tailwind Play CDN config races and brand-700
+       never resolves, the sidebar still reads as the dark brand surface
+       (and its text stays legible) instead of unstyled white. */
+    aside.bg-brand-700 { background-color:#0B3D47; color:#fff; }
+    /* marked() output has no Tailwind classes — style it so the
+       narrative PMC sections read like prose, not raw HTML. */
+    .pmc-md > :first-child { margin-top:0; }
+    .pmc-md h1,.pmc-md h2,.pmc-md h3,.pmc-md h4 { font-weight:600; color:#1A2A2E; margin:.9rem 0 .35rem; line-height:1.3; }
+    .pmc-md h1 { font-size:1.05rem; } .pmc-md h2 { font-size:1rem; } .pmc-md h3,.pmc-md h4 { font-size:.9rem; }
+    .pmc-md p { margin:.5rem 0; }
+    .pmc-md ul,.pmc-md ol { margin:.45rem 0; padding-left:1.15rem; }
+    .pmc-md ul { list-style:disc; } .pmc-md ol { list-style:decimal; }
+    .pmc-md li { margin:.18rem 0; }
+    .pmc-md strong { color:#1A2A2E; font-weight:600; }
+    .pmc-md em { font-style:italic; }
+    .pmc-md blockquote { border-left:3px solid #cbd5d8; padding-left:.75rem; color:#52636a; margin:.6rem 0; }
+    .pmc-md code { background:#eef1f1; padding:.05rem .3rem; border-radius:4px; font-size:.85em; }
+    .pmc-md a { color:#0E5E6F; text-decoration:underline; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Bootstrap: ONE auth-gated fetch before React mounts. The shell GET
+       already passed require_auth, so the cookie is valid; this guards
+       the mid-session-expiry case (AuthRequired -> 303 -> login HTML,
+       which fetch silently follows as 200). Plain JS, no template tags,
+       so it sits safely outside the Jinja raw region below. -->
+  <script>
+    window.__AMPLAFAI_READY__ = fetch('/business/api/bootstrap', { credentials: 'same-origin' })
+      .then(function (r) {
+        var ct = r.headers.get('content-type') || '';
+        if (r.redirected || !r.ok || ct.indexOf('application/json') === -1) {
+          window.location.href = '/business/login';
+          return new Promise(function () {});
+        }
+        return r.json();
+      })
+      .then(function (data) { window.__AMPLAFAI__ = data; return data; })
+      .catch(function () {
+        window.location.href = '/business/login';
+        return new Promise(function () {});
+      });
+  </script>
+
+  <script type="text/babel" data-presets="react">
+{% raw %}
+  /* eslint-disable */
+  const { useState, useEffect, useRef, useMemo, Fragment } = React;
+
+  // BUILD VERSION — bump this every meaningful edit so you can verify which
+  // version your browser is showing (rendered in the sidebar footer).
+  const BUILD_VERSION = '2026-05-19 · v11 — live business shell (PMC/Billing/Settings wired)';
+
+  /* ============================================================
+     LIVE DATA — populated from /business/api/bootstrap before mount.
+     The 3 live domains (Marketing Profile, Marketing Plan, Settings)
+     read BOOT/PMC; the roadmap views keep their mock consts.
+     ============================================================ */
+  let BOOT = null;   // full bootstrap payload
+  let PMC = { state: 'none', current: null, has_accepted: false, has_draft: false };
+
+  function _initials(name) {
+    return (name || '').split(/\s+/).filter(Boolean).slice(0, 2)
+      .map(function (w) { return w[0].toUpperCase(); }).join('') || '—';
+  }
+
+  // Mutate the mock consts in place so existing components that reference
+  // `business.*` directly render real data with zero rewrites.
+  function hydrate(boot) {
+    if (!boot) return;
+    BOOT = boot;
+    PMC = boot.pmc || PMC;
+    const o = boot.org || {};
+    const u = boot.user || {};
+    if (o.name) business.name = o.name;
+    if (u.name) { business.owner = u.name; business.ownerInitials = _initials(u.name); }
+    if (o.publisher) business.publisher = o.publisher;
+    if (o.phone) business.phone = o.phone;
+    const sub = boot.billing && boot.billing.subscription;
+    if (sub && sub.tier) {
+      business.tierLabel = sub.tier;
+      business.tier = sub.tier;
+    }
+  }
+
+  // Render PMC markdown safely (marked -> DOMPurify). Self-XSS guard:
+  // the owner edits + views only their own org's PMC, but sanitize anyway.
+  function mdHtml(md) {
+    const raw = window.marked ? window.marked.parse(md || '') : (md || '');
+    return window.DOMPurify ? window.DOMPurify.sanitize(raw) : raw;
+  }
+
+  // fetch wrapper for write calls. If the session expired mid-use the
+  // server 303s to /login; fetch follows it and resolves 200-HTML, so
+  // detect that and hard-redirect instead of failing silently (R6).
+  async function apiFetch(url, opts) {
+    const res = await fetch(url, Object.assign({ credentials: 'same-origin' }, opts || {}));
+    const ct = res.headers.get('content-type') || '';
+    if (res.redirected || ct.indexOf('application/json') === -1) {
+      window.location.href = '/business/login';
+      return new Promise(function () {});
+    }
+    return res;
+  }
+
+  /* ============================================================
+     ICONS — inline lucide path data, rendered as React components.
+     Same visual language as lucide-react, no CDN brittleness.
+     ============================================================ */
+  const ICON_BASE = {
+    width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none',
+    stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round'
+  };
+  const Icon = ({ name, size = 18, className = '', strokeWidth = 2 }) => {
+    const props = { ...ICON_BASE, width: size, height: size, strokeWidth, className };
+    const P = ICON_PATHS[name];
+    if (!P) return <svg {...props}><circle cx="12" cy="12" r="9" /></svg>;
+    return <svg {...props} dangerouslySetInnerHTML={{ __html: P }} />;
+  };
+  const ICON_PATHS = {
+    home: '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+    calendar: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+    inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z"/>',
+    chart: '<path d="M3 3v18h18"/><path d="M7 16V9M12 16v-5M17 16v-9"/>',
+    star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
+    target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+    msg: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+    settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+    check: '<polyline points="20 6 9 17 4 12"/>',
+    x: '<path d="M18 6 6 18M6 6l12 12"/>',
+    edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+    image: '<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
+    alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3z"/><path d="M12 9v4M12 17h.01"/>',
+    sparkles: '<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/><path d="M5 3v4M19 17v4M3 5h4M17 19h4"/>',
+    chevR: '<polyline points="9 18 15 12 9 6"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+    search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+    logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>',
+    fb: '<path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>',
+    ig: '<rect width="20" height="20" x="2" y="2" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/>',
+    google: '<path d="M22 12.18c0-.78-.07-1.53-.2-2.25H12v4.26h5.62c-.24 1.3-.97 2.4-2.06 3.13v2.6h3.34C20.85 18 22 15.36 22 12.18z"/><path d="M12 22c2.7 0 4.97-.9 6.62-2.42l-3.34-2.6c-.92.62-2.1.99-3.28.99-2.52 0-4.65-1.7-5.41-3.99H2.99v2.51A9.99 9.99 0 0 0 12 22z"/><path d="M6.59 13.98a6 6 0 0 1 0-3.96V7.51H2.99a10 10 0 0 0 0 8.98z"/><path d="M12 6.04c1.47 0 2.78.5 3.81 1.49l2.86-2.86C16.97 3 14.7 2 12 2A9.99 9.99 0 0 0 2.99 7.51L6.6 10.02C7.35 7.74 9.48 6.04 12 6.04z"/>',
+    dollar: '<line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
+    trending: '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+    flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>',
+    refresh: '<path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/>',
+    user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+    phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
+    upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
+    eye: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+    helpcircle: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" x2="12.01" y1="17" y2="17"/>',
+    globe: '<circle cx="12" cy="12" r="10"/><line x1="2" x2="22" y1="12" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
+    type: '<polyline points="4 7 4 4 20 4 20 7"/><line x1="9" x2="15" y1="20" y2="20"/><line x1="12" x2="12" y1="4" y2="20"/>',
+    moreh: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+    heart: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>',
+    send: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
+    bookmark: '<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>',
+    thumbsup: '<path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>',
+    share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>',
+    clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'
+  };
+
+  /* ============================================================
+     MOCK DATA
+     ============================================================ */
+  const today = new Date(2026, 4, 5); // May 5, 2026 (anchor)
+  const fmtDate = (d, opts = {}) =>
+    d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...opts });
+
+  const business = {
+    name: 'Westbrook Auto & Tire',
+    owner: 'Dale Henderson',
+    ownerInitials: 'DH',
+    location: 'Westbrook, MN',
+    publisher: 'Pipestone County Star',
+    phone: '(507) 555-0143',
+    tier: 2,
+    tierLabel: 'Tier 2 — Marketing Agent',
+    monthlyPrice: 299,
+    joinedDaysAgo: 47,
+    joinedDate: 'March 19, 2026',
+    voiceInterview: 'complete',
+    techName: 'Mike',
+    yearsInTown: 22,
+    aseCertified: true
+  };
+
+  const stats = {
+    posts:      { value: 12, prev: 8,  delta: '+4',   helper: 'across FB, IG, GBP' },
+    engagement: { value: '+28%', helper: 'vs prior 30 days', positive: true },
+    reviews:    { value: 7,  rating: 4.8, helper: '4.8 ★ avg' },
+    spend:      { used: 112, budget: 150, helper: '$200 / mo recommended' },
+    chatbot:    { value: 34, helper: 'Tier 3 preview' }
+  };
+
+  const attention = [
+    { kind: 'pending',  title: '3 posts pending your approval',
+      detail: 'Memorial Day pre-trip post, Insta reel script, GBP holiday hours.',
+      cta: 'Review queue', icon: 'inbox', tone: 'amber', target: 'approvals' },
+    { kind: 'review',   title: '2★ review from Karen B. on Google',
+      detail: '"Wait was longer than told." A response is drafted and waiting.',
+      cta: 'View & respond', icon: 'alert', tone: 'red', target: 'reviews' },
+    { kind: 'gap',      title: 'Content gap surfaced from chatbot queries',
+      detail: '5 customers asked the Westbrook chatbot about online appointment booking this month. The Knowledge Gap Detector recommends a "how to book" GBP post and a placeholder booking page.',
+      cta: 'See suggestion', icon: 'sparkles', tone: 'teal', target: 'plan' },
+    { kind: 'spend',    title: 'Spend reallocation recommendation',
+      detail: 'Shift $30 from the Eagles boost (frequency capped) to a GBP promotion. Estimated 3.1× expected ROAS.',
+      cta: 'See details', icon: 'trending', tone: 'teal', target: 'performance' }
+  ];
+
+  const weekRecap = [
+    { when: 'Mon, Apr 28', text: 'Drafted 4 Facebook posts (2 awaiting your sign-off)' },
+    { when: 'Tue, Apr 29', text: 'Drafted 3 Instagram posts including a behind-the-scenes reel script' },
+    { when: 'Wed, Apr 30', text: 'Updated Google Business Profile twice — winter→summer hours and a Memorial Day note' },
+    { when: 'Thu, May 1',  text: 'Drafted responses to 6 reviews; 5 auto-approved per your weekly batch setting, Karen B. flagged for your eyes' },
+    { when: 'Fri, May 2',  text: 'Flagged frequency cap on the $30/day Eagles boost — $20/day across 6 days is the cleaner buy' }
+  ];
+
+  const PLATFORMS = {
+    fb:   { label: 'Facebook',                cls: 'platform-fb',  icon: 'fb',     dot: '#1B4F9A' },
+    ig:   { label: 'Instagram',               cls: 'platform-ig',  icon: 'ig',     dot: '#9F2A6E' },
+    gbp:  { label: 'Google Business Profile', cls: 'platform-gbp', icon: 'google', dot: '#1F6E3D' },
+    web:  { label: 'Website',                 cls: 'platform-web', icon: 'globe',  dot: '#0E5E6F' },
+    meta: { label: 'Meta Ads (FB+IG)',        cls: 'platform-meta',icon: 'sparkles', dot: '#4A2F9A' }
+  };
+  const STATUSES = {
+    draft:     { label: 'Draft',     cls: 'status-draft',     dot: '#8B9CA0' },
+    pending:   { label: 'Pending',   cls: 'status-pending',   dot: '#E9A53D' },
+    approved:  { label: 'Approved',  cls: 'status-approved',  dot: '#2A9D8F' },
+    published: { label: 'Published', cls: 'status-published', dot: '#0E5E6F' }
+  };
+
+  // Posts spanning May 2026 (today is May 5). Pre-May-5 = published, May 5+ = pending/draft.
+  const posts = [
+    { id: 1,  date: '2026-05-01', platform: 'gbp', status: 'published', title: 'Memorial Day weekend hours',
+      draft: 'Heads up: closed Monday May 25 for Memorial Day. Open regular hours Tue–Sat. Heading to the lake? Stop in Friday or Saturday for a $59 pre-trip safety check.',
+      reasoning: 'GBP holiday-hours posts get 4× the tap-to-call rate of feed posts in your data. Pairing the closure with the pre-trip service turns the announcement into something actionable.' },
+    { id: 2,  date: '2026-05-02', platform: 'fb',  status: 'published', title: 'Free Saturday brake check',
+      draft: 'Brake pedal feel a little soft? Pull in any Saturday morning — we\'ll take a look at your brakes for free, no appointment. Coffee\'s on, kids get a sticker.',
+      reasoning: 'Saturday-morning posts (8–10am) outperform other windows by 41% for your audience. Free-inspection framing lowers commitment for first-time customers.' },
+    { id: 3,  date: '2026-05-04', platform: 'fb',  status: 'published', title: 'Winter→summer tire swap',
+      draft: 'Snow tires off, summer rubber on. Book your seasonal swap this week — we\'ve got Saturday slots open. Bring \'em in or have them stored with us for next winter, $40 off either way.',
+      reasoning: 'Seasonal urgency post timed to the swap window. Storage upsell pulled from your March voice memo — you mentioned 18 storage slots still empty.' },
+    { id: 4,  date: '2026-05-05', platform: 'ig',  status: 'pending',   title: 'BTS: Mike rebuilds a 2014 Silverado front end',
+      draft: 'Two days, fresh ball joints, control arms, tie rods, and an alignment. This Silverado is going back on the road tighter than when it left the factory. (Behind-the-scenes reel — Mike narrates.)',
+      reasoning: 'Behind-the-scenes content has been your strongest IG format — 2.3× the engagement of static posts. Mike\'s narration adds the personal-craft angle your reviews praise.' },
+    { id: 5,  date: '2026-05-06', platform: 'fb',  status: 'pending',   title: 'Oil change special — coffee\'s on',
+      draft: 'Oil change while you wait. 30 minutes, $49.95 most vehicles, fresh coffee in the lobby. No appointment needed before noon any weekday.',
+      reasoning: 'Promotional anchor post for the slow weekday-morning window. Pulled the price point from your March pricing sheet.' },
+    { id: 6,  date: '2026-05-07', platform: 'fb',  status: 'pending',   title: 'Section playoffs — go Chargers',
+      draft: 'Big game tonight — good luck to the WWG Chargers at sectionals. Stop in tomorrow on your way home from the game and we\'ll knock $10 off any service in your blue-and-white spirit gear. 🏈',
+      reasoning: 'Local sports tie-ins drive 2.3× engagement vs other posts. Tying it to a service discount gives the post a measurable hook.' },
+    { id: 7,  date: '2026-05-08', platform: 'fb',  status: 'pending',   title: 'Memorial Day pre-trip safety check',
+      draft: 'Headed to the lake this Memorial Day weekend? $59 pre-trip safety check covers oil, tire pressure, brakes, and fluid top-off. We\'d rather you find a problem in our bay than 80 miles into your drive. Book Friday or Saturday.',
+      reasoning: 'Lake-bound traffic is the dominant Memorial Day signal in Westbrook — flat sales underperform here. Safety-check angle reframes the same week as a service occasion.' },
+    { id: 8,  date: '2026-05-09', platform: 'fb',  status: 'draft',     title: 'Farm-tire field service',
+      draft: 'Out in the field and got a flat on the tractor or a trailer? We come to you. Call (507) 555-0143 — Mike or I will load up the truck and head out. 22 years doing this.',
+      reasoning: 'Differentiator pulled from your interview ("nobody else around here will come out to the field"). Reaches farmers who don\'t scroll FB casually but call when they\'re stuck.' },
+    { id: 9,  date: '2026-05-12', platform: 'fb',  status: 'approved',  title: '"Did you know" — proper tire balancing',
+      draft: 'Most chain shops static-balance your tires. We dynamic-balance every wheel on a road-force machine. That\'s the difference between a tire that hums at 65 and one that doesn\'t.',
+      reasoning: 'Educational post differentiating your shop from chains. Pulled language from your "we don\'t do shortcuts" voice memo.' },
+    { id: 10, date: '2026-05-14', platform: 'gbp', status: 'approved',  title: 'Memorial Day pre-trip — GBP version',
+      draft: '$59 Memorial Day pre-trip safety check. Oil, tires, brakes, fluids. Open Tue–Sat, closed Memorial Day Monday. Call (507) 555-0143.',
+      reasoning: 'GBP-specific phrasing with phone number front and center for tap-to-call. Same offer as the FB post, formatted for search-result preview.' },
+    { id: 11, date: '2026-05-15', platform: 'fb',  status: 'approved',  title: 'Spring suspension check',
+      draft: 'Pothole season was rough on everyone. Free 5-minute suspension check this week — drive in, no appointment. We\'ll tell you if anything\'s loose, leaking, or worn. No upsell, no pressure.',
+      reasoning: '"No upsell" language is verbatim from your reviews — the customer language repository pulled it as a top-3 phrase. Free-check format consistent with your brake post.' },
+    { id: 12, date: '2026-05-16', platform: 'meta',status: 'approved',  title: 'Memorial Day boost — paid',
+      draft: 'Boosted version of the May 8 pre-trip safety check post. $30 over 3 days, ages 30–65, 25-mile radius around Westbrook.',
+      reasoning: 'You set the parameters in chat May 5. Estimated reach 3,500. Posting Friday 9am — strongest Friday window historically.' },
+    { id: 13, date: '2026-05-18', platform: 'ig',  status: 'draft',     title: 'Customer testimonial repost — Mike P.',
+      draft: '"Honest mechanic. Won\'t sell you what you don\'t need." — Mike P., Google review last week. That\'s the goal, every time. Thanks Mike. 🙏',
+      reasoning: 'Repurposing your strongest recent 5★ review as social proof. Pulled the line that matches your brand voice best.' },
+    { id: 14, date: '2026-05-20', platform: 'fb',  status: 'draft',     title: 'Mid-week reminder — coffee + oil change',
+      draft: 'Wednesday is the slowest day in the bay, which means you\'re in and out in 25 minutes. $49.95 oil change, fresh coffee, no waiting room scrum.',
+      reasoning: 'Capacity-balancing post for your slowest day. Frame the slow-day weakness as a customer benefit (faster turnaround).' },
+    { id: 15, date: '2026-05-22', platform: 'gbp', status: 'draft',     title: 'Holiday hours reminder',
+      draft: 'Memorial Day weekend reminder: open Tue–Sat regular hours, closed Monday May 25. Friday and Saturday filling up with pre-trip checks — call ahead.',
+      reasoning: 'Final reminder before the holiday closure. GBP search visibility peaks the week of the holiday.' },
+    { id: 16, date: '2026-05-25', platform: 'fb',  status: 'draft',     title: 'Memorial Day — closed, thanks vets',
+      draft: 'Closed today. Thank you to the men and women who served, and to the families who waited at home. We\'ll be back Tuesday.',
+      reasoning: 'Sincere closure post. Avoiding promotional language on the holiday — your pattern in past years and consistent with your reviews\' voice.' },
+    { id: 17, date: '2026-05-29', platform: 'ig',  status: 'draft',     title: 'Saturday coffee reminder',
+      draft: 'Reminder: free coffee, free brake check, no appointment needed Saturday mornings. Bring your dog, the kids get stickers, we\'ll have you out before lunch.',
+      reasoning: 'Reinforces the "Saturday mornings = walk-in friendly" pattern. Fits the Saturday-morning engagement window.' }
+  ];
+
+  const approvals = [
+    { id: 'a1', platform: 'fb',
+      title: 'Winter tire stack-out sale',
+      draft: 'Spring cleaning the tire room — we\'ve got studded snows in 16", 17", and 18" at 30–40% off retail. First come, first served, and yes we\'ll mount and balance. Stop in or call (507) 555-0143.',
+      note: 'Pulled this from your inventory voice memo on March 28 — you mentioned the back wall was full of takeoffs. Promo timing aligned with the seasonal-swap traffic this week.' },
+    { id: 'a2', platform: 'ig',
+      title: '60-second oil change tour (reel)',
+      draft: '60 seconds inside the bay 🛠️ Mike walks you through what actually happens during your oil change. (Spoiler: we check 14 things before you drive off.) Book online or call us. #WestbrookMN #LocalShop #HonestMechanic',
+      note: 'Behind-the-scenes content has been your strongest IG format — 2.3× engagement vs static posts. Reel format recommended over photo carousel.' },
+    { id: 'a3', platform: 'gbp',
+      title: 'Memorial Day weekend hours',
+      draft: 'Memorial Day weekend hours: closed Monday May 25. Open regular hours Tue–Sat. Heading to the lake? Stop in Friday or Saturday for a quick pre-trip safety check — $59 covers oil, tires, brakes, fluids.',
+      note: 'GBP holiday-hours posts get a 4× higher tap-to-call rate than feed posts. Pairing the closure note with the pre-trip service brings the closure into a useful announcement.' },
+    { id: 'a4', platform: 'gbp', kind: 'review',
+      title: 'Reply to Karen B., 2★ Google review',
+      original: 'Wait was longer than told. Said 30 min for an oil change, took 1.5 hours. Disappointed.',
+      draft: 'Karen, that\'s on us — when we say 30 minutes we should mean it. I\'m sorry your morning got blown up. I\'d like to make it right: bring your vehicle back any time before May 31 and we\'ll take care of your next oil change on the house. Give me a call directly at (507) 555-0143 and ask for Dale. Thanks for telling us — that\'s how we get better.',
+      note: 'Negative-review responses with a direct phone number from the owner have a 67% callback rate. Drafted in your voice based on prior responses. Recommend approving today — Google\'s response-time tier resets at 48 hours.' }
+  ];
+
+  // Daily reach series — 30 days current (May), 30 days previous (April).
+  // Hand-tuned so the totals roughly match the headline numbers.
+  const dailyReachCurrent = [430,380,510,290,340,620,580,410,360,480,290,320,540,610,460,380,420,290,350,580,670,510,440,390,480,320,410,590,640,520];
+  const dailyReachPrev    = [310,280,360,220,260,440,410,290,250,340,220,240,380,430,320,270,300,220,260,410,470,360,310,280,340,230,290,410,450,360];
+
+  const performance = {
+    reach:      { value: 14200, prev: 10750, delta: '+32%', positive: true },
+    engagement: { value: 1189,  prev: 928,   delta: '+28%', positive: true },
+    followers:  { value: '+47', prev: '+18', delta: '+161%', positive: true, helper: 'net new this period' },
+    ctr:        { value: '3.1%', prev: '2.4%', delta: '+0.7pp', positive: true, helper: 'paid social' },
+    channelMix: [
+      { platform: 'fb',  organic: 5200, paid: 2100 },
+      { platform: 'ig',  organic: 2800, paid:  600 },
+      { platform: 'gbp', organic: 3400, paid:    0 }
+    ],
+    topPosts: [
+      { platform: 'fb', title: '"Big game tonight — good luck Chargers"', metric: '412 likes · 38 shares · 18 comments', note: 'Saturday 8:14am' },
+      { platform: 'fb', title: 'Winter tire stack-out tease',              metric: '287 likes · 14 shares',               note: 'Friday 9:02am' },
+      { platform: 'ig', title: 'Mike rebuilds a 2014 Silverado front end (reel)', metric: '1.2k views · 89 likes · 12 comments', note: 'Wednesday 4:48pm' }
+    ],
+    insights: [
+      { kind: 'win',  title: 'Local sports tie-ins',
+        body: 'Posts referencing the Chargers, the rink, or the school average 2.3× the engagement of your other posts. Keep this in the rotation when there\'s a real game on the calendar.' },
+      { kind: 'win',  title: 'Saturday-morning timing',
+        body: 'Posts published 8–10am Saturday outperform any other window by 41%. The "free brake check Saturday" anchor doubles down on this rhythm.' },
+      { kind: 'lose', title: 'Static product shots',
+        body: 'Stock-style tire photos and clip-art ads underperform. In-shop and in-vehicle photos drive the engagement — keep Mike\'s phone in his pocket and pull from his shots.' },
+      { kind: 'lose', title: 'Meta budget shape',
+        body: 'Your $30/day Meta boost hits frequency cap by day 4 — meaning the same people see it 4+ times before the run ends. Try $20/day for 6 days: same total spend, 31% more unique reach.' }
+    ]
+  };
+
+  const reviews = {
+    aggregate: 4.8,
+    total: 162,
+    sparkline: [4.6, 4.7, 4.7, 4.7, 4.8, 4.8],
+    sparklineLabels: ['Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May'],
+    pinned: {
+      id: 'r3', platform: 'gbp', stars: 2, when: '4 days ago',
+      author: 'Karen B.',
+      body: 'Wait was longer than told. Said 30 min for an oil change, took 1.5 hours. Disappointed.',
+      response: 'Karen, that\'s on us — when we say 30 minutes we should mean it. I\'m sorry your morning got blown up. I\'d like to make it right: bring your vehicle back any time before May 31 and we\'ll take care of your next oil change on the house. Give me a call directly at (507) 555-0143 and ask for Dale. Thanks for telling us — that\'s how we get better.',
+      note: 'Owner-signed apologies with a direct phone number have a 67% callback rate.'
+    },
+    recent: [
+      { id: 'r1', platform: 'gbp', stars: 5, when: '2 days ago', author: 'Tom L.',
+        body: 'Quick brake job, fair price. Dale walked me through what was wrong before doing the work. Will be back.',
+        response: 'Tom — appreciate you taking the time. Glad we could get you sorted before the holiday weekend. — Dale' },
+      { id: 'r2', platform: 'fb', stars: 5, when: '3 days ago', author: 'Sarah J.',
+        body: 'Had a flat heading out of town for my daughter\'s graduation. They got me in same day, no extra fuss. Saved my whole weekend.',
+        response: 'Sarah — congrats to your daughter! Glad we could keep the day on track. Drive safe. — Westbrook Auto & Tire' },
+      { id: 'r3', platform: 'gbp', stars: 2, when: '4 days ago', author: 'Karen B.',
+        body: 'Wait was longer than told. Said 30 min for an oil change, took 1.5 hours. Disappointed.',
+        response: '(see flagged response above)',
+        flagged: true },
+      { id: 'r4', platform: 'gbp', stars: 5, when: '1 week ago', author: 'Mike P.',
+        body: 'Honest mechanic. Won\'t sell you what you don\'t need. Told me my brakes had another season in them when the dealership wanted to replace them now. Lifetime customer.',
+        response: 'Mike — we\'d rather you trust us next year than upsell you today. Thanks for the kind words. — Dale' },
+      { id: 'r5', platform: 'fb', stars: 4, when: '1 week ago', author: 'Jenna H.',
+        body: 'Service was great. Only complaint is I wish you took online appointments. Other than that, top notch.',
+        response: 'Jenna — you\'re not alone, we\'ve heard that a few times now. Online booking is on the list for this summer. Until then, (507) 555-0143 will get you on the calendar. — Dale' }
+    ]
+  };
+
+  const marketingPlan = {
+    audience: 'Westbrook & Cottonwood County drivers — primarily owner-operators of one or two vehicles they can\'t afford to lose. Skews 35–65: farmers (truck and trailer work), commuters into Marshall and Worthington, and lake-bound weekend travelers heading toward Currents Lake and Spirit Lake.',
+    valueProp: 'Honest small-town mechanic. We tell you what\'s wrong, what can wait, and we don\'t upsell. 22 years in Westbrook, ASE-certified, and we\'ll come to your farm for tire repairs.',
+    switching: {
+      pulls: ['Honest diagnostics', 'Fair price', 'Fast turnaround', 'Local trust', 'ASE-certified tech', 'Farm-tire field service'],
+      pushes:['Chain shops "finding" extra work', 'Dealership prices', 'Slow appointments', 'No farm service nearby', 'Up-charge culture']
+    },
+    customerLanguage: ['"Mike\'s a straight shooter"', '"fair price" (3×)', '"in and out"', '"didn\'t gouge me"', '"saved my weekend"', '"honest mechanic"'],
+    proofPoints: [
+      { label: '4.8 ★ Google rating', detail: '162 reviews' },
+      { label: '22 years in Westbrook', detail: 'second-longest tenure of any auto shop in Cottonwood County' },
+      { label: 'ASE-certified tech',     detail: 'Mike — engine, suspension, brakes' },
+      { label: 'Farm-tire field service',detail: 'rare in the county; pulls out-of-town farm work' }
+    ],
+    channels:[
+      { platform: 'fb',  pct: 35, color: '#1B4F9A' },
+      { platform: 'ig',  pct: 20, color: '#9F2A6E' },
+      { platform: 'gbp', pct: 30, color: '#1F6E3D' },
+      { platform: 'paid',pct: 15, color: '#0E5E6F', label: 'Paid (Meta + Google)' }
+    ],
+    q3Goals: [
+      { label: 'GBP profile views per week',    target: 200, current: 142, unit: 'views/wk' },
+      { label: 'New-customer reviews per month',target: 8,   current: 7,   unit: 'reviews/mo' },
+      { label: 'Paid social CTR',               target: 3.0, current: 3.1, unit: '%', exceeded: true }
+    ]
+  };
+
+  const chat = [
+    { who: 'owner', when: 'Today, 9:14am', text: 'Should I run a Memorial Day sale?' },
+    { who: 'agent', when: 'Today, 9:14am',
+      text: 'Memorial Day weekend in Westbrook is mostly about people heading to the lake — Currents, Spirit Lake, and the river — not about car shopping. A flat "sale" usually underperforms here. The angle that works in your data is **pre-trip safety**: a $59 inspection covering oil, tire pressure, brakes, and a fluid top-off. Want me to draft the post and a small boost?' },
+    { who: 'owner', when: 'Today, 9:15am', text: 'Yes please. What\'s a reasonable boost?' },
+    { who: 'agent', when: 'Today, 9:15am',
+      text: 'Drafted. For the boost: $40 over 3 days, targeting ages 35–65 within 25 miles of Westbrook. Estimated reach 4,200 with around 130 link clicks. Memorial Day weekend is high-intent for travel prep, so cost-per-click should run about 20% lower than your monthly average. Posting Friday at 9am — your strongest Friday window historically.',
+      attachment: { kind: 'boost-card',
+        budget: '$40 / 3 days',
+        ages: '35–65',
+        radius: '25 mi from Westbrook',
+        reach: '4,200 estimated',
+        clicks: '~130 estimated',
+        post: 'Friday 9:00am'
+      }
+    },
+    { who: 'owner', when: 'Today, 9:16am', text: 'Make it $30 and target 30–65' },
+    { who: 'agent', when: 'Today, 9:16am',
+      text: 'Done — $30 over 3 days, ages 30–65, same 25-mile radius. Adjusted reach estimate: 3,500. The post and the boost are queued in your **Approvals** tab for sign-off. Anything else I can pull together?',
+      attachment: { kind: 'boost-card',
+        budget: '$30 / 3 days', ages: '30–65', radius: '25 mi from Westbrook',
+        reach: '3,500 estimated', clicks: '~110 estimated', post: 'Friday 9:00am'
+      }
+    }
+  ];
+
+  const settings = {
+    cadence: 'weekly',
+    connections: [
+      { platform: 'fb',  account: '@westbrookautoandtire',         status: 'connected', last: 'verified May 4' },
+      { platform: 'ig',  account: '@westbrookauto',                 status: 'connected', last: 'verified May 4' },
+      { platform: 'gbp', account: 'Westbrook Auto & Tire — GBP',    status: 'connected', last: 'verified May 4' }
+    ]
+  };
+
+  /* ============================================================
+     UI PRIMITIVES
+     ============================================================ */
+
+  const Card = ({ className = '', children, padded = true, ...rest }) => (
+    <div
+      className={`bg-white border border-surface-edge rounded-xl shadow-card ${padded ? 'p-6' : ''} ${className}`}
+      {...rest}>{children}</div>
+  );
+
+  const Pill = ({ children, color = 'slate', icon, className = '' }) => {
+    const map = {
+      slate:   'bg-slate-100 text-slate-700',
+      teal:    'bg-brand-50 text-brand-700',
+      amber:   'bg-amber-100 text-amber-800',
+      emerald: 'bg-emerald-50 text-emerald-700',
+      red:     'bg-red-50 text-red-700',
+      violet:  'bg-violet-50 text-violet-700',
+      ink:     'bg-ink-DEFAULT text-white'
+    };
+    return (
+      <span className={`chip ${map[color] || map.slate} ${className}`}>
+        {icon && <Icon name={icon} size={11} strokeWidth={2.4} />}
+        {children}
+      </span>
+    );
+  };
+
+  const PlatformChip = ({ platform, withLabel = true, className = '' }) => {
+    const p = PLATFORMS[platform];
+    if (!p) return null;
+    return (
+      <span className={`chip ${p.cls} ${className}`}>
+        <Icon name={p.icon} size={11} strokeWidth={2.4} />
+        {withLabel && p.label}
+      </span>
+    );
+  };
+
+  const StatusChip = ({ status }) => {
+    const s = STATUSES[status];
+    if (!s) return null;
+    return <span className={`chip ${s.cls}`}>
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: s.dot }} />
+      {s.label}
+    </span>;
+  };
+
+  const Button = ({ variant = 'primary', icon, children, onClick, className = '', size = 'md', disabled = false }) => {
+    const base = 'inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all duration-150 select-none';
+    const sizes = { sm: 'text-xs px-2.5 py-1.5', md: 'text-sm px-3.5 py-2', lg: 'text-sm px-4 py-2.5' };
+    const variants = {
+      primary:    'bg-brand-500 text-white hover:bg-brand-600 active:bg-brand-700 shadow-sm',
+      secondary:  'border border-brand-500 text-brand-600 hover:bg-brand-50',
+      ghost:      'text-ink-soft hover:bg-surface-edge',
+      danger:     'text-bad hover:bg-red-50',
+      ok:         'bg-ok text-white hover:bg-emerald-600',
+      neutral:    'bg-surface-edge text-ink hover:bg-slate-300/50'
+    };
+    return (
+      <button onClick={onClick} disabled={disabled}
+        className={`${base} ${sizes[size]} ${variants[variant]} ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${className}`}>
+        {icon && <Icon name={icon} size={14} strokeWidth={2.2} />}
+        {children}
+      </button>
+    );
+  };
+
+  const StatTile = ({ label, value, helper, delta, positive, accent }) => (
+    <Card className="flex flex-col gap-1.5" padded={false}>
+      <div className="p-5">
+        <div className="text-xs font-medium text-ink-faint uppercase tracking-wider">{label}</div>
+        <div className="mt-2 flex items-baseline gap-2">
+          <div className="text-2xl font-semibold text-ink">{value}</div>
+          {delta && (
+            <span className={`text-xs font-semibold ${positive ? 'text-ok' : 'text-bad'}`}>
+              {positive ? '▲' : '▼'} {delta}
+            </span>
+          )}
+        </div>
+        {helper && <div className="mt-1 text-xs text-ink-faint">{helper}</div>}
+        {accent && <div className="mt-3">{accent}</div>}
+      </div>
+    </Card>
+  );
+
+  const ProgressBar = ({ value, max, color = '#0E5E6F', label, height = 6 }) => {
+    const pct = Math.max(0, Math.min(100, (value / max) * 100));
+    return (
+      <div className="w-full">
+        {label && <div className="flex justify-between text-xs text-ink-faint mb-1"><span>{label}</span><span className="font-medium text-ink">{Math.round(pct)}%</span></div>}
+        <div className="bg-surface-edge rounded-full overflow-hidden" style={{ height }}>
+          <div style={{ width: `${pct}%`, height: '100%', background: color, transition: 'width 600ms ease-out' }}></div>
+        </div>
+      </div>
+    );
+  };
+
+  const Modal = ({ open, onClose, title, children, footer }) => {
+    useEffect(() => {
+      if (!open) return;
+      const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+      window.addEventListener('keydown', onKey);
+      return () => window.removeEventListener('keydown', onKey);
+    }, [open, onClose]);
+    if (!open) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/30 fade-in" onClick={onClose}>
+        <div className="bg-white rounded-xl shadow-modal max-w-lg w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          <div className="px-6 py-4 border-b border-surface-edge flex items-center justify-between">
+            <h3 className="font-semibold text-ink">{title}</h3>
+            <button className="text-ink-faint hover:text-ink rounded-lg p-1 hover:bg-surface" onClick={onClose}><Icon name="x" size={18} /></button>
+          </div>
+          <div className="px-6 py-5">{children}</div>
+          {footer && <div className="px-6 py-4 border-t border-surface-edge bg-surface flex items-center justify-end gap-2">{footer}</div>}
+        </div>
+      </div>
+    );
+  };
+
+  const SectionHeader = ({ title, subtitle, right }) => (
+    <div className="flex items-end justify-between gap-4 mb-5">
+      <div>
+        <h2 className="text-xl font-semibold text-ink">{title}</h2>
+        {subtitle && <p className="text-sm text-ink-soft mt-0.5">{subtitle}</p>}
+      </div>
+      {right}
+    </div>
+  );
+
+  const Stars = ({ n, size = 14 }) => (
+    <span className="inline-flex items-center gap-0.5" aria-label={`${n} stars`}>
+      {[1, 2, 3, 4, 5].map((i) => (
+        <span key={i} style={{ color: i <= n ? '#E9A53D' : '#D9D6CF' }}>
+          <Icon name="star" size={size} strokeWidth={1.5} />
+        </span>
+      ))}
+    </span>
+  );
+
+  const TabBar = ({ tabs, value, onChange, className = '' }) => (
+    <div className={`border-b border-surface-edge ${className}`}>
+      <div className="flex gap-0 -mb-px overflow-x-auto">
+        {tabs.map(t => {
+          const active = value === t.id;
+          return (
+            <button key={t.id} onClick={() => onChange(t.id)}
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition-all inline-flex items-center gap-2 whitespace-nowrap ${
+                active
+                  ? 'border-brand-500 text-brand-700'
+                  : 'border-transparent text-ink-soft hover:text-ink hover:border-ink-faint/30'
+              }`}>
+              {t.icon && <Icon name={t.icon} size={14} strokeWidth={2} />}
+              <span>{t.label}</span>
+              {t.count !== undefined && (
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                  active ? 'bg-brand-500 text-white' : 'bg-surface-edge text-ink-soft'
+                }`}>{t.count}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  const Milestone = ({ label, sub, done, current, muted, progress, progressLabel }) => (
+    <div className="flex items-start gap-3">
+      <div className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center mt-0.5
+        ${done ? 'bg-ok border-ok' : current ? 'border-brand-500 bg-white' : muted ? 'border-surface-edge bg-white' : 'border-ink-faint bg-white'}`}>
+        {done && <span className="text-white"><Icon name="check" size={11} strokeWidth={3} /></span>}
+        {current && <div className="w-2 h-2 rounded-full bg-brand-500"></div>}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className={`text-sm font-medium ${muted ? 'text-ink-faint' : 'text-ink'}`}>{label}</div>
+        {sub && <div className="text-xs text-ink-faint">{sub}</div>}
+        {progress !== undefined && (
+          <div className="mt-2">
+            <ProgressBar value={progress * 100} max={100} color="#0E5E6F" height={4} />
+            {progressLabel && <div className="text-[11px] text-ink-faint mt-1">{progressLabel}</div>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  /* ============================================================
+     INLINE CHARTS — small, hand-rendered SVG, no chart library.
+     ============================================================ */
+
+  const LineChart = ({ current, prev, width = 640, height = 200, padding = 28 }) => {
+    const max = Math.max(...current, ...prev) * 1.10;
+    const w = width - padding * 2, h = height - padding * 2;
+    const stepX = (i, n) => padding + (i / (n - 1)) * w;
+    const stepY = (v) => padding + h - (v / max) * h;
+    const path = (arr) => arr.map((v, i) => `${i === 0 ? 'M' : 'L'} ${stepX(i, arr.length).toFixed(1)} ${stepY(v).toFixed(1)}`).join(' ');
+    const fill = (arr) => path(arr) + ` L ${stepX(arr.length - 1, arr.length).toFixed(1)} ${padding + h} L ${stepX(0, arr.length).toFixed(1)} ${padding + h} Z`;
+    return (
+      <svg width="100%" viewBox={`0 0 ${width} ${height}`} className="overflow-visible">
+        {/* gridlines */}
+        {[0.25, 0.5, 0.75, 1].map((t, i) => (
+          <line key={i} x1={padding} y1={padding + h - t * h} x2={padding + w} y2={padding + h - t * h}
+            stroke="#E7E5E0" strokeWidth="1" strokeDasharray="3 4" />
+        ))}
+        {/* prev (under) */}
+        <path d={fill(prev)} fill="rgba(139, 156, 160, 0.10)" />
+        <path d={path(prev)} fill="none" stroke="#8B9CA0" strokeWidth="1.5" strokeDasharray="4 3" />
+        {/* current */}
+        <path d={fill(current)} fill="rgba(14, 94, 111, 0.08)" />
+        <path d={path(current)} fill="none" stroke="#0E5E6F" strokeWidth="2.5" />
+        {/* x-axis dates */}
+        {[0, Math.floor(current.length / 2), current.length - 1].map((i) => (
+          <text key={i} x={stepX(i, current.length)} y={height - 6} fontSize="10" fill="#8B9CA0" textAnchor="middle">
+            {i === 0 ? 'Apr 6' : i === current.length - 1 ? 'May 5' : 'Apr 20'}
+          </text>
+        ))}
+        {/* legend */}
+        <g transform={`translate(${padding + 4}, ${padding + 4})`}>
+          <circle cx="4" cy="4" r="4" fill="#0E5E6F" />
+          <text x="14" y="8" fontSize="11" fill="#1A2A2E" fontWeight="500">Current 30 days</text>
+          <line x1="160" y1="4" x2="180" y2="4" stroke="#8B9CA0" strokeWidth="1.5" strokeDasharray="4 3" />
+          <text x="186" y="8" fontSize="11" fill="#4A5C61">Previous 30 days</text>
+        </g>
+      </svg>
+    );
+  };
+
+  const StackedBars = ({ data, width = 640, height = 220, padding = 32 }) => {
+    const w = width - padding * 2, h = height - padding * 2;
+    const totals = data.map(d => d.organic + d.paid);
+    const max = Math.max(...totals) * 1.15;
+    const barW = w / data.length * 0.55;
+    const groupW = w / data.length;
+    return (
+      <svg width="100%" viewBox={`0 0 ${width} ${height}`}>
+        {/* gridlines */}
+        {[0.25, 0.5, 0.75, 1].map((t, i) => (
+          <line key={i} x1={padding} y1={padding + h - t * h} x2={padding + w} y2={padding + h - t * h}
+            stroke="#E7E5E0" strokeWidth="1" strokeDasharray="3 4" />
+        ))}
+        {data.map((d, i) => {
+          const x = padding + i * groupW + (groupW - barW) / 2;
+          const totalH = ((d.organic + d.paid) / max) * h;
+          const orgH = (d.organic / max) * h;
+          const paidH = (d.paid / max) * h;
+          const yPaid = padding + h - paidH;
+          const yOrg = padding + h - paidH - orgH;
+          const p = PLATFORMS[d.platform];
+          return (
+            <g key={d.platform}>
+              <rect x={x} y={yOrg} width={barW} height={orgH} rx="3" fill={p.dot} opacity="0.85" />
+              <rect x={x} y={yPaid} width={barW} height={paidH} rx="3" fill="#F4A261" opacity="0.95" />
+              <text x={x + barW / 2} y={padding + h + 16} fontSize="11" fill="#4A5C61" textAnchor="middle">{p.label}</text>
+              <text x={x + barW / 2} y={padding + h - totalH - 6} fontSize="11" fill="#1A2A2E" textAnchor="middle" fontWeight="600">
+                {(d.organic + d.paid).toLocaleString()}
+              </text>
+            </g>
+          );
+        })}
+        {/* legend */}
+        <g transform={`translate(${padding + 4}, ${padding - 4})`}>
+          <rect x="0" y="0" width="10" height="10" rx="2" fill="#0E5E6F" opacity="0.85" />
+          <text x="16" y="9" fontSize="11" fill="#1A2A2E" fontWeight="500">Organic</text>
+          <rect x="84" y="0" width="10" height="10" rx="2" fill="#F4A261" />
+          <text x="100" y="9" fontSize="11" fill="#1A2A2E" fontWeight="500">Paid</text>
+        </g>
+      </svg>
+    );
+  };
+
+  const PieChart = ({ slices, size = 200 }) => {
+    const total = slices.reduce((s, x) => s + x.pct, 0);
+    const cx = size / 2, cy = size / 2, r = size / 2 - 4, rInner = r * 0.55;
+    let angle = -Math.PI / 2;
+    const arc = (start, end, rOuter, rInner) => {
+      const x1 = cx + rOuter * Math.cos(start), y1 = cy + rOuter * Math.sin(start);
+      const x2 = cx + rOuter * Math.cos(end),   y2 = cy + rOuter * Math.sin(end);
+      const x3 = cx + rInner * Math.cos(end),   y3 = cy + rInner * Math.sin(end);
+      const x4 = cx + rInner * Math.cos(start), y4 = cy + rInner * Math.sin(start);
+      const large = end - start > Math.PI ? 1 : 0;
+      return `M ${x1} ${y1} A ${rOuter} ${rOuter} 0 ${large} 1 ${x2} ${y2} L ${x3} ${y3} A ${rInner} ${rInner} 0 ${large} 0 ${x4} ${y4} Z`;
+    };
+    return (
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        {slices.map((s, i) => {
+          const sweep = (s.pct / total) * Math.PI * 2;
+          const start = angle, end = angle + sweep;
+          angle = end;
+          return <path key={i} d={arc(start, end, r, rInner)} fill={s.color} />;
+        })}
+      </svg>
+    );
+  };
+
+  const Sparkline = ({ values, width = 100, height = 28, color = '#0E5E6F' }) => {
+    const min = Math.min(...values) - 0.05;
+    const max = Math.max(...values) + 0.05;
+    const stepX = (i) => (i / (values.length - 1)) * (width - 4) + 2;
+    const stepY = (v) => height - 2 - ((v - min) / (max - min)) * (height - 4);
+    const d = values.map((v, i) => `${i === 0 ? 'M' : 'L'} ${stepX(i).toFixed(1)} ${stepY(v).toFixed(1)}`).join(' ');
+    return (
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+        <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx={stepX(values.length - 1)} cy={stepY(values[values.length - 1])} r="2.5" fill={color} />
+      </svg>
+    );
+  };
+
+  /* ============================================================
+     SIDEBAR
+     ============================================================ */
+  const NAV = [
+    { id: 'home',        label: 'Home',          icon: 'home' },
+    { id: 'compose',     label: 'Compose',       icon: 'sparkles' },
+    { id: 'calendar',    label: 'Calendar',      icon: 'calendar' },
+    { id: 'approvals',   label: 'Approvals',     icon: 'inbox', count: 4 },
+    { id: 'performance', label: 'Performance',   icon: 'chart' },
+    { id: 'reviews',     label: 'Reviews',       icon: 'star' },
+    { id: 'profile',     label: 'Marketing Profile', icon: 'edit' },
+    { id: 'plan',        label: 'Marketing Plan',icon: 'target' },
+    { id: 'chat',        label: 'AI Agent',      icon: 'msg' },
+    { id: 'settings',    label: 'Settings',      icon: 'settings' }
+  ];
+
+  const Sidebar = ({ current, onNavigate }) => (
+    <aside className="w-60 shrink-0 bg-brand-700 text-white flex flex-col h-full">
+      <div className="px-5 pt-6 pb-5 border-b border-white/10">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-lg bg-accent flex items-center justify-center font-serif font-bold text-brand-800 text-base">P</div>
+          <div className="leading-tight">
+            <div className="font-serif font-semibold text-base">Popular Network</div>
+            <div className="text-[11px] text-white/60 tracking-wide uppercase">Marketing Agent</div>
+          </div>
+        </div>
+      </div>
+      <nav className="flex-1 py-3">
+        {NAV.map(n => (
+          <button key={n.id}
+            className={`w-full text-left flex items-center gap-3 py-2.5 text-sm ${current === n.id ? 'nav-active text-white' : 'nav-inactive text-white/75 hover:text-white'}`}
+            onClick={() => onNavigate(n.id)}>
+            <Icon name={n.icon} size={17} strokeWidth={1.8} />
+            <span className="flex-1">{n.label}</span>
+            {n.count !== undefined && (
+              <span className="bg-accent text-brand-800 text-[10px] font-semibold rounded-full px-1.5 py-0.5">{n.count}</span>
+            )}
+          </button>
+        ))}
+      </nav>
+      <div className="px-3 py-3 border-t border-white/10">
+        <div className="flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-white/5">
+          <div className="w-8 h-8 rounded-full bg-accent text-brand-800 font-semibold flex items-center justify-center text-xs">{business.ownerInitials}</div>
+          <div className="leading-tight flex-1 min-w-0">
+            <div className="text-sm font-medium truncate">{business.owner}</div>
+            <div className="text-[11px] text-white/60 truncate">{business.name}</div>
+          </div>
+        </div>
+        <div className="mt-2 px-3 py-2 rounded-lg bg-brand-800/60 text-[11px] text-white/80">
+          <div className="flex items-center justify-between">
+            <span>Tier 2 — $299/mo</span>
+            <Icon name="chevR" size={12} />
+          </div>
+        </div>
+        <div className="mt-2 px-3 py-1.5 text-[10px] text-white/50 font-mono leading-tight" title={BUILD_VERSION}>
+          BUILD<br />{BUILD_VERSION}
+        </div>
+      </div>
+    </aside>
+  );
+
+  /* ============================================================
+     TOP BAR (per page)
+     ============================================================ */
+  const TopBar = ({ title, subtitle, breadcrumb, right }) => (
+    <header className="bg-white border-b border-surface-edge sticky top-0 z-30">
+      <div className="px-8 h-16 flex items-center justify-between gap-6">
+        <div className="min-w-0">
+          {breadcrumb && (
+            <div className="text-xs uppercase tracking-wider text-ink-faint font-medium">{breadcrumb}</div>
+          )}
+          <h1 className="text-lg font-semibold text-ink truncate">{title}</h1>
+          {subtitle && <div className="text-sm text-ink-soft">{subtitle}</div>}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button className="px-3 py-2 rounded-lg text-ink-soft hover:bg-surface-edge inline-flex items-center gap-2 text-sm">
+            <Icon name="search" size={16} /><span className="hidden md:inline">Search</span>
+          </button>
+          <button className="p-2 rounded-lg text-ink-soft hover:bg-surface-edge relative">
+            <Icon name="bell" size={18} />
+            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-accent rounded-full"></span>
+          </button>
+          {right}
+        </div>
+      </div>
+    </header>
+  );
+
+  /* ============================================================
+     VIEW: COMPOSE — brief + per-platform editor + live preview
+     ============================================================ */
+  const ComposeView = () => {
+    const [topic, setTopic] = useState('Memorial Day pre-trip safety check');
+    const [notes, setNotes] = useState('Lake-bound traffic peaks Friday afternoon. Lean into the safety angle, not a discount. Mention the $59 inspection.');
+    const [chosen, setChosen] = useState(['fb', 'ig', 'gbp', 'web']);
+    const [imageMode, setImageMode] = useState('owner');
+    const [tone, setTone] = useState('friendly');
+    const [activeTab, setActiveTab] = useState('fb');
+    const [drafts, setDrafts] = useState({
+      fb: {
+        text: 'Headed to the lake this Memorial Day weekend? $59 pre-trip safety check covers oil, tire pressure, brakes, and fluid top-off.\n\nWe\'d rather you find a problem in our bay than 80 miles down the road. Friday and Saturday slots open. Call (507) 555-0143.',
+        cta: 'Call now'
+      },
+      ig: {
+        caption: 'Lake weekend ahead? 🛠️ 60-second walk-through of the $59 pre-trip safety check. Mike runs the bay; Dale signs off; you drive.\n\nLink in bio or call (507) 555-0143.',
+        hashtags: '#WestbrookMN #LakeReady #HonestMechanic #MemorialDay #AutoRepair'
+      },
+      gbp: {
+        headline: '$59 Memorial Day pre-trip',
+        text: 'Pre-trip safety check covering oil, tires, brakes, and fluids. Open Tue–Sat (closed Memorial Day Monday).',
+        cta: 'Call'
+      },
+      web: {
+        title: 'Headed to the lake this Memorial Day? Stop in for a $59 pre-trip safety check.',
+        subtitle: 'Twenty minutes in the bay. Peace of mind for the whole weekend.',
+        body: 'Memorial Day weekend in southwestern Minnesota means one thing: the lakes fill up. Currents Lake, Spirit Lake, the Des Moines River — they\'re all calling. We\'d rather you find a soft brake pedal or a tired tire in our shop than 80 miles into your drive.\n\nThat\'s why we\'re running a $59 pre-trip safety check Friday May 22 and Saturday May 23. We cover oil level, all four tire pressures, brake pads and rotors, fluid top-offs, a battery test, and a quick belt-and-hose look-over.\n\nTwenty minutes in the bay. We tell you what\'s wrong, what can wait, and we don\'t upsell — same as always.\n\nCall (507) 555-0143 to book Friday or Saturday. Walk-ins welcome too. Closed Monday May 25 for the holiday — back open Tuesday at 7am.',
+        slug: '/blog/memorial-day-pre-trip-safety-check',
+        readTime: '4 min'
+      }
+    });
+
+    const updateDraft = (platform, field, value) =>
+      setDrafts(d => ({ ...d, [platform]: { ...d[platform], [field]: value } }));
+
+    const togglePlatform = (p) => {
+      setChosen(prev => {
+        if (prev.includes(p)) {
+          const next = prev.filter(x => x !== p);
+          if (activeTab === p && next.length) setActiveTab(next[0]);
+          return next;
+        }
+        const next = [...prev, p];
+        return next;
+      });
+    };
+
+    // limits: FB optimal ~280 (max much higher), IG caption optimal ~150 / max 2200, GBP max ~1500
+    const fbLen  = drafts.fb.text.length;
+    const igLen  = drafts.ig.caption.length;
+    const gbpLen = drafts.gbp.text.length;
+    const webWords = drafts.web.body.trim().split(/\s+/).length;
+
+    const tones = [
+      { id: 'friendly',  label: 'Friendly' },
+      { id: 'direct',    label: 'Direct' },
+      { id: 'promo',     label: 'Promotional' },
+      { id: 'urgent',    label: 'Urgent' }
+    ];
+
+    return (
+      <div className="fade-in">
+        <TopBar
+          breadcrumb="Workspace"
+          title="Compose"
+          subtitle="One brief. Platform-tuned drafts on each channel — and your website."
+          right={
+            <div className="flex items-center gap-2">
+              <Pill color="violet" icon="sparkles">AI-drafted</Pill>
+              <Button variant="secondary" size="sm" icon="upload">Save draft</Button>
+              <Button variant="primary" icon="check">Send to approval queue</Button>
+            </div>
+          }
+        />
+        <div className="px-8 py-7 grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)_420px] gap-6 max-w-[1600px] mx-auto">
+
+          {/* LEFT: brief */}
+          <div className="space-y-4">
+            <Card>
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-8 h-8 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center"><Icon name="sparkles" size={16} /></div>
+                <div>
+                  <div className="font-semibold text-ink text-sm">Brief</div>
+                  <div className="text-xs text-ink-faint">Tell the agent what you want.</div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">Topic</label>
+                  <input value={topic} onChange={e => setTopic(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-surface-edge text-[15px] focus:outline-none focus:border-brand-500" />
+                </div>
+
+                <div>
+                  <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">Context <span className="text-ink-faint normal-case font-normal">(optional)</span></label>
+                  <textarea value={notes} onChange={e => setNotes(e.target.value)} rows="3"
+                    className="w-full px-3 py-2 rounded-lg border border-surface-edge text-[15px] focus:outline-none focus:border-brand-500 resize-none" />
+                </div>
+
+                <div>
+                  <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">Tone</label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {tones.map(t => (
+                      <button key={t.id} onClick={() => setTone(t.id)}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border-2 transition-all ${
+                          tone === t.id
+                            ? 'border-brand-500 bg-brand-50 text-brand-700'
+                            : 'border-surface-edge text-ink-soft hover:border-ink-faint/40'
+                        }`}>
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            <Card>
+              <div className="flex items-center justify-between mb-3">
+                <div className="font-semibold text-ink text-sm">Channels</div>
+                <span className="text-xs text-ink-faint">{chosen.length} selected</span>
+              </div>
+              <div className="space-y-1.5">
+                {['fb', 'ig', 'gbp', 'web'].map(p => {
+                  const plat = PLATFORMS[p];
+                  const on = chosen.includes(p);
+                  return (
+                    <button key={p} onClick={() => togglePlatform(p)}
+                      className={`w-full text-left px-3 py-2.5 rounded-lg border-2 transition-all flex items-center gap-3 ${
+                        on ? 'border-brand-500 bg-brand-50' : 'border-surface-edge hover:border-ink-faint/40'
+                      }`}>
+                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${
+                        on ? 'border-brand-500 bg-brand-500' : 'border-surface-edge'
+                      }`}>
+                        {on && <span className="text-white"><Icon name="check" size={10} strokeWidth={3.5} /></span>}
+                      </div>
+                      <Icon name={plat.icon} size={16} className={on ? 'text-brand-600' : 'text-ink-faint'} />
+                      <span className={`text-sm font-medium flex-1 ${on ? 'text-ink' : 'text-ink-soft'}`}>
+                        {plat.label.split(' ')[0]}
+                      </span>
+                      {p === 'web' && <Pill color="teal">Blog</Pill>}
+                    </button>
+                  );
+                })}
+              </div>
+            </Card>
+
+            <Card>
+              <div className="font-semibold text-ink text-sm mb-3">Image</div>
+              <div className="space-y-1.5">
+                {[
+                  { id: 'owner', label: 'Owner photo', sub: '14 saved' },
+                  { id: 'ai',    label: 'AI-generate' },
+                  { id: 'none',  label: 'No image' }
+                ].map(opt => (
+                  <button key={opt.id} onClick={() => setImageMode(opt.id)}
+                    className={`w-full text-left px-3 py-2 rounded-lg border-2 text-sm transition-all flex items-center gap-2 ${
+                      imageMode === opt.id ? 'border-brand-500 bg-brand-50' : 'border-surface-edge hover:border-ink-faint/40'
+                    }`}>
+                    <div className={`w-3.5 h-3.5 rounded-full border-2 shrink-0 ${imageMode === opt.id ? 'border-brand-500 bg-white' : 'border-surface-edge'}`}>
+                      {imageMode === opt.id && <div className="w-1.5 h-1.5 rounded-full bg-brand-500 m-0.5"></div>}
+                    </div>
+                    <span className="font-medium text-ink">{opt.label}</span>
+                    {opt.sub && <span className="text-xs text-ink-faint ml-auto">{opt.sub}</span>}
+                  </button>
+                ))}
+              </div>
+            </Card>
+
+            <Button icon="refresh" variant="primary" className="w-full">Re-draft from brief</Button>
+          </div>
+
+          {/* CENTER: editor */}
+          <div>
+            <Card padded={false} className="overflow-hidden">
+              <div className="px-2 pt-1 border-b border-surface-edge">
+                <TabBar tabs={chosen.map(p => ({
+                  id: p,
+                  label: PLATFORMS[p].label.split(' ')[0],
+                  icon: PLATFORMS[p].icon
+                }))} value={activeTab} onChange={setActiveTab} />
+              </div>
+
+              <div className="p-6 fade-in">
+                {activeTab === 'fb' && (
+                  <div className="space-y-4">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint">Post text</label>
+                        <span className={`text-xs ${fbLen <= 280 ? 'text-ink-faint' : 'text-warn font-medium'}`}>{fbLen} <span className="text-ink-faint">/ 280 ideal</span></span>
+                      </div>
+                      <textarea value={drafts.fb.text} onChange={e => updateDraft('fb', 'text', e.target.value)} rows="6"
+                        className="w-full px-3 py-2 rounded-lg border border-surface-edge text-[15px] leading-relaxed focus:outline-none focus:border-brand-500 resize-none" />
+                    </div>
+                    <div>
+                      <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">Call to action</label>
+                      <select value={drafts.fb.cta} onChange={e => updateDraft('fb', 'cta', e.target.value)}
+                        className="w-full md:w-auto px-3 py-2 rounded-lg border border-surface-edge text-sm bg-white focus:outline-none focus:border-brand-500">
+                        <option>Call now</option>
+                        <option>Book online</option>
+                        <option>Learn more</option>
+                        <option>Get directions</option>
+                      </select>
+                    </div>
+                    <AgentNote text="Posts that lead with the lake-trip framing have a 41% higher save rate than discount-led posts on your audience. The phone number near the end keeps the natural reading order while still surfacing your strongest CTA." />
+                  </div>
+                )}
+
+                {activeTab === 'ig' && (
+                  <div className="space-y-4">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint">Caption</label>
+                        <span className="text-xs text-ink-faint">{igLen} <span>/ 150 optimal · 2,200 max</span></span>
+                      </div>
+                      <textarea value={drafts.ig.caption} onChange={e => updateDraft('ig', 'caption', e.target.value)} rows="5"
+                        className="w-full px-3 py-2 rounded-lg border border-surface-edge text-[15px] leading-relaxed focus:outline-none focus:border-brand-500 resize-none" />
+                    </div>
+                    <div>
+                      <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">Hashtags</label>
+                      <input value={drafts.ig.hashtags} onChange={e => updateDraft('ig', 'hashtags', e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-surface-edge text-[15px] focus:outline-none focus:border-brand-500" />
+                      <div className="text-[11px] text-ink-faint mt-1.5">Pulled from your top 3 local-discovery posts.</div>
+                    </div>
+                    <AgentNote text="Reel format recommended — your behind-the-scenes content averages 2.3× the engagement of static posts. Mike narrating doubles the average watch-time." />
+                  </div>
+                )}
+
+                {activeTab === 'gbp' && (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">Headline</label>
+                      <input value={drafts.gbp.headline} onChange={e => updateDraft('gbp', 'headline', e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-surface-edge text-sm font-semibold focus:outline-none focus:border-brand-500" />
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint">Body</label>
+                        <span className="text-xs text-ink-faint">{gbpLen} <span>/ 1,500 max</span></span>
+                      </div>
+                      <textarea value={drafts.gbp.text} onChange={e => updateDraft('gbp', 'text', e.target.value)} rows="3"
+                        className="w-full px-3 py-2 rounded-lg border border-surface-edge text-[15px] leading-relaxed focus:outline-none focus:border-brand-500 resize-none" />
+                    </div>
+                    <div>
+                      <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">Action button</label>
+                      <select value={drafts.gbp.cta} onChange={e => updateDraft('gbp', 'cta', e.target.value)}
+                        className="px-3 py-2 rounded-lg border border-surface-edge text-sm bg-white focus:outline-none focus:border-brand-500">
+                        <option>Call</option>
+                        <option>Book</option>
+                        <option>Order online</option>
+                        <option>Get offer</option>
+                        <option>Learn more</option>
+                      </select>
+                    </div>
+                    <AgentNote text="GBP posts get 4× higher tap-to-call rate than feed posts. Phone-forward CTA + holiday hours embedded converts highest in your data." />
+                  </div>
+                )}
+
+                {activeTab === 'web' && (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">Article title</label>
+                      <input value={drafts.web.title} onChange={e => updateDraft('web', 'title', e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-surface-edge text-base font-serif font-semibold focus:outline-none focus:border-brand-500" />
+                    </div>
+                    <div>
+                      <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">Subtitle</label>
+                      <input value={drafts.web.subtitle} onChange={e => updateDraft('web', 'subtitle', e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-surface-edge text-[15px] focus:outline-none focus:border-brand-500" />
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint">Body</label>
+                        <span className="text-xs text-ink-faint">{webWords} words · ~{drafts.web.readTime} read</span>
+                      </div>
+                      <textarea value={drafts.web.body} onChange={e => updateDraft('web', 'body', e.target.value)} rows="11"
+                        className="w-full px-3 py-2 rounded-lg border border-surface-edge text-[15px] leading-relaxed focus:outline-none focus:border-brand-500 resize-none" />
+                    </div>
+                    <div>
+                      <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">URL slug</label>
+                      <div className="flex items-center gap-1 px-3 py-2 rounded-lg border border-surface-edge text-sm bg-surface">
+                        <span className="text-ink-faint">westbrookautomn.com</span>
+                        <input value={drafts.web.slug} onChange={e => updateDraft('web', 'slug', e.target.value)}
+                          className="bg-transparent flex-1 outline-none text-ink" />
+                      </div>
+                    </div>
+                    <AgentNote text="Article format auto-generates JSON-LD schema for AI search engines and a /llms.txt entry — when ChatGPT or Perplexity is asked about Westbrook auto repair, this article becomes citable. Publishes to your hosted business page." />
+                  </div>
+                )}
+              </div>
+
+              <div className="px-6 py-3 border-t border-surface-edge bg-surface flex items-center justify-between">
+                <Button variant="ghost" size="sm" icon="refresh">Re-draft this</Button>
+                <div className="flex items-center gap-2">
+                  <Button variant="ghost" size="sm">Skip this channel</Button>
+                  <Button variant="ok" size="sm" icon="check">Looks good</Button>
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          {/* RIGHT: live preview */}
+          <div>
+            <div className="sticky top-4">
+              <div className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-2 flex items-center justify-between">
+                <span>Live preview</span>
+                <PlatformChip platform={activeTab} />
+              </div>
+              {activeTab === 'fb'  && <FBPreview draft={drafts.fb} imageMode={imageMode} />}
+              {activeTab === 'ig'  && <IGPreview draft={drafts.ig} imageMode={imageMode} />}
+              {activeTab === 'gbp' && <GBPPreview draft={drafts.gbp} imageMode={imageMode} />}
+              {activeTab === 'web' && <WebPreview draft={drafts.web} imageMode={imageMode} />}
+              <div className="text-[11px] text-ink-faint mt-3 leading-relaxed">
+                Preview is approximate. Real-platform rendering may vary slightly. {activeTab === 'web' && 'Article will publish to westbrookautomn.com/blog and is auto-indexed for AI search.'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const AgentNote = ({ text }) => (
+    <div className="flex items-start gap-2 text-sm text-ink-soft italic pt-3 border-t border-surface-edge">
+      <Icon name="sparkles" size={14} className="text-brand-500 mt-0.5 shrink-0" />
+      <span className="leading-relaxed">{text}</span>
+    </div>
+  );
+
+  /* Platform-accurate preview cards ------------- */
+
+  const FBPreview = ({ draft, imageMode }) => (
+    <div className="bg-white rounded-lg border border-surface-edge shadow-card overflow-hidden">
+      <div className="p-3 flex items-center gap-2.5">
+        <div className="w-10 h-10 rounded-full bg-brand-700 text-white flex items-center justify-center font-serif font-bold text-sm shrink-0">W</div>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-[13px] text-ink leading-tight">Westbrook Auto &amp; Tire</div>
+          <div className="text-[11px] text-ink-faint flex items-center gap-1">May 5 at 9:00 AM · <Icon name="globe" size={9} /> <span>Public</span></div>
+        </div>
+        <div className="text-ink-faint"><Icon name="moreh" size={16} /></div>
+      </div>
+      <div className="px-3 pb-3">
+        <p className="text-[14px] leading-snug text-ink whitespace-pre-line">{draft.text}</p>
+      </div>
+      {imageMode !== 'none' && (
+        <div className="aspect-[4/3] bg-gradient-to-br from-blue-100 via-cyan-50 to-amber-50 flex items-center justify-center text-ink-faint border-y border-surface-edge relative">
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center">
+              <Icon name="image" size={32} strokeWidth={1.2} />
+              <div className="text-[10px] mt-1 uppercase tracking-wider">{imageMode === 'ai' ? 'AI-generated photo' : 'Owner photo'}</div>
+            </div>
+          </div>
+        </div>
+      )}
+      <div className="px-3 py-1.5 flex items-center justify-between text-[11px] text-ink-faint border-y border-surface-edge bg-white">
+        <span>👍❤️ 24</span>
+        <span>4 comments · 2 shares</span>
+      </div>
+      <div className="px-2 py-1 grid grid-cols-3 text-[12px] text-ink-soft font-semibold">
+        <button className="py-1.5 hover:bg-surface rounded inline-flex items-center justify-center gap-1.5"><Icon name="thumbsup" size={14} strokeWidth={2} /> Like</button>
+        <button className="py-1.5 hover:bg-surface rounded inline-flex items-center justify-center gap-1.5"><Icon name="msg" size={14} strokeWidth={2} /> Comment</button>
+        <button className="py-1.5 hover:bg-surface rounded inline-flex items-center justify-center gap-1.5"><Icon name="share" size={14} strokeWidth={2} /> Share</button>
+      </div>
+      {draft.cta && (
+        <div className="px-3 py-2 bg-blue-50 border-t border-surface-edge">
+          <button className="w-full bg-[#1877F2] text-white text-[13px] font-semibold py-2 rounded-lg">{draft.cta}</button>
+        </div>
+      )}
+    </div>
+  );
+
+  const IGPreview = ({ draft, imageMode }) => (
+    <div className="bg-white rounded-xl border border-surface-edge shadow-card overflow-hidden max-w-[320px] mx-auto">
+      <div className="p-2.5 flex items-center gap-2 border-b border-surface-edge">
+        <div className="w-8 h-8 rounded-full p-[2px] bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600">
+          <div className="w-full h-full rounded-full bg-brand-700 text-white flex items-center justify-center font-serif font-bold text-xs">W</div>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-[12px] text-ink leading-none">westbrookauto</div>
+          <div className="text-[10px] text-ink-faint mt-0.5">Westbrook, MN</div>
+        </div>
+        <div className="text-ink-soft"><Icon name="moreh" size={16} /></div>
+      </div>
+      {imageMode !== 'none' && (
+        <div className="aspect-square bg-gradient-to-br from-pink-100 via-amber-100 to-cyan-100 flex items-center justify-center text-ink-faint relative">
+          <div className="text-center">
+            <Icon name="image" size={36} strokeWidth={1.2} />
+            <div className="text-[10px] mt-1 uppercase tracking-wider">{imageMode === 'ai' ? 'AI-generated reel' : 'Owner reel'}</div>
+          </div>
+          <div className="absolute top-2 right-2 bg-black/40 text-white text-[10px] px-1.5 py-0.5 rounded">Reel · 0:60</div>
+        </div>
+      )}
+      <div className="p-2.5">
+        <div className="flex items-center gap-3 text-ink mb-2">
+          <Icon name="heart" size={20} strokeWidth={1.6} />
+          <Icon name="msg" size={20} strokeWidth={1.6} />
+          <Icon name="send" size={20} strokeWidth={1.6} />
+          <div className="flex-1"></div>
+          <Icon name="bookmark" size={20} strokeWidth={1.6} />
+        </div>
+        <div className="text-[12px] font-semibold text-ink mb-1">412 likes</div>
+        <p className="text-[12px] leading-snug text-ink whitespace-pre-line">
+          <span className="font-semibold">westbrookauto</span>{' '}{draft.caption}
+        </p>
+        <p className="text-[12px] text-blue-700 mt-1 break-words">{draft.hashtags}</p>
+        <div className="text-[10px] text-ink-faint uppercase tracking-wider mt-2">Posts today · 9:00 am</div>
+      </div>
+    </div>
+  );
+
+  const GBPPreview = ({ draft, imageMode }) => (
+    <div className="bg-white rounded-lg border border-surface-edge shadow-card overflow-hidden">
+      <div className="p-3 flex items-center gap-2.5 border-b border-surface-edge">
+        <div className="w-9 h-9 rounded-full bg-white border border-surface-edge flex items-center justify-center"><Icon name="google" size={16} /></div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[11px] text-ink-faint">Posted by</div>
+          <div className="font-semibold text-[13px] text-ink leading-tight">Westbrook Auto &amp; Tire</div>
+        </div>
+        <div className="text-[10px] text-ink-faint">2h ago</div>
+      </div>
+      <div className="p-3 flex gap-3">
+        {imageMode !== 'none' && (
+          <div className="shrink-0 w-20 h-20 rounded-lg bg-gradient-to-br from-emerald-100 to-cyan-100 flex items-center justify-center text-ink-faint">
+            <Icon name="image" size={22} strokeWidth={1.3} />
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-[14px] text-ink leading-tight mb-1">{draft.headline}</div>
+          <p className="text-[12px] text-ink-soft leading-snug">{draft.text}</p>
+        </div>
+      </div>
+      <div className="p-3 pt-0">
+        <button className="w-full bg-white border border-[#1A73E8] text-[#1A73E8] text-[13px] font-semibold py-2 rounded-full hover:bg-blue-50 transition-all">{draft.cta}</button>
+      </div>
+      <div className="px-3 py-2 border-t border-surface-edge text-[11px] text-ink-faint flex items-center justify-between">
+        <span>4.8 ★ · 162 reviews</span>
+        <span className="inline-flex items-center gap-1"><Icon name="phone" size={11} /> (507) 555-0143</span>
+      </div>
+    </div>
+  );
+
+  const WebPreview = ({ draft, imageMode }) => (
+    <div className="bg-white rounded-lg border border-surface-edge shadow-card overflow-hidden">
+      <div className="px-4 py-2 border-b border-surface-edge bg-surface text-[10px] text-ink-faint flex items-center gap-2">
+        <Icon name="globe" size={11} />
+        <span className="truncate">westbrookautomn.com{draft.slug}</span>
+      </div>
+      {imageMode !== 'none' && (
+        <div className="aspect-[16/9] bg-gradient-to-br from-amber-100 via-cyan-100 to-blue-100 flex items-center justify-center text-ink-faint relative">
+          <div className="text-center">
+            <Icon name="image" size={32} strokeWidth={1.2} />
+            <div className="text-[10px] mt-1 uppercase tracking-wider">{imageMode === 'ai' ? 'AI-generated hero' : 'Owner photo'}</div>
+          </div>
+        </div>
+      )}
+      <div className="p-5">
+        <div className="text-[10px] uppercase tracking-wider font-semibold text-brand-600 mb-2">Westbrook Auto &amp; Tire · Blog</div>
+        <h1 className="font-serif text-xl font-bold text-ink leading-tight mb-2">{draft.title}</h1>
+        <div className="text-[14px] text-ink-soft italic mb-3 leading-snug">{draft.subtitle}</div>
+        <div className="flex items-center gap-2 text-[11px] text-ink-faint mb-4 pb-4 border-b border-surface-edge">
+          <div className="w-6 h-6 rounded-full bg-accent text-brand-800 font-semibold text-[10px] flex items-center justify-center">DH</div>
+          <span>By Dale Henderson</span>
+          <span>·</span>
+          <span>May 5, 2026</span>
+          <span>·</span>
+          <span className="inline-flex items-center gap-1"><Icon name="clock" size={10} /> {draft.readTime} read</span>
+        </div>
+        <p className="text-[13px] leading-relaxed text-ink whitespace-pre-line line-clamp-[10]">{draft.body}</p>
+        <div className="mt-3 pt-3 border-t border-surface-edge text-[10px] text-ink-faint flex items-center justify-between">
+          <span className="inline-flex items-center gap-1"><Icon name="sparkles" size={10} className="text-brand-500" /> Auto-indexed for AI search (llms.txt + JSON-LD)</span>
+          <span>1.2k views est.</span>
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ============================================================
+     VIEW: HOME / OVERVIEW
+     ============================================================ */
+  const HomeView = ({ onNavigate }) => {
+    return (
+      <div className="fade-in">
+        <TopBar
+          breadcrumb={`Day ${business.joinedDaysAgo} · ${business.location}`}
+          title={`Welcome back, ${business.owner.split(' ')[0]}`}
+          right={<Pill color="emerald" icon="check">Voice interview complete</Pill>}
+        />
+        <div className="px-8 py-7 space-y-6 max-w-6xl">
+          {/* Compose hero — the demo's primary CTA on Home */}
+          <div className="rounded-xl bg-gradient-to-br from-brand-700 to-brand-900 text-white p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-card">
+            <div className="flex-1">
+              <div className="text-xs uppercase tracking-wider font-semibold text-accent mb-1 inline-flex items-center gap-1.5">
+                <Icon name="sparkles" size={14} /> AI-drafted posts
+              </div>
+              <h2 className="text-2xl font-semibold mb-1.5 leading-tight">Ready to make your next post?</h2>
+              <p className="text-sm text-white/80 leading-relaxed">
+                One brief. Drafts tuned for Facebook, Instagram, your Google Business Profile — and your website blog. The agent handles the platform differences; you sign off.
+              </p>
+            </div>
+            <button onClick={() => onNavigate('compose')}
+              className="shrink-0 bg-accent text-brand-900 hover:brightness-110 font-semibold px-5 py-3 rounded-lg inline-flex items-center gap-2 shadow-md transition-all text-base">
+              <Icon name="sparkles" size={16} strokeWidth={2.4} />
+              Compose new post
+            </button>
+          </div>
+
+          {/* Stat tiles */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            <StatTile label="Posts this month" value={stats.posts.value} delta={stats.posts.delta} positive helper={stats.posts.helper} />
+            <StatTile label="Engagement" value={stats.engagement.value} positive delta="MoM" helper={stats.engagement.helper} />
+            <StatTile label="New reviews" value={stats.reviews.value} helper={stats.reviews.helper}
+              accent={<Stars n={Math.round(stats.reviews.rating)} />} />
+            <StatTile label="Ad spend used" value={`$${stats.spend.used}`} helper={`of $${stats.spend.budget}`}
+              accent={<ProgressBar value={stats.spend.used} max={stats.spend.budget} />} />
+            <StatTile label="Chatbot conversations" value={stats.chatbot.value} helper="Tier 3 preview" />
+          </div>
+
+          {/* Hero: Needs your attention — full width */}
+          <Card padded={false}>
+            <div className="px-6 pt-6 pb-2 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-ink">Needs your attention</h2>
+                <p className="text-sm text-ink-soft mt-0.5">Four things the agent flagged for your eyes today.</p>
+              </div>
+              <Pill color="amber">4 items</Pill>
+            </div>
+            <div className="divide-y divide-surface-edge px-2 pb-2">
+              {attention.map((a, i) => {
+                const tone = {
+                  amber: { bg: 'bg-amber-50', icon: 'text-amber-700' },
+                  red:   { bg: 'bg-red-50',   icon: 'text-bad' },
+                  teal:  { bg: 'bg-brand-50', icon: 'text-brand-600' }
+                }[a.tone];
+                return (
+                  <button key={i} onClick={() => onNavigate(a.target)}
+                    className="flex items-start gap-4 w-full text-left py-4 px-4 hover:bg-surface rounded-lg transition-all">
+                    <div className={`shrink-0 w-10 h-10 rounded-lg ${tone.bg} flex items-center justify-center ${tone.icon}`}>
+                      <Icon name={a.icon} size={20} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-ink">{a.title}</div>
+                      <div className="text-sm text-ink-soft mt-0.5">{a.detail}</div>
+                    </div>
+                    <div className="shrink-0 self-center text-sm text-brand-600 font-medium inline-flex items-center gap-1">
+                      {a.cta} <Icon name="chevR" size={14} />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
+  };
+
+  /* ============================================================
+     VIEW: CONTENT CALENDAR (tabbed: Schedule | Create posts | Drafts)
+     ============================================================ */
+  const CalendarView = ({ onNavigate }) => {
+    const [tab, setTab] = useState('schedule');
+    const draftCount = posts.filter(p => p.status === 'draft').length;
+    const titles = {
+      schedule: { title: 'Content Calendar', subtitle: 'May 2026 — when each post lands across your channels.' },
+      drafts:   { title: 'Drafts',           subtitle: `${draftCount} drafts you haven't sent for approval yet.` }
+    };
+    const tabs = [
+      { id: 'schedule', label: 'Schedule', icon: 'calendar' },
+      { id: 'drafts',   label: 'Drafts',   icon: 'edit', count: draftCount }
+    ];
+    return (
+      <div className="fade-in">
+        <TopBar
+          breadcrumb="Workspace"
+          title={titles[tab].title}
+          subtitle={titles[tab].subtitle}
+          right={
+            <Button icon="sparkles" variant="primary" onClick={() => onNavigate && onNavigate('compose')}>Compose new post</Button>
+          }
+        />
+        <div className="px-8 pt-2">
+          <TabBar tabs={tabs} value={tab} onChange={setTab} />
+        </div>
+        <div className="px-8 py-7">
+          {tab === 'schedule' && <ScheduleTab />}
+          {tab === 'drafts'   && <DraftsTab />}
+        </div>
+      </div>
+    );
+  };
+
+  const ScheduleTab = () => {
+    const [selected, setSelected] = useState(posts[3]);
+    const monthLabel = 'May 2026';
+    const firstWeekday = new Date(2026, 4, 1).getDay();
+    const daysInMonth = 31;
+    const cells = [];
+    for (let i = 0; i < firstWeekday; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+    while (cells.length % 7 !== 0) cells.push(null);
+
+    const postsByDay = useMemo(() => {
+      const map = {};
+      posts.forEach(p => {
+        const d = parseInt(p.date.split('-')[2], 10);
+        (map[d] = map[d] || []).push(p);
+      });
+      return map;
+    }, []);
+
+    return (
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_400px] gap-6">
+        <Card padded={false}>
+          <div className="px-6 py-4 border-b border-surface-edge flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <h2 className="font-serif text-lg font-semibold">{monthLabel}</h2>
+              <Pill color="slate">Today: May 5</Pill>
+            </div>
+            <div className="flex items-center gap-2">
+              <Pill color="teal"><span className="w-1.5 h-1.5 rounded-full bg-brand-600"></span>Published</Pill>
+              <Pill color="amber"><span className="w-1.5 h-1.5 rounded-full bg-warn"></span>Pending</Pill>
+              <Pill color="emerald"><span className="w-1.5 h-1.5 rounded-full bg-ok"></span>Approved</Pill>
+              <Pill color="slate"><span className="w-1.5 h-1.5 rounded-full bg-ink-faint"></span>Draft</Pill>
+            </div>
+          </div>
+          <div className="grid grid-cols-7 text-center text-[11px] uppercase tracking-wider font-medium text-ink-faint border-b border-surface-edge">
+            {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <div key={d} className="py-2">{d}</div>)}
+          </div>
+          <div className="grid grid-cols-7 grid-rows-6 border-l border-surface-edge" style={{ minHeight: 540 }}>
+            {cells.map((d, i) => {
+              const dayPosts = d ? (postsByDay[d] || []) : [];
+              const isToday = d === 5;
+              return (
+                <div key={i} className={`border-r border-b border-surface-edge p-1.5 min-h-[88px] ${isToday ? 'bg-brand-50/40' : ''}`}>
+                  {d && (
+                    <>
+                      <div className={`text-[11px] font-medium mb-1 px-1 ${isToday ? 'text-brand-600' : 'text-ink-faint'}`}>
+                        {d}{isToday && <span className="ml-1 text-[10px] bg-brand-500 text-white px-1 rounded">Today</span>}
+                      </div>
+                      <div className="space-y-1">
+                        {dayPosts.slice(0, 2).map(p => {
+                          const plat = PLATFORMS[p.platform];
+                          const stat = STATUSES[p.status];
+                          const isSel = selected && selected.id === p.id;
+                          return (
+                            <button key={p.id} onClick={() => setSelected(p)}
+                              className={`w-full text-left text-[11px] flex items-center gap-1 px-1.5 py-1 rounded ${isSel ? 'ring-2 ring-brand-500' : ''}`}
+                              style={{ background: stat.dot + '22', color: stat.dot }}>
+                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: plat.dot }}></span>
+                              <span className="truncate">{p.title}</span>
+                            </button>
+                          );
+                        })}
+                        {dayPosts.length > 2 && (
+                          <div className="text-[10px] text-ink-faint px-1.5">+{dayPosts.length - 2} more</div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+        {selected ? <PostDetail post={selected} /> : (
+          <Card><div className="text-sm text-ink-soft">Click any post on the calendar to see the draft and the agent's reasoning.</div></Card>
+        )}
+      </div>
+    );
+  };
+
+  const CreatePostsTab = () => {
+    const [topic, setTopic] = useState('Memorial Day pre-trip safety check');
+    const [notes, setNotes] = useState('Lake-bound traffic peaks Friday afternoon. Lean into the safety angle, not a discount. Mention the $59 inspection.');
+    const [chosen, setChosen] = useState(['fb', 'ig', 'gbp']);
+    const [imageMode, setImageMode] = useState('owner');
+    const [timing, setTiming] = useState('best');
+    const togglePlatform = (p) => setChosen(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]);
+
+    const drafts = [
+      { platform: 'fb',
+        headline: 'Pre-trip safety check — Memorial Day',
+        text: 'Headed to the lake this Memorial Day weekend? $59 pre-trip safety check covers oil, tire pressure, brakes, and fluid top-off. We\'d rather you find a problem in our bay than 80 miles down the road. Friday and Saturday slots open. (507) 555-0143.',
+        imageKind: 'owner-photo',
+        reasoning: 'Lake-bound framing pulled from prior Memorial Day chatbot queries (89% asked about lake routes). Phone before price — your conversion data favors that order on Facebook.' },
+      { platform: 'ig',
+        headline: 'Pre-trip safety reel',
+        text: 'Lake weekend ahead? 60-second walk-through of the $59 pre-trip safety check 🛠️ Mike runs the bay; Dale signs off; you drive. Link in bio or call (507) 555-0143. #WestbrookMN #LakeReady #HonestMechanic',
+        imageKind: 'owner-reel',
+        reasoning: 'Reel format with Mike narrating — your 2.3× engagement-multiplier format. Hashtags pulled from your top three local-discovery posts.' },
+      { platform: 'gbp',
+        headline: '$59 Memorial Day pre-trip',
+        text: '$59 Memorial Day pre-trip safety check. Oil, tires, brakes, fluids. Open Tue–Sat (closed Memorial Day Monday). Call (507) 555-0143.',
+        imageKind: 'none',
+        reasoning: 'GBP-friendly: short, phone-forward, holiday hours embedded. Designed for the search-result preview format, under 250 characters.' }
+    ];
+    const visible = drafts.filter(d => chosen.includes(d.platform));
+    const imageLabel = (kind) => kind === 'owner-photo' ? 'Your photo'
+      : kind === 'owner-reel' ? 'Your reel' : kind === 'ai' ? 'AI-generated' : kind === 'none' ? 'No image' : 'Image';
+
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-5">
+        {/* LEFT: brief form */}
+        <Card>
+          <SectionHeader title="Brief the agent"
+            subtitle="Tell it what you want. It drafts platform-tuned variations."
+            right={<Pill color="violet" icon="sparkles">AI</Pill>} />
+          <div className="space-y-5">
+            <div>
+              <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">What's it about?</label>
+              <input value={topic} onChange={e => setTopic(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-surface-edge text-[15px] focus:outline-none focus:border-brand-500" />
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">Anything else? <span className="font-normal normal-case">(optional)</span></label>
+              <textarea value={notes} onChange={e => setNotes(e.target.value)} rows="3"
+                className="w-full px-3 py-2 rounded-lg border border-surface-edge text-[15px] focus:outline-none focus:border-brand-500 resize-none" />
+              <div className="text-[11px] text-ink-faint mt-1.5 flex items-center gap-1.5">
+                <Icon name="sparkles" size={11} className="text-brand-500" />
+                Agent already knows your audience, voice, and prior posts.
+              </div>
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">Platforms</label>
+              <div className="grid grid-cols-3 gap-2">
+                {['fb', 'ig', 'gbp'].map(p => {
+                  const plat = PLATFORMS[p];
+                  const on = chosen.includes(p);
+                  return (
+                    <button key={p} onClick={() => togglePlatform(p)}
+                      className={`flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 text-xs font-medium transition-all ${
+                        on ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-surface-edge text-ink-soft hover:border-ink-faint/40'
+                      }`}>
+                      <Icon name={plat.icon} size={14} />
+                      {plat.label.split(' ')[0]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">Image</label>
+              <div className="space-y-1.5">
+                {[
+                  { id: 'owner', label: 'Use a photo from your library', sub: '14 saved' },
+                  { id: 'ai',    label: 'Generate one with AI',           sub: 'You approve before posting' },
+                  { id: 'none',  label: 'No image (text-only post)',      sub: '' }
+                ].map(opt => (
+                  <button key={opt.id} onClick={() => setImageMode(opt.id)}
+                    className={`w-full text-left p-2.5 rounded-lg border-2 transition-all flex items-start gap-3 ${
+                      imageMode === opt.id ? 'border-brand-500 bg-brand-50' : 'border-surface-edge hover:border-ink-faint/40'
+                    }`}>
+                    <div className={`w-4 h-4 rounded-full border-2 mt-0.5 shrink-0 ${
+                      imageMode === opt.id ? 'border-brand-500 bg-white' : 'border-surface-edge'
+                    }`}>
+                      {imageMode === opt.id && <div className="w-2 h-2 rounded-full bg-brand-500 m-0.5"></div>}
+                    </div>
+                    <div className="flex-1 text-sm">
+                      <div className="font-medium text-ink">{opt.label}</div>
+                      {opt.sub && <div className="text-xs text-ink-faint">{opt.sub}</div>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">When to post</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => setTiming('best')}
+                  className={`p-3 rounded-lg border-2 text-left transition-all ${
+                    timing === 'best' ? 'border-brand-500 bg-brand-50' : 'border-surface-edge hover:border-ink-faint/40'
+                  }`}>
+                  <div className="font-medium text-sm text-ink">Best time</div>
+                  <div className="text-xs text-ink-faint mt-0.5">Agent picks based on your data</div>
+                </button>
+                <button onClick={() => setTiming('pick')}
+                  className={`p-3 rounded-lg border-2 text-left transition-all ${
+                    timing === 'pick' ? 'border-brand-500 bg-brand-50' : 'border-surface-edge hover:border-ink-faint/40'
+                  }`}>
+                  <div className="font-medium text-sm text-ink">Pick a date</div>
+                  <div className="text-xs text-ink-faint mt-0.5">You choose the slot</div>
+                </button>
+              </div>
+            </div>
+            <div className="pt-2 flex items-center gap-2">
+              <Button icon="refresh" variant="primary" className="flex-1">Re-draft</Button>
+              <Button variant="ghost" icon="upload">Save brief</Button>
+            </div>
+          </div>
+        </Card>
+
+        {/* RIGHT: drafts panel */}
+        <div className="space-y-4">
+          <Card padded={false}>
+            <div className="px-6 py-4 border-b border-surface-edge flex items-center justify-between">
+              <div className="min-w-0">
+                <h3 className="font-semibold text-ink">Drafts</h3>
+                <div className="text-xs text-ink-faint mt-0.5 truncate">For: "{topic}"</div>
+              </div>
+              <Pill color="emerald" icon="sparkles">{visible.length} variations</Pill>
+            </div>
+            <div className="p-5 space-y-4">
+              {visible.length === 0 ? (
+                <div className="text-center py-10 text-sm text-ink-faint">Pick at least one platform to see drafts.</div>
+              ) : visible.map((d, i) => (
+                <div key={d.platform} className="bg-surface border border-surface-edge rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <PlatformChip platform={d.platform} />
+                      <span className="text-xs text-ink-faint">Variation {i + 1} of {visible.length}</span>
+                    </div>
+                    <Pill color={d.imageKind === 'none' ? 'slate' : d.imageKind === 'ai' ? 'violet' : 'teal'} icon="image">
+                      {imageLabel(d.imageKind)}
+                    </Pill>
+                  </div>
+                  <div className="font-semibold text-ink mb-2">{d.headline}</div>
+                  <p className="text-sm text-ink leading-relaxed bg-white rounded-lg p-3 border border-surface-edge whitespace-pre-line">{d.text}</p>
+                  <div className="mt-3 flex items-start gap-2 text-xs text-ink-soft italic">
+                    <Icon name="sparkles" size={12} className="text-brand-500 mt-0.5 shrink-0" />
+                    <span>{d.reasoning}</span>
+                  </div>
+                  <div className="mt-3 flex items-center gap-2">
+                    <Button icon="check" variant="ok" size="sm" className="flex-1">Send to approval queue</Button>
+                    <Button icon="edit" variant="secondary" size="sm">Edit</Button>
+                    <Button icon="refresh" variant="ghost" size="sm">Try another</Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+          <Card>
+            <div className="flex items-start gap-3">
+              <div className="shrink-0 w-9 h-9 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center"><Icon name="sparkles" size={18} /></div>
+              <p className="text-sm text-ink-soft flex-1">
+                <span className="font-semibold text-ink">Tip:</span> Be specific. <span className="text-ink">"Memorial Day weekend, lean into safety not discount"</span> outperforms <span className="italic">"Memorial Day post"</span> by 41% in reach for your audience.
+              </p>
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
+  };
+
+  const DraftsTab = () => {
+    const draftPosts = posts.filter(p => p.status === 'draft');
+    return (
+      <div className="space-y-3 max-w-4xl">
+        <Card>
+          <div className="flex items-start gap-3">
+            <div className="shrink-0 w-9 h-9 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center"><Icon name="edit" size={18} /></div>
+            <div className="flex-1">
+              <div className="font-semibold text-ink">{draftPosts.length} drafts not yet sent for approval</div>
+              <div className="text-sm text-ink-soft">Drafts stay here until you approve them or send them into the queue. Nothing posts publicly from this list.</div>
+            </div>
+          </div>
+        </Card>
+        {draftPosts.map(p => (
+          <Card key={p.id}>
+            <div className="flex items-start gap-4">
+              <div className="shrink-0 w-12 h-12 rounded-lg bg-surface flex items-center justify-center text-ink-faint border border-surface-edge">
+                <Icon name="image" size={20} strokeWidth={1.5} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <PlatformChip platform={p.platform} />
+                  <StatusChip status={p.status} />
+                  <span className="text-xs text-ink-faint">For {p.date}</span>
+                </div>
+                <div className="font-semibold text-ink">{p.title}</div>
+                <p className="text-sm text-ink-soft mt-1 line-clamp-2">{p.draft}</p>
+              </div>
+              <div className="shrink-0 flex flex-col gap-1.5">
+                <Button icon="check" variant="ok" size="sm">Send to queue</Button>
+                <Button icon="edit" variant="secondary" size="sm">Edit</Button>
+              </div>
+            </div>
+          </Card>
+        ))}
+      </div>
+    );
+  };
+
+  const PostDetail = ({ post }) => {
+    const plat = PLATFORMS[post.platform];
+    return (
+      <Card className="slide-in-right" padded={false}>
+        <div className="px-6 py-4 border-b border-surface-edge flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <PlatformChip platform={post.platform} />
+            <StatusChip status={post.status} />
+          </div>
+          <span className="text-xs text-ink-faint">{post.date}</span>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <div className="text-xs uppercase tracking-wider text-ink-faint font-medium mb-1.5">Headline</div>
+            <h3 className="font-semibold text-ink leading-tight">{post.title}</h3>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wider text-ink-faint font-medium mb-1.5">Draft</div>
+            <p className="text-sm text-ink leading-relaxed bg-surface rounded-lg p-3 border border-surface-edge whitespace-pre-line">{post.draft}</p>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wider text-ink-faint font-medium mb-1.5 inline-flex items-center gap-1.5">
+              <Icon name="sparkles" size={12} className="text-brand-500" /> Agent's reasoning
+            </div>
+            <p className="text-sm text-ink-soft leading-relaxed italic border-l-2 border-brand-500 pl-3">
+              {post.reasoning}
+            </p>
+          </div>
+          {post.status !== 'published' && (
+            <div className="flex items-center gap-2 pt-2">
+              <Button icon="check" variant="ok" className="flex-1">Approve</Button>
+              <Button icon="edit" variant="secondary">Edit</Button>
+              <Button icon="x" variant="ghost">Reject</Button>
+            </div>
+          )}
+          {post.status === 'published' && (
+            <div className="flex items-center gap-2 text-sm text-ink-faint pt-2">
+              <Icon name="check" size={14} className="text-ok" /> Published — 287 reach, 18 engagements so far.
+            </div>
+          )}
+        </div>
+      </Card>
+    );
+  };
+
+  /* ============================================================
+     VIEW: APPROVALS QUEUE
+     ============================================================ */
+  const ApprovalsView = () => {
+    const [decided, setDecided] = useState({});
+    const decide = (id, choice) => setDecided(d => ({ ...d, [id]: choice }));
+
+    return (
+      <div className="fade-in">
+        <TopBar
+          breadcrumb="Workspace"
+          title="Approvals queue"
+          subtitle="4 items waiting for your sign-off. Approve, edit, or reject — your call."
+          right={
+            <div className="flex items-center gap-2">
+              <Pill color="amber">4 pending</Pill>
+              <Button variant="secondary" size="sm" icon="check">Approve all</Button>
+            </div>
+          }
+        />
+        <div className="px-8 py-7 grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {approvals.map(item => (
+            <Card key={item.id} padded={false} className="overflow-hidden">
+              <div className="p-5 border-b border-surface-edge flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <PlatformChip platform={item.platform} />
+                  {item.kind === 'review' ? <Pill color="red" icon="alert">Review reply</Pill> : <Pill color="amber">Pending</Pill>}
+                </div>
+                {decided[item.id] && (
+                  <Pill color={decided[item.id] === 'approve' ? 'emerald' : decided[item.id] === 'edit' ? 'teal' : 'slate'}
+                    icon={decided[item.id] === 'approve' ? 'check' : decided[item.id] === 'edit' ? 'edit' : 'x'}>
+                    {decided[item.id] === 'approve' ? 'Approved' : decided[item.id] === 'edit' ? 'Sent to editor' : 'Rejected'}
+                  </Pill>
+                )}
+              </div>
+              <div className="p-5 space-y-4">
+                <h3 className="font-semibold text-ink">{item.title}</h3>
+                {item.original && (
+                  <div className="bg-red-50 border border-red-100 rounded-lg p-3">
+                    <div className="text-xs uppercase tracking-wider text-bad font-semibold mb-1 flex items-center gap-1">
+                      <Icon name="alert" size={11} strokeWidth={2.4} /> Karen B. left this 2★ review 4 days ago
+                    </div>
+                    <p className="text-sm text-ink italic">"{item.original}"</p>
+                  </div>
+                )}
+                {!item.original && (
+                  <div className="bg-surface rounded-lg border border-surface-edge h-28 flex items-center justify-center text-ink-faint">
+                    <Icon name="image" size={28} strokeWidth={1.5} />
+                    <span className="ml-2 text-xs">Image placeholder — owner-provided</span>
+                  </div>
+                )}
+                <div>
+                  <div className="text-xs uppercase tracking-wider text-ink-faint font-medium mb-1.5">{item.kind === 'review' ? 'Drafted reply' : 'Draft'}</div>
+                  <p className="text-sm text-ink leading-relaxed bg-white rounded-lg p-3 border border-surface-edge whitespace-pre-line">{item.draft}</p>
+                </div>
+                <div className="flex gap-2 items-start text-xs">
+                  <div className="shrink-0 mt-0.5"><Icon name="sparkles" size={13} className="text-brand-500" /></div>
+                  <p className="text-ink-soft italic leading-relaxed flex-1">{item.note}</p>
+                </div>
+                <div className="flex items-center gap-2 pt-1">
+                  <Button icon="check" variant="ok" className="flex-1" onClick={() => decide(item.id, 'approve')}>Approve</Button>
+                  <Button icon="edit" variant="secondary" onClick={() => decide(item.id, 'edit')}>Edit</Button>
+                  <Button icon="x" variant="ghost" onClick={() => decide(item.id, 'reject')}>Reject</Button>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  /* ============================================================
+     VIEW: PERFORMANCE
+     ============================================================ */
+  const PerformanceView = () => {
+    const [period, setPeriod] = useState('30');
+    const [tab, setTab] = useState('overview');
+    const titles = {
+      overview: { title: 'Performance', subtitle: 'Headline numbers and the daily-reach trend.' },
+      channels: { title: 'Channels',     subtitle: 'Organic vs paid by platform — where the lift is coming from.' },
+      insights: { title: 'Insights',     subtitle: 'What\'s working and what\'s not, generated from the last 30 days of your data.' }
+    };
+    const insightTabs = [
+      { id: 'overview', label: 'Overview', icon: 'chart' },
+      { id: 'channels', label: 'Channels', icon: 'bell' },
+      { id: 'insights', label: 'Insights', icon: 'sparkles', count: performance.insights.length }
+    ];
+    return (
+      <div className="fade-in">
+        <TopBar
+          breadcrumb="Workspace"
+          title={titles[tab].title}
+          subtitle={titles[tab].subtitle}
+          right={
+            <div className="flex bg-surface-edge rounded-lg p-0.5 text-sm">
+              {[['30','Last 30'],['prev','Previous 30'],['ytd','YTD']].map(([id, label]) => (
+                <button key={id} onClick={() => setPeriod(id)}
+                  className={`px-3 py-1.5 rounded-md font-medium transition-all ${period === id ? 'bg-white text-ink shadow-sm' : 'text-ink-soft hover:text-ink'}`}>{label}</button>
+              ))}
+            </div>
+          }
+        />
+        <div className="px-8 pt-2"><TabBar tabs={insightTabs} value={tab} onChange={setTab} /></div>
+        <div className="px-8 py-7">
+          {/* Stat row — always visible */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <StatTile label="Reach"      value={performance.reach.value.toLocaleString()}      delta={performance.reach.delta}      positive={performance.reach.positive}      helper={`vs ${performance.reach.prev.toLocaleString()} last period`} />
+            <StatTile label="Engagement" value={performance.engagement.value.toLocaleString()} delta={performance.engagement.delta} positive={performance.engagement.positive} helper={`vs ${performance.engagement.prev}`} />
+            <StatTile label="Followers"  value={performance.followers.value}  delta={performance.followers.delta}  positive={performance.followers.positive} helper={performance.followers.helper} />
+            <StatTile label="CTR (paid)" value={performance.ctr.value}        delta={performance.ctr.delta}        positive={performance.ctr.positive}      helper={performance.ctr.helper} />
+          </div>
+
+          {tab === 'overview' && (
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5 fade-in">
+              <div className="space-y-6">
+                <Card>
+                  <SectionHeader title="Daily reach" subtitle="60 days — current period vs previous." />
+                  <div className="-mx-2"><LineChart current={dailyReachCurrent} prev={dailyReachPrev} /></div>
+                </Card>
+                <Card>
+                  <SectionHeader title="Top posts this period" subtitle="Your three best-performing pieces." />
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {performance.topPosts.map((p, i) => (
+                      <div key={i} className="border border-surface-edge rounded-lg overflow-hidden bg-white">
+                        <div className="bg-surface h-28 flex items-center justify-center text-ink-faint">
+                          <Icon name="image" size={28} strokeWidth={1.5} />
+                        </div>
+                        <div className="p-3 space-y-2">
+                          <div className="flex items-center gap-2"><PlatformChip platform={p.platform} withLabel={false} /><span className="text-xs text-ink-faint">{p.note}</span></div>
+                          <div className="text-sm font-medium leading-snug text-ink">{p.title}</div>
+                          <div className="text-xs text-ink-soft">{p.metric}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              </div>
+              <Card>
+                <SectionHeader title="Agent activity" subtitle="What the agent did this week." />
+                <ol className="space-y-3">
+                  {weekRecap.map((r, i) => (
+                    <li key={i} className="flex gap-3">
+                      <div className="shrink-0 w-1.5 h-1.5 rounded-full mt-2 bg-brand-500"></div>
+                      <div className="text-sm">
+                        <div className="text-ink-faint text-xs font-medium">{r.when}</div>
+                        <div className="text-ink-soft">{r.text}</div>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+                <div className="mt-5 pt-4 border-t border-surface-edge text-xs text-ink-faint">
+                  Next batch posts Thursday morning.
+                </div>
+              </Card>
+            </div>
+          )}
+
+          {tab === 'channels' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 fade-in">
+              <Card>
+                <SectionHeader title="Organic vs paid" subtitle="Reach by channel." />
+                <StackedBars data={performance.channelMix} width={520} height={260} />
+              </Card>
+              <Card>
+                <SectionHeader title="Channel breakdown" subtitle="Last 30 days." />
+                <ul className="divide-y divide-surface-edge">
+                  {performance.channelMix.map(c => {
+                    const p = PLATFORMS[c.platform];
+                    const total = c.organic + c.paid;
+                    const paidPct = total ? Math.round((c.paid / total) * 100) : 0;
+                    return (
+                      <li key={c.platform} className="py-3 flex items-center gap-4">
+                        <div className="w-9 h-9 rounded-lg bg-surface flex items-center justify-center" style={{ color: p.dot }}>
+                          <Icon name={p.icon} size={18} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-ink text-sm">{p.label}</div>
+                          <div className="text-xs text-ink-faint">{total.toLocaleString()} reach · {paidPct}% paid</div>
+                        </div>
+                        <div className="w-32">
+                          <ProgressBar value={paidPct} max={100} color="#F4A261" height={5} />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </Card>
+            </div>
+          )}
+
+          {tab === 'insights' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 fade-in">
+              {performance.insights.map((ins, i) => (
+                <Card key={i} className={ins.kind === 'win' ? 'border-emerald-100' : 'border-amber-100'}>
+                  <div className={`text-xs uppercase tracking-wider font-semibold mb-2 inline-flex items-center gap-1 ${ins.kind === 'win' ? 'text-ok' : 'text-warn'}`}>
+                    <Icon name={ins.kind === 'win' ? 'check' : 'alert'} size={12} strokeWidth={2.4} /> {ins.kind === 'win' ? 'Working' : 'Worth tweaking'}
+                  </div>
+                  <div className="font-semibold text-ink mb-1.5">{ins.title}</div>
+                  <p className="text-sm text-ink-soft leading-relaxed">{ins.body}</p>
+                  <div className="mt-3 pt-3 border-t border-surface-edge flex items-center justify-between text-xs text-ink-faint">
+                    <span className="inline-flex items-center gap-1.5"><Icon name="sparkles" size={11} className="text-brand-500" /> Agent insight</span>
+                    <a className="text-brand-600 font-medium hover:underline cursor-pointer">Apply →</a>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  /* ============================================================
+     VIEW: REVIEWS
+     ============================================================ */
+  const ReviewsView = () => {
+    return (
+      <div className="fade-in">
+        <TopBar
+          breadcrumb="Reputation"
+          title="Reviews"
+          subtitle="Google and Facebook reviews with AI-drafted owner responses."
+          right={
+            <div className="flex items-center gap-3">
+              <Stars n={5} size={16} />
+              <span className="font-semibold text-ink">{reviews.aggregate}</span>
+              <span className="text-xs text-ink-faint">{reviews.total} reviews</span>
+            </div>
+          }
+        />
+        <div className="px-8 py-7 grid grid-cols-1 lg:grid-cols-3 gap-5">
+          {/* Aggregate + sparkline */}
+          <Card>
+            <SectionHeader title="Rating trend" subtitle="Last six months" />
+            <div className="flex items-end gap-4">
+              <div>
+                <div className="text-4xl font-serif font-semibold">{reviews.aggregate}</div>
+                <div className="text-xs text-ink-faint">{reviews.total} total reviews</div>
+              </div>
+              <div className="flex-1">
+                <Sparkline values={reviews.sparkline} width={180} height={36} />
+                <div className="flex justify-between text-[10px] text-ink-faint mt-1 px-1">
+                  {reviews.sparklineLabels.map(l => <span key={l}>{l}</span>)}
+                </div>
+              </div>
+            </div>
+            <div className="mt-5 pt-4 border-t border-surface-edge space-y-2">
+              <div className="flex items-center justify-between text-sm"><span className="text-ink-soft">Google</span><span className="font-medium">4.8 ★ · 137</span></div>
+              <div className="flex items-center justify-between text-sm"><span className="text-ink-soft">Facebook</span><span className="font-medium">4.9 ★ · 25</span></div>
+            </div>
+          </Card>
+
+          {/* Pinned negative + recent list */}
+          <div className="lg:col-span-2 space-y-5">
+            <Card className="border-l-4 border-bad" padded={false}>
+              <div className="p-5 border-b border-red-100 bg-red-50/40 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Icon name="alert" size={16} className="text-bad" />
+                  <span className="font-semibold text-bad">Flagged for fast response</span>
+                </div>
+                <Pill color="red">2★ · {reviews.pinned.when}</Pill>
+              </div>
+              <div className="p-5 space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-semibold text-ink">{reviews.pinned.author}</div>
+                    <div className="text-xs text-ink-faint flex items-center gap-2 mt-0.5">
+                      <PlatformChip platform={reviews.pinned.platform} />
+                      <Stars n={reviews.pinned.stars} />
+                    </div>
+                  </div>
+                </div>
+                <p className="text-sm italic text-ink leading-relaxed border-l-2 border-bad pl-3">"{reviews.pinned.body}"</p>
+                <div>
+                  <div className="text-xs uppercase tracking-wider text-ink-faint font-medium mb-1.5 inline-flex items-center gap-1.5">
+                    <Icon name="sparkles" size={12} className="text-brand-500" /> Drafted response — your voice
+                  </div>
+                  <p className="text-sm text-ink leading-relaxed bg-surface rounded-lg p-3 border border-surface-edge">{reviews.pinned.response}</p>
+                </div>
+                <p className="text-xs text-ink-soft italic flex items-start gap-2"><Icon name="sparkles" size={12} className="text-brand-500 mt-0.5 shrink-0" /> {reviews.pinned.note}</p>
+                <div className="flex items-center gap-2">
+                  <Button icon="check" variant="ok" className="flex-1">Approve & post</Button>
+                  <Button icon="edit" variant="secondary">Edit</Button>
+                  <Button icon="phone" variant="ghost">Call Karen</Button>
+                </div>
+              </div>
+            </Card>
+
+            <Card padded={false}>
+              <div className="p-5 border-b border-surface-edge flex items-center justify-between">
+                <h3 className="font-semibold">Recent reviews</h3>
+                <Pill color="slate">{reviews.recent.length} this week</Pill>
+              </div>
+              <div className="divide-y divide-surface-edge">
+                {reviews.recent.map(r => (
+                  <div key={r.id} className={`p-5 ${r.flagged ? 'bg-red-50/30' : ''}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-xs font-semibold">
+                          {r.author.split(' ').map(s => s[0]).join('').slice(0, 2)}
+                        </div>
+                        <div>
+                          <div className="font-medium text-ink">{r.author}</div>
+                          <div className="text-xs text-ink-faint flex items-center gap-2 mt-0.5">
+                            <PlatformChip platform={r.platform} withLabel={false} />
+                            <Stars n={r.stars} size={12} />
+                            <span>·</span><span>{r.when}</span>
+                          </div>
+                        </div>
+                      </div>
+                      {r.flagged && <Pill color="red" icon="alert">Flagged</Pill>}
+                    </div>
+                    <p className="text-sm text-ink-soft mt-3 italic">"{r.body}"</p>
+                    {!r.flagged && (
+                      <div className="mt-3 ml-12 bg-surface rounded-lg p-3 border-l-2 border-brand-500 border border-surface-edge">
+                        <div className="text-[11px] uppercase tracking-wider text-brand-600 font-semibold mb-1 inline-flex items-center gap-1.5">
+                          <Icon name="sparkles" size={11} /> Drafted response
+                        </div>
+                        <p className="text-sm text-ink">{r.response}</p>
+                        <div className="flex items-center gap-2 mt-3">
+                          <Button icon="check" variant="ok" size="sm">Approve</Button>
+                          <Button icon="edit" variant="secondary" size="sm">Edit</Button>
+                          <Button icon="x" variant="ghost" size="sm">Skip</Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  /* ============================================================
+     PMC PARSER + PRETTY RENDER
+     The PMC is a markdown blob with a fixed shape: an H1, then a
+     "## STRATEGIC SUMMARY" block of `- **FIELD:** value` bullets
+     (14 known fields), then one "## section" per interview topic.
+     parsePmc() turns that into structured data so PmcDoc can render
+     the same polished card layout the mockup uses.
+     ============================================================ */
+  function parsePmc(md) {
+    const lines = String(md || '').split('\n');
+    const summary = {};
+    const sections = [];
+    let inSummary = false, curKey = null, cur = null;
+    for (let i = 0; i < lines.length; i++) {
+      const ln = lines[i];
+      const h2 = ln.match(/^##\s+(.+?)\s*$/);
+      if (h2) {
+        const title = h2[1].trim();
+        if (/^strategic summary$/i.test(title)) { inSummary = true; curKey = null; cur = null; }
+        else { inSummary = false; curKey = null; cur = { title: title, raw: [] }; sections.push(cur); }
+        continue;
+      }
+      if (/^#\s+/.test(ln)) continue;            // skip H1
+      if (inSummary) {
+        const b = ln.match(/^[-*]\s+\*\*(.+?):\*\*\s*(.*)$/);
+        if (b) { curKey = b[1].trim(); summary[curKey] = b[2].trim(); }
+        else if (curKey && ln.trim()) { summary[curKey] += ' ' + ln.trim(); }
+        continue;
+      }
+      if (cur) cur.raw.push(ln);
+    }
+    sections.forEach(s => { s.body = s.raw.join('\n').trim(); delete s.raw; });
+    return { summary, sections };
+  }
+
+  const _needsReview = v => /\[NEEDS REVIEW\]/i.test(v || '');
+  const _humanize = k => k.replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+  const PmcField = ({ label, value, accent, big }) => {
+    const flag = _needsReview(value);
+    return (
+      <div className={`rounded-lg border p-4 ${flag ? 'border-amber-300 bg-amber-50' : 'border-surface-edge bg-surface'}`}>
+        <div className="flex items-center justify-between mb-1">
+          <div className={`text-[11px] uppercase tracking-wider font-semibold ${accent || 'text-ink-faint'}`}>{label}</div>
+          {flag && <Pill color="amber" icon="alert">Needs review</Pill>}
+        </div>
+        <div className={`text-ink leading-relaxed ${big ? 'text-base' : 'text-sm'}`}>
+          {value ? value : <span className="text-ink-faint italic">Not provided</span>}
+        </div>
+      </div>
+    );
+  };
+
+  const PmcDoc = ({ md }) => {
+    const doc = useMemo(() => parsePmc(md), [md]);
+    const S = doc.summary;
+    const g = k => S[k] || '';
+    const reviewCount = Object.keys(S).filter(k => _needsReview(S[k])).length;
+    const QUICK = ['CHANNEL PRIORITY', 'SEASONALITY', 'CONVERSION ACTION',
+      'COMPETITIVE FRAME', 'VOICE', 'BRAND GUARDRAILS', 'SUCCESS METRIC'];
+
+    return (
+      <div className="space-y-5">
+        {reviewCount > 0 && (
+          <div className="flex items-center gap-2 text-sm bg-amber-50 border border-amber-200 text-amber-900 rounded-lg px-4 py-2.5">
+            <Icon name="alert" size={15} strokeWidth={2.2} />
+            <span><span className="font-semibold">{reviewCount} item{reviewCount > 1 ? 's' : ''} need your review</span> — the agent wasn't confident here. Fix or confirm them before accepting.</span>
+          </div>
+        )}
+
+        {/* Positioning — the headline statement */}
+        <Card className="bg-gradient-to-br from-brand-50 via-white to-white border-brand-100">
+          <div className="text-[11px] uppercase tracking-wider font-semibold text-brand-600 mb-2">Positioning</div>
+          <p className={`font-serif text-xl font-semibold leading-snug border-l-2 border-brand-500 pl-4 ${_needsReview(g('POSITIONING')) ? 'text-amber-800' : 'text-ink'}`}>
+            {g('POSITIONING') || 'Not provided'}
+          </p>
+        </Card>
+
+        {/* Who we're for / not for */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <PmcField label="✓ Who we're for (target)" value={g('TARGET')} accent="text-ok" />
+          <PmcField label="✕ Who we're not for (anti-target)" value={g('ANTI-TARGET')} accent="text-bad" />
+        </div>
+
+        {/* Service priorities */}
+        <Card>
+          <SectionHeader title="Service priorities"
+            subtitle="What the agent pushes hard, keeps steady, and stays quiet on." />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <PmcField label="Amplify — push hard" value={g('AMPLIFY')} accent="text-ok" />
+            <PmcField label="Maintain — keep steady" value={g('MAINTAIN')} accent="text-ink-soft" />
+            <PmcField label="Mute — don't promote" value={g('MUTE / DO NOT PUSH')} accent="text-bad" />
+          </div>
+        </Card>
+
+        {/* Proof */}
+        <Card>
+          <SectionHeader title="Proof points" subtitle="What we lean on in social and ad copy." />
+          <div className={`text-sm leading-relaxed ${_needsReview(g('PROOF')) ? 'text-amber-800' : 'text-ink'}`}>
+            {g('PROOF') || 'Not provided'}
+          </div>
+        </Card>
+
+        {/* Quick reference grid */}
+        <Card>
+          <SectionHeader title="Strategic quick reference"
+            subtitle="The remaining decisions the marketing plan is built on." />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {QUICK.map(k => <PmcField key={k} label={_humanize(k)} value={g(k)} />)}
+          </div>
+        </Card>
+
+        {/* Narrative sections, in the owner's voice */}
+        {doc.sections.length > 0 && (
+          <div className="space-y-5">
+            <SectionHeader title="In your own words"
+              subtitle="The full interview context every agent can draw on." />
+            {doc.sections.map((s, i) => (
+              <Card key={i} className={_needsReview(s.body) ? 'border-amber-300' : ''}>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-serif text-base font-semibold text-ink">{_humanize(s.title)}</h3>
+                  {_needsReview(s.body) && <Pill color="amber" icon="alert">Needs review</Pill>}
+                </div>
+                <div className="pmc-md text-sm text-ink-soft leading-relaxed"
+                  dangerouslySetInnerHTML={{ __html: mdHtml(s.body) }} />
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  /* ============================================================
+     VIEW: MARKETING PROFILE  (editable PMC — draft/accept)
+     The interview-derived context is the single source of truth the
+     marketing plan + every downstream agent reads from.
+     ============================================================ */
+  const MarketingProfileView = ({ onNavigate }) => {
+    const cur = PMC && PMC.current;
+    const editable = PMC.state === 'draft';
+    const [md, setMd] = useState((cur && cur.qualitative_md) || '');
+    const [quant, setQuant] = useState((cur && cur.quantitative) || {});
+    const [busy, setBusy] = useState(false);
+    const [msg, setMsg] = useState(null);
+    const [rawEdit, setRawEdit] = useState(false);
+
+    function setQ(k, v) { setQuant(Object.assign({}, quant, { [k]: v })); }
+
+    async function save() {
+      setBusy(true); setMsg(null);
+      try {
+        const r = await apiFetch('/business/api/pmc/draft', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pmc_id: cur.id, qualitative_md: md, quantitative: quant })
+        });
+        const body = await r.json();
+        if (r.ok) { PMC = body.pmc; setMsg({ ok: true, t: 'Saved.' }); }
+        else setMsg({ ok: false, t: body.error || 'Save failed.' });
+      } catch (e) { setMsg({ ok: false, t: 'Network error.' }); }
+      setBusy(false);
+    }
+
+    async function accept() {
+      setBusy(true); setMsg(null);
+      try {
+        const r = await apiFetch('/business/api/pmc/accept', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pmc_id: cur.id })
+        });
+        const body = await r.json();
+        if (r.ok) { PMC = body.pmc; setMsg({ ok: true, t: 'Accepted — this is now the version every agent uses.' }); }
+        else setMsg({ ok: false, t: body.error || 'Accept failed.' });
+      } catch (e) { setMsg({ ok: false, t: 'Network error.' }); }
+      setBusy(false);
+    }
+
+    return (
+      <div className="fade-in">
+        <TopBar
+          breadcrumb="Strategy"
+          title="Marketing Profile"
+          subtitle="The interview-derived context every agent works from. Review it, fix anything wrong, then accept it."
+          right={
+            cur
+              ? (editable
+                  ? <Pill color="amber" icon="alert">Draft v{cur.version}</Pill>
+                  : <Pill color="emerald" icon="check">Accepted v{cur.version}</Pill>)
+              : <Pill color="slate">Not started</Pill>
+          }
+        />
+        <div className="px-8 py-7 space-y-5">
+          {msg && (
+            <div className={`text-sm px-4 py-2.5 rounded-lg ${msg.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>
+              {msg.t}
+            </div>
+          )}
+
+          {!cur && (
+            <Card>
+              <div className="text-center py-10">
+                <div className="text-ink font-semibold text-lg mb-1">No profile yet</div>
+                <p className="text-sm text-ink-soft mb-5 max-w-md mx-auto">
+                  Your marketing profile is built from a short voice interview. Everything
+                  the agent does — posts, plan, replies — flows from it.
+                </p>
+                <Button icon="mic" onClick={() => { window.location.href = '/business/pmc/'; }}>
+                  Start the interview
+                </Button>
+              </div>
+            </Card>
+          )}
+
+          {cur && (
+            <>
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h2 className="font-serif text-lg font-semibold text-ink">Strategic context</h2>
+                    <p className="text-sm text-ink-soft">
+                      {editable
+                        ? (rawEdit ? 'Editing raw markdown — switch back to see it formatted.'
+                                   : 'Review the synthesized profile below. Toggle Edit to change the text.')
+                        : 'Read-only — this version is accepted.'}
+                    </p>
+                  </div>
+                  {editable && (
+                    <Button variant="secondary" size="sm" icon={rawEdit ? 'check' : 'edit'}
+                      onClick={() => setRawEdit(!rawEdit)}>
+                      {rawEdit ? 'Done editing' : 'Edit raw text'}
+                    </Button>
+                  )}
+                </div>
+                {editable && rawEdit
+                  ? <Card>
+                      <textarea value={md} onChange={e => setMd(e.target.value)}
+                        className="w-full h-[460px] px-3 py-2 rounded-lg border border-surface-edge text-[13px] font-mono leading-relaxed focus:outline-none focus:border-brand-500"
+                        spellCheck="false" />
+                      <p className="mt-2 text-xs text-ink-faint">Markdown. Keep the <code>## STRATEGIC SUMMARY</code> bullet labels intact so the agent can read it.</p>
+                    </Card>
+                  : <PmcDoc md={editable ? md : cur.qualitative_md} />}
+              </div>
+
+              <Card>
+                <SectionHeader title="Quick facts"
+                  subtitle="Structured answers from your interview prep." />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {Object.keys(quant).length === 0 && (
+                    <div className="text-sm text-ink-faint">No structured answers recorded.</div>
+                  )}
+                  {Object.keys(quant).map(k => (
+                    <div key={k}>
+                      <label className="text-[11px] uppercase tracking-wider font-medium text-ink-faint">
+                        {k.replace(/_/g, ' ')}
+                      </label>
+                      <input type="text" value={quant[k] == null ? '' : String(quant[k])}
+                        disabled={!editable}
+                        onChange={e => setQ(k, e.target.value)}
+                        className="mt-1 w-full px-3 py-2 rounded-lg border border-surface-edge text-sm disabled:bg-surface disabled:text-ink-soft focus:outline-none focus:border-brand-500" />
+                    </div>
+                  ))}
+                </div>
+              </Card>
+
+              <div className="flex items-center justify-between">
+                <Button variant="ghost" icon="refresh"
+                  onClick={() => { window.location.href = '/business/pmc/?redo=1'; }}>
+                  Redo interview
+                </Button>
+                {editable && (
+                  <div className="flex items-center gap-2">
+                    <Button variant="secondary" disabled={busy} onClick={save}>Save edits</Button>
+                    <Button icon="check" disabled={busy} onClick={accept}>Accept this version</Button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  /* ============================================================
+     VIEW: MARKETING PLAN  (read-only render of the accepted PMC)
+     ============================================================ */
+  const MarketingPlanView = ({ onNavigate }) => {
+    const [tab, setTab] = useState('strategy');
+    const _pmc = PMC && PMC.current;
+    return (
+      <div className="fade-in">
+        <TopBar breadcrumb="Strategy" title="Marketing Plan"
+          subtitle="The plan the agent works from — generated from your interview."
+          right={ _pmc
+            ? (PMC.state === 'draft'
+                ? <Pill color="amber" icon="alert">Draft — not yet accepted</Pill>
+                : <Pill color="emerald" icon="check">Accepted by you</Pill>)
+            : <Pill color="slate">Not started</Pill> } />
+        <div className="px-8 py-7">
+          { _pmc ? (
+            <>
+              {PMC.state === 'draft' && (
+                <Card className="mb-5 bg-amber-50 border-amber-200">
+                  <div className="text-sm text-amber-900">
+                    This is a <span className="font-semibold">draft</span>. Edit it in{' '}
+                    <button className="underline font-medium"
+                      onClick={() => onNavigate && onNavigate('profile')}>Marketing Profile</button>,
+                    then accept it to make it the version every agent uses.
+                  </div>
+                </Card>
+              )}
+              <PmcDoc md={_pmc.qualitative_md} />
+            </>
+          ) : (
+            <Card>
+              <div className="text-center py-10">
+                <div className="text-ink font-semibold text-lg mb-1">No marketing plan yet</div>
+                <p className="text-sm text-ink-soft mb-5">Complete your interview to generate the plan the agent works from.</p>
+                <Button icon="edit" onClick={() => onNavigate && onNavigate('profile')}>Go to Marketing Profile</Button>
+              </div>
+            </Card>
+          )}
+        </div>
+      </div>
+    );
+    /* eslint-disable */
+    /* ── LEGACY mock plan below is unreachable (kept to avoid a 150-line
+          delete in this generated file; the return above always fires). ── */
+    const titles = {
+      strategy: { title: 'Marketing Plan',     subtitle: 'Audience, value prop, and the language we use to talk to your customers.' },
+      channels: { title: 'Channels & goals',   subtitle: 'Where the agent invests effort, and how we\'re tracking against Q3.' }
+    };
+    const tabs = [
+      { id: 'strategy', label: 'Strategy',          icon: 'target' },
+      { id: 'channels', label: 'Channels & goals',  icon: 'chart' }
+    ];
+    return (
+      <div className="fade-in">
+        <TopBar
+          breadcrumb="Strategy"
+          title={titles[tab].title}
+          subtitle={titles[tab].subtitle}
+          right={
+            <div className="flex items-center gap-2">
+              <Pill color="emerald" icon="check">Approved by you</Pill>
+              <Button variant="secondary" icon="refresh">Re-interview</Button>
+            </div>
+          }
+        />
+        <div className="px-8 pt-2"><TabBar tabs={tabs} value={tab} onChange={setTab} /></div>
+        <div className="px-8 py-7 space-y-5">
+          {/* Goal hero — always visible */}
+          <Card className="bg-gradient-to-br from-brand-50 via-white to-white border-brand-100">
+            <div className="flex items-start gap-4">
+              <div className="shrink-0 w-12 h-12 rounded-xl bg-brand-500 text-white flex items-center justify-center">
+                <Icon name="target" size={22} strokeWidth={2} />
+              </div>
+              <div className="flex-1">
+                <div className="text-[11px] uppercase tracking-wider font-semibold text-brand-600 mb-1.5">Your goal at signing</div>
+                <h3 className="font-serif text-xl font-semibold text-ink leading-snug mb-2">
+                  "Ten new customers a month from social and the chatbot, by end of Q3."
+                </h3>
+                <p className="text-sm text-ink-soft mb-4">
+                  Set with John Draper on March 19. We track new-customer reviews and chatbot-to-call conversions as the proxy.
+                </p>
+                <div className="grid grid-cols-3 gap-4 pt-3 border-t border-brand-100">
+                  <div>
+                    <div className="text-[11px] text-ink-faint uppercase tracking-wider">Pace last 30 days</div>
+                    <div className="mt-0.5 text-xl font-semibold text-ink">7<span className="text-sm font-normal text-ink-soft"> / 10 per mo</span></div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] text-ink-faint uppercase tracking-wider">Days into year 1</div>
+                    <div className="mt-0.5 text-xl font-semibold text-ink">{business.joinedDaysAgo}<span className="text-sm font-normal text-ink-soft"> / 365</span></div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] text-ink-faint uppercase tracking-wider">Days remaining in Q3</div>
+                    <div className="mt-0.5 text-xl font-semibold text-ink">87<span className="text-sm font-normal text-ink-soft"> days</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          {tab === 'strategy' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 fade-in">
+              <Card>
+                <SectionHeader title="Audience"
+                  right={<Button variant="ghost" size="sm" icon="edit">Edit</Button>} />
+                <p className="text-sm text-ink-soft leading-relaxed">{marketingPlan.audience}</p>
+              </Card>
+              <Card>
+                <SectionHeader title="Value proposition"
+                  right={<Button variant="ghost" size="sm" icon="edit">Edit</Button>} />
+                <p className="text-sm text-ink leading-relaxed font-medium italic border-l-2 border-brand-500 pl-3">"{marketingPlan.valueProp}"</p>
+              </Card>
+              <Card className="lg:col-span-2">
+                <SectionHeader title="Switching forces"
+                  subtitle="What pulls customers toward you, and what pushes them away from where they were before." />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div>
+                    <div className="text-xs uppercase tracking-wider font-semibold text-ok mb-2 inline-flex items-center gap-1">
+                      <Icon name="trending" size={12} strokeWidth={2.4} /> Pulling toward you
+                    </div>
+                    <ul className="space-y-1.5">
+                      {marketingPlan.switching.pulls.map((p, i) => (
+                        <li key={i} className="text-sm text-ink flex items-start gap-2">
+                          <span className="text-ok shrink-0 mt-0.5"><Icon name="check" size={13} /></span>{p}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wider font-semibold text-bad mb-2 inline-flex items-center gap-1">
+                      <Icon name="alert" size={12} strokeWidth={2.4} /> Pushing from old
+                    </div>
+                    <ul className="space-y-1.5">
+                      {marketingPlan.switching.pushes.map((p, i) => (
+                        <li key={i} className="text-sm text-ink flex items-start gap-2">
+                          <span className="text-bad shrink-0 mt-0.5"><Icon name="x" size={13} /></span>{p}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </Card>
+              <Card>
+                <SectionHeader title="Customer language"
+                  subtitle="Verbatim phrases pulled from your reviews and customer messages." />
+                <div className="flex flex-wrap gap-2">
+                  {marketingPlan.customerLanguage.map((p, i) => (
+                    <span key={i} className="bg-brand-50 text-brand-700 text-sm px-3 py-1.5 rounded-lg border border-brand-100">{p}</span>
+                  ))}
+                </div>
+              </Card>
+              <Card>
+                <SectionHeader title="Proof points" subtitle="What we lean on in social and ad copy." />
+                <ul className="space-y-3">
+                  {marketingPlan.proofPoints.map((pt, i) => (
+                    <li key={i} className="bg-surface border border-surface-edge rounded-lg p-3">
+                      <div className="font-semibold text-ink text-sm">{pt.label}</div>
+                      <div className="text-xs text-ink-soft mt-0.5">{pt.detail}</div>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            </div>
+          )}
+
+          {tab === 'channels' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 fade-in">
+              <Card>
+                <SectionHeader title="Channel allocation" subtitle="Where the agent invests effort." />
+                <div className="flex items-center justify-center mb-4">
+                  <PieChart slices={marketingPlan.channels} size={200} />
+                </div>
+                <ul className="space-y-2 text-sm">
+                  {marketingPlan.channels.map((c, i) => (
+                    <li key={i} className="flex items-center justify-between">
+                      <span className="inline-flex items-center gap-2">
+                        <span className="w-3 h-3 rounded" style={{ background: c.color }}></span>
+                        {c.label || PLATFORMS[c.platform].label}
+                      </span>
+                      <span className="font-semibold">{c.pct}%</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+              <Card>
+                <SectionHeader title="Q3 goals" subtitle="Set with you on April 18." />
+                <div className="space-y-5">
+                  {marketingPlan.q3Goals.map((g, i) => {
+                    return (
+                      <div key={i}>
+                        <div className="flex items-center justify-between text-sm mb-1.5">
+                          <span className="text-ink font-medium">{g.label}</span>
+                          <span className="text-ink-soft text-xs">{g.current} / {g.target} {g.unit}</span>
+                        </div>
+                        <ProgressBar value={g.current} max={g.target} color={g.exceeded ? '#2A9D8F' : '#0E5E6F'} />
+                        {g.exceeded && <div className="text-[11px] text-ok font-medium mt-1 inline-flex items-center gap-1"><Icon name="check" size={11} strokeWidth={2.5} /> Exceeded target</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-5 pt-4 border-t border-surface-edge text-xs text-ink-faint">
+                  Goals are reviewed and re-set at the start of each quarter with your publisher rep.
+                </div>
+              </Card>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  /* ============================================================
+     VIEW: AI AGENT CHAT
+     ============================================================ */
+  const ChatView = () => {
+    return (
+      <div className="fade-in flex flex-col" style={{ minHeight: 'calc(100vh - 0px)' }}>
+        <TopBar
+          breadcrumb="Workspace"
+          title="AI Agent"
+          subtitle="Talk to your agent. Ask for advice, drafts, or what to do next."
+          right={
+            <div className="flex items-center gap-2">
+              <Pill color="emerald" icon="check">Online</Pill>
+              <Pill color="violet" icon="sparkles">Tier 3 preview</Pill>
+            </div>
+          }
+        />
+        <div className="px-8 py-7 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5 flex-1">
+          {/* Conversation */}
+          <Card padded={false} className="flex flex-col">
+            <div className="p-6 space-y-6 flex-1">
+              {chat.map((m, i) => {
+                const isOwner = m.who === 'owner';
+                return (
+                  <div key={i} className={`flex gap-3 ${isOwner ? 'flex-row-reverse' : ''}`}>
+                    <div className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold ${isOwner ? 'bg-brand-500 text-white' : 'bg-accent text-brand-800'}`}>
+                      {isOwner ? 'DH' : <Icon name="sparkles" size={16} strokeWidth={2.2} />}
+                    </div>
+                    <div className={`max-w-[68%] ${isOwner ? 'items-end' : 'items-start'} flex flex-col`}>
+                      <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${isOwner ? 'bg-brand-500 text-white rounded-tr-md' : 'bg-surface border border-surface-edge text-ink rounded-tl-md'}`}>
+                        <FormattedText text={m.text} />
+                        {m.attachment && m.attachment.kind === 'boost-card' && (
+                          <BoostCard attachment={m.attachment} />
+                        )}
+                      </div>
+                      <div className="text-[11px] text-ink-faint mt-1">{m.when}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="border-t border-surface-edge p-4 bg-surface">
+              <div className="flex items-center gap-2 bg-white border border-surface-edge rounded-xl px-3 py-2">
+                <input type="text" placeholder="Ask the agent anything…" disabled
+                  className="flex-1 bg-transparent text-sm outline-none placeholder:text-ink-faint" />
+                <button disabled className="opacity-50 p-1.5 rounded-lg bg-brand-500 text-white"><Icon name="chevR" size={16} /></button>
+              </div>
+              <div className="text-[11px] text-ink-faint mt-2 flex items-center gap-1.5">
+                <Icon name="sparkles" size={11} className="text-brand-500" /> Live agent chat is part of Tier 3. Want to enable it for your account? <a className="text-brand-600 font-medium hover:underline cursor-pointer ml-1">Talk to your rep →</a>
+              </div>
+            </div>
+          </Card>
+
+          {/* Side rail: context */}
+          <div className="space-y-4">
+            <Card>
+              <SectionHeader title="What the agent knows" subtitle="" />
+              <ul className="text-sm space-y-2 text-ink-soft">
+                <li className="flex items-start gap-2"><Icon name="check" size={13} className="text-ok mt-0.5 shrink-0" />Your March 21 voice interview transcript</li>
+                <li className="flex items-start gap-2"><Icon name="check" size={13} className="text-ok mt-0.5 shrink-0" />47 days of your post performance and ad data</li>
+                <li className="flex items-start gap-2"><Icon name="check" size={13} className="text-ok mt-0.5 shrink-0" />162 reviews across Google & Facebook</li>
+                <li className="flex items-start gap-2"><Icon name="check" size={13} className="text-ok mt-0.5 shrink-0" />Westbrook seasonal patterns (lake traffic, school calendar)</li>
+                <li className="flex items-start gap-2"><Icon name="check" size={13} className="text-ok mt-0.5 shrink-0" />Pricing & service list from your March voice notes</li>
+              </ul>
+            </Card>
+            <Card>
+              <SectionHeader title="Suggestions" subtitle="What you might ask next" />
+              <div className="space-y-2">
+                {[
+                  '"What\'s the right time to post on Saturdays?"',
+                  '"Draft a post about our farm-tire field service"',
+                  '"Which review should I respond to first?"',
+                  '"What should my July marketing look like?"'
+                ].map((s, i) => (
+                  <button key={i} className="text-left w-full text-sm text-ink-soft bg-surface hover:bg-brand-50 hover:text-brand-700 transition-all rounded-lg p-2.5 border border-surface-edge">{s}</button>
+                ))}
+              </div>
+            </Card>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Renders simple **bold** in an agent message.
+  const FormattedText = ({ text }) => {
+    const parts = text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
+    return <span>{parts.map((p, i) =>
+      p.startsWith('**') ? <strong key={i}>{p.slice(2, -2)}</strong> : <Fragment key={i}>{p}</Fragment>
+    )}</span>;
+  };
+
+  const BoostCard = ({ attachment }) => (
+    <div className="mt-3 bg-white text-ink rounded-lg border border-surface-edge p-3">
+      <div className="text-[11px] uppercase tracking-wider font-semibold text-brand-600 mb-2 flex items-center gap-1.5">
+        <Icon name="sparkles" size={11} /> Proposed boost
+      </div>
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+        <dt className="text-ink-faint">Budget</dt><dd className="font-medium">{attachment.budget}</dd>
+        <dt className="text-ink-faint">Audience age</dt><dd className="font-medium">{attachment.ages}</dd>
+        <dt className="text-ink-faint">Radius</dt><dd className="font-medium">{attachment.radius}</dd>
+        <dt className="text-ink-faint">Estimated reach</dt><dd className="font-medium">{attachment.reach}</dd>
+        <dt className="text-ink-faint">Estimated clicks</dt><dd className="font-medium">{attachment.clicks}</dd>
+        <dt className="text-ink-faint">Posts</dt><dd className="font-medium">{attachment.post}</dd>
+      </dl>
+    </div>
+  );
+
+  /* ============================================================
+     LIVE: editable business profile (org row -> PUT /api/settings)
+     ============================================================ */
+  const BusinessProfileCard = () => {
+    const o0 = (BOOT && BOOT.org) || {};
+    const FIELDS = [
+      ['name', 'Business name'], ['phone', 'Phone'], ['email', 'Email'],
+      ['website', 'Website'], ['address', 'Address'], ['city', 'City'],
+      ['state', 'State']
+    ];
+    const [form, setForm] = useState(function () {
+      const f = {};
+      FIELDS.forEach(function (p) { f[p[0]] = o0[p[0]] || ''; });
+      f.description = o0.description || '';
+      return f;
+    });
+    const [busy, setBusy] = useState(false);
+    const [msg, setMsg] = useState(null);
+
+    function set(k, v) { setForm(Object.assign({}, form, { [k]: v })); }
+
+    async function save() {
+      setBusy(true); setMsg(null);
+      try {
+        const r = await apiFetch('/business/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(form)
+        });
+        const body = await r.json();
+        if (r.ok && body.ok) {
+          if (BOOT && BOOT.org) Object.assign(BOOT.org, form);
+          setMsg({ ok: true, t: 'Saved.' });
+        } else {
+          setMsg({ ok: false, t: body.error || 'Save failed.' });
+        }
+      } catch (e) { setMsg({ ok: false, t: 'Network error.' }); }
+      setBusy(false);
+    }
+
+    return (
+      <Card>
+        <SectionHeader title="Business profile"
+          subtitle="Your name, contact info, and address — what the agent uses everywhere."
+          right={<Button size="sm" disabled={busy} onClick={save}>Save</Button>} />
+        {msg && (
+          <div className={`mb-3 text-sm px-3 py-2 rounded-lg ${msg.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>
+            {msg.t}
+          </div>
+        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {FIELDS.map(function (p) {
+            return (
+              <div key={p[0]}>
+                <label className="text-[11px] uppercase tracking-wider font-medium text-ink-faint">{p[1]}</label>
+                <input type="text" value={form[p[0]]}
+                  onChange={e => set(p[0], e.target.value)}
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-surface-edge text-sm focus:outline-none focus:border-brand-500" />
+              </div>
+            );
+          })}
+          <div className="md:col-span-2">
+            <label className="text-[11px] uppercase tracking-wider font-medium text-ink-faint">Description</label>
+            <textarea value={form.description} onChange={e => set('description', e.target.value)}
+              rows="3"
+              className="mt-1 w-full px-3 py-2 rounded-lg border border-surface-edge text-sm focus:outline-none focus:border-brand-500" />
+          </div>
+        </div>
+      </Card>
+    );
+  };
+
+  /* ============================================================
+     VIEW: SETTINGS
+     ============================================================ */
+  const SettingsView = ({ onTalkToHuman }) => {
+    const [tab, setTab] = useState('account');
+    const [cadence, setCadence] = useState(settings.cadence);
+    const cadenceOptions = [
+      { id: 'each',  label: 'Approve each post',      hint: 'Maximum control. The agent sends every draft to your inbox.' },
+      { id: 'weekly',label: 'Approve weekly batch',   hint: 'You see a batch of posts once a week and sign off all at once. Recommended.' },
+      { id: 'auto',  label: 'Auto-approve, notify me',hint: 'Agent posts on your behalf. You\'re notified after.' }
+    ];
+    const titles = {
+      account:       { title: 'Account',         subtitle: 'Your plan, billing, and what Tier 3 unlocks.' },
+      connections:   { title: 'Connections',     subtitle: 'Where the agent has permission to read and post.' },
+      notifications: { title: 'Notifications & approvals', subtitle: 'How and how often the agent talks to you.' }
+    };
+    const tabs = [
+      { id: 'account',       label: 'Account',         icon: 'user' },
+      { id: 'connections',   label: 'Connections',     icon: 'plus', count: settings.connections.length },
+      { id: 'notifications', label: 'Notifications',   icon: 'bell' }
+    ];
+
+    return (
+      <div className="fade-in">
+        <TopBar
+          breadcrumb="Account"
+          title={titles[tab].title}
+          subtitle={titles[tab].subtitle}
+          right={<Pill color="violet">Account ID • PN-WBK-0027</Pill>}
+        />
+        <div className="px-8 pt-2"><TabBar tabs={tabs} value={tab} onChange={setTab} /></div>
+        <div className="px-8 py-7 space-y-5">
+          {tab === 'account' && (
+            <div className="space-y-5 fade-in">
+              <BusinessProfileCard />
+              {/* Plan + Publisher partner row */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                <Card>
+                  <SectionHeader title="Your plan" />
+                  {(() => {
+                    const f = (BOOT && BOOT.flags) || {};
+                    const sub = (BOOT && BOOT.billing && BOOT.billing.subscription) || null;
+                    if (!f.billing_enabled) {
+                      return (
+                        <div className="bg-gradient-to-br from-brand-700 to-brand-900 text-white rounded-lg p-5">
+                          <div className="text-xs text-white/70 uppercase tracking-wider font-medium">Pilot</div>
+                          <div className="font-serif text-2xl font-semibold mt-1">No charge during the pilot</div>
+                          <div className="text-sm mt-0.5 text-white/85">You're fully onboarded free while we prove this out together.</div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="bg-gradient-to-br from-brand-700 to-brand-900 text-white rounded-lg p-5">
+                        <div className="text-xs text-white/70 uppercase tracking-wider font-medium">Current plan</div>
+                        <div className="font-serif text-2xl font-semibold mt-1">{sub ? sub.tier : 'No active plan'}</div>
+                        <div className="text-sm mt-0.5">{sub ? ('Status: ' + sub.status) : 'No subscription on file.'}</div>
+                        {sub && sub.current_period_end && (
+                          <div className="text-xs text-white/70 mt-3">Renews {sub.current_period_end}</div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  <div className="mt-4 pt-4 border-t border-surface-edge text-sm space-y-2">
+                    <div className="flex items-center justify-between"><span className="text-ink-soft">Publisher</span><span className="font-medium text-ink">{business.publisher}</span></div>
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-surface-edge">
+                    <div className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-3">Onboarding milestones</div>
+                    <div className="space-y-3">
+                      <Milestone done label="Voice interview complete" sub="March 21, 2026" />
+                      <Milestone done label="Marketing plan approved" sub="March 24, 2026" />
+                      <Milestone done label="First post live" sub="March 26, 2026" />
+                      <Milestone current label="Day 90 — $299 setup fee credits back"
+                        sub="June 17, 2026 · 43 days from today"
+                        progress={business.joinedDaysAgo / 90}
+                        progressLabel={`Day ${business.joinedDaysAgo} of 90`} />
+                    </div>
+                  </div>
+                </Card>
+
+                <Card>
+                  <SectionHeader title="Your publisher partner"
+                    subtitle="The local trust layer between you and the Popular Network." />
+                  <div className="flex items-center gap-4">
+                    <div className="shrink-0 w-14 h-14 rounded-xl bg-brand-50 text-brand-700 flex items-center justify-center font-serif font-bold text-lg border border-brand-100">PCS</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-ink">{business.publisher}</div>
+                      <div className="text-xs text-ink-soft mt-0.5">John Draper, your rep</div>
+                      <div className="text-xs text-ink-faint mt-0.5">Last spoke Apr 28</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mt-4">
+                    <Button variant="secondary" size="sm" icon="phone">Call John</Button>
+                    <Button variant="ghost" size="sm" icon="msg">Message</Button>
+                  </div>
+                  <p className="text-xs text-ink-soft mt-4 leading-relaxed pt-3 border-t border-surface-edge">
+                    John is your direct human line for anything you'd rather not handle online. Tier 2 includes monthly check-ins; Tier 3 adds a quarterly business review.
+                  </p>
+                  <div className="mt-3 pt-3 border-t border-surface-edge flex items-center justify-between text-xs">
+                    <span className="text-ink-faint">Next check-in</span>
+                    <span className="font-medium text-ink">May 12 (in 7 days)</span>
+                  </div>
+                </Card>
+              </div>
+
+              {/* Tier 3 preview */}
+              <Card>
+                <SectionHeader title="What's in Tier 3"
+                  subtitle="The full Marketing Agent + Business Concierge experience."
+                  right={
+                    <div className="flex items-center gap-2">
+                      <Pill color="violet" icon="sparkles">$499 / month</Pill>
+                      <Button variant="primary" size="sm" icon="sparkles">Upgrade</Button>
+                    </div>
+                  } />
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {[
+                    { icon: 'msg',   title: 'Dedicated business chatbot',
+                      body: 'When customers pick Westbrook Auto in the Grand Network, they enter a focused conversation about your services, hours, and scheduling.' },
+                    { icon: 'phone', title: 'Owner SMS escalation',
+                      body: 'When the chatbot needs a human, it texts you and hands the conversation off cleanly.' },
+                    { icon: 'eye',   title: 'Competitive intelligence',
+                      body: 'Monthly report on what other auto shops in the territory are posting and promoting.' },
+                    { icon: 'user',  title: 'Quarterly business review',
+                      body: 'A 60-minute review with John from Pipestone every quarter. We bring the data; you bring the questions.' }
+                  ].map((c, i) => (
+                    <div key={i} className="bg-surface border border-surface-edge rounded-lg p-4">
+                      <div className="w-9 h-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center mb-3">
+                        <Icon name={c.icon} size={18} />
+                      </div>
+                      <div className="font-semibold text-sm text-ink mb-1">{c.title}</div>
+                      <div className="text-xs text-ink-soft leading-relaxed">{c.body}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-4 pt-4 border-t border-surface-edge flex items-center justify-between text-xs text-ink-soft">
+                  <div>Upgrade prorates against your annual contract — no penalty for moving up mid-year.</div>
+                  <a className="text-brand-600 font-medium hover:underline cursor-pointer">Full feature comparison →</a>
+                </div>
+              </Card>
+
+              {/* Talk to a human — always-visible footer */}
+              <Card className="bg-gradient-to-r from-accent/15 to-brand-50">
+                <div className="flex items-center justify-between gap-6">
+                  <div>
+                    <div className="font-semibold text-ink text-base">Need a real person?</div>
+                    <p className="text-sm text-ink-soft mt-0.5">
+                      We get back to every owner within one business day. Your direct line is your publisher rep at {business.publisher}, with the Popular Network team copied.
+                    </p>
+                  </div>
+                  <Button icon="phone" variant="primary" onClick={onTalkToHuman}>Talk to a human</Button>
+                </div>
+              </Card>
+            </div>
+          )}
+
+          {tab === 'connections' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 fade-in">
+              <Card>
+                <SectionHeader title="Connected accounts" subtitle="The agent posts and reads only where you've connected." />
+                <ul className="space-y-3">
+                  {settings.connections.map((c, i) => {
+                    const p = PLATFORMS[c.platform];
+                    return (
+                      <li key={i} className="flex items-center gap-3 p-3 rounded-lg border border-surface-edge bg-surface">
+                        <div className="w-9 h-9 rounded-lg bg-white border border-surface-edge flex items-center justify-center" style={{ color: p.dot }}>
+                          <Icon name={p.icon} size={18} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-ink text-sm">{p.label}</div>
+                          <div className="text-xs text-ink-faint truncate">{c.account} · {c.last}</div>
+                        </div>
+                        <Pill color="emerald" icon="check">Connected</Pill>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <div className="mt-4 pt-4 border-t border-surface-edge flex items-center justify-between text-xs text-ink-soft">
+                  <span>Need to connect another platform?</span>
+                  <Button size="sm" variant="ghost" icon="plus">Add account</Button>
+                </div>
+              </Card>
+              <Card>
+                <SectionHeader title="Permissions" subtitle="What the agent can and can't do on each platform." />
+                <ul className="space-y-3 text-sm">
+                  <li className="flex items-start gap-3"><span className="text-ok shrink-0 mt-0.5"><Icon name="check" size={14} strokeWidth={2.4} /></span><span><span className="font-medium text-ink">Read</span> insights, comments, mentions, and reviews.</span></li>
+                  <li className="flex items-start gap-3"><span className="text-ok shrink-0 mt-0.5"><Icon name="check" size={14} strokeWidth={2.4} /></span><span><span className="font-medium text-ink">Draft</span> posts, replies, and image suggestions for your approval.</span></li>
+                  <li className="flex items-start gap-3"><span className="text-ok shrink-0 mt-0.5"><Icon name="check" size={14} strokeWidth={2.4} /></span><span><span className="font-medium text-ink">Publish</span> only what you've approved (cadence below).</span></li>
+                  <li className="flex items-start gap-3"><span className="text-ink-faint shrink-0 mt-0.5"><Icon name="x" size={14} strokeWidth={2.4} /></span><span><span className="font-medium text-ink-soft">Spend</span> on ads — Tier 2 surfaces recommendations only. Tier 3 unlocks autonomous boosts within your set budget.</span></li>
+                  <li className="flex items-start gap-3"><span className="text-ink-faint shrink-0 mt-0.5"><Icon name="x" size={14} strokeWidth={2.4} /></span><span><span className="font-medium text-ink-soft">Send</span> messages on your behalf — chatbot escalations only at Tier 3.</span></li>
+                </ul>
+              </Card>
+            </div>
+          )}
+
+          {tab === 'notifications' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 fade-in">
+              <Card>
+                <SectionHeader title="Approval cadence" subtitle="How often the agent asks for your sign-off." />
+                <div className="space-y-2">
+                  {cadenceOptions.map(opt => (
+                    <button key={opt.id} onClick={() => setCadence(opt.id)}
+                      className={`w-full text-left p-3 rounded-lg border-2 transition-all ${cadence === opt.id ? 'border-brand-500 bg-brand-50' : 'border-surface-edge hover:border-ink-faint/30'}`}>
+                      <div className="flex items-start gap-3">
+                        <div className={`w-4 h-4 rounded-full border-2 mt-0.5 shrink-0 ${cadence === opt.id ? 'border-brand-500 bg-white' : 'border-surface-edge'}`}>
+                          {cadence === opt.id && <div className="w-2 h-2 rounded-full bg-brand-500 m-0.5"></div>}
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-medium text-ink text-sm">{opt.label}</div>
+                          <div className="text-xs text-ink-soft mt-0.5">{opt.hint}</div>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </Card>
+              <Card>
+                <SectionHeader title="When to ping you" subtitle="Pick the moments worth interrupting your day." />
+                <ul className="space-y-3">
+                  {[
+                    { label: 'New negative review (2★ or below)',  on: true,  via: 'Email + push' },
+                    { label: 'Posts approaching scheduled time',   on: true,  via: 'Email digest' },
+                    { label: 'Ad spend pacing alerts',             on: true,  via: 'Email' },
+                    { label: 'Weekly performance digest',          on: true,  via: 'Email · Mondays 8am' },
+                    { label: 'Knowledge-gap detector findings',    on: false, via: '—' },
+                    { label: 'Competitive intel digest (Tier 3)',  on: false, via: 'Tier 3 only', muted: true }
+                  ].map((n, i) => (
+                    <li key={i} className={`flex items-center justify-between p-3 rounded-lg border ${n.muted ? 'border-surface-edge bg-surface opacity-60' : 'border-surface-edge bg-white'}`}>
+                      <div>
+                        <div className={`text-sm font-medium ${n.muted ? 'text-ink-faint' : 'text-ink'}`}>{n.label}</div>
+                        <div className="text-xs text-ink-faint">{n.via}</div>
+                      </div>
+                      <div className={`w-9 h-5 rounded-full transition-all ${n.on ? 'bg-brand-500' : 'bg-surface-edge'} relative`}>
+                        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-all ${n.on ? 'left-[18px]' : 'left-0.5'}`}></div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+              <Card className="lg:col-span-2 bg-gradient-to-r from-accent/15 to-brand-50">
+                <div className="flex items-center justify-between gap-6">
+                  <div>
+                    <div className="font-semibold text-ink text-base">Need a real person?</div>
+                    <p className="text-sm text-ink-soft mt-0.5">
+                      We get back to every owner within one business day. Your direct line is your publisher rep at {business.publisher}, with the Popular Network team copied.
+                    </p>
+                  </div>
+                  <Button icon="phone" variant="primary" onClick={onTalkToHuman}>Talk to a human</Button>
+                </div>
+              </Card>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  /* ============================================================
+     APP SHELL
+     ============================================================ */
+  const ROADMAP_VIEWS = new Set(['home','compose','calendar','approvals','performance','reviews','chat']);
+
+  const RoadmapBanner = () => (
+    <div className="bg-amber-50 border-b border-amber-200 px-8 py-2.5 text-[13px] text-amber-900 flex items-center gap-2">
+      <Icon name="sparkles" size={14} strokeWidth={2.2} />
+      <span>
+        <span className="font-semibold">Roadmap preview</span> — this section is
+        illustrative and not wired to your live data yet. Marketing Profile,
+        Marketing Plan, and Settings are live.
+      </span>
+    </div>
+  );
+
+  function _initialView() {
+    try {
+      const q = new URLSearchParams(window.location.search).get('view');
+      if (q) return q;
+    } catch (e) { /* no-op */ }
+    return (PMC && PMC.state !== 'accepted') ? 'profile' : 'home';
+  }
+
+  const App = () => {
+    const [view, setView] = useState(_initialView);
+    const [humanOpen, setHumanOpen] = useState(false);
+
+    return (
+      <div className="flex h-screen w-full bg-surface">
+        <Sidebar current={view} onNavigate={setView} />
+        <main className="flex-1 overflow-y-auto">
+          {ROADMAP_VIEWS.has(view) && <RoadmapBanner />}
+          {view === 'home'        && <HomeView onNavigate={setView} />}
+          {view === 'compose'     && <ComposeView />}
+          {view === 'calendar'    && <CalendarView onNavigate={setView} />}
+          {view === 'approvals'   && <ApprovalsView />}
+          {view === 'performance' && <PerformanceView />}
+          {view === 'reviews'     && <ReviewsView />}
+          {view === 'profile'     && <MarketingProfileView onNavigate={setView} />}
+          {view === 'plan'        && <MarketingPlanView onNavigate={setView} />}
+          {view === 'chat'        && <ChatView />}
+          {view === 'settings'    && <SettingsView onTalkToHuman={() => setHumanOpen(true)} />}
+        </main>
+
+        <Modal open={humanOpen} onClose={() => setHumanOpen(false)} title="Talk to a human"
+          footer={<>
+            <Button variant="ghost" onClick={() => setHumanOpen(false)}>Cancel</Button>
+            <Button icon="check" onClick={() => setHumanOpen(false)}>Send</Button>
+          </>}>
+          <p className="text-sm text-ink-soft">
+            We'll get back to you within one business day. Your message goes to your publisher rep at the <span className="font-medium text-ink">{business.publisher}</span> and the Popular Network team.
+          </p>
+          <div className="mt-4 space-y-3">
+            <div>
+              <label className="text-xs uppercase tracking-wider font-medium text-ink-faint">From</label>
+              <div className="mt-1 px-3 py-2 rounded-lg border border-surface-edge bg-surface text-sm">{business.owner} · {business.name}</div>
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-wider font-medium text-ink-faint">What's on your mind?</label>
+              <textarea className="mt-1 w-full px-3 py-2 rounded-lg border border-surface-edge text-[15px] focus:outline-none focus:border-brand-500" rows="4"
+                placeholder="Tell us what you need help with…"></textarea>
+            </div>
+            <div className="text-xs text-ink-faint flex items-start gap-2">
+              <Icon name="phone" size={12} className="mt-0.5 shrink-0" />
+              <span>Or call us at <span className="font-medium text-ink">(507) 555-0100</span> Mon–Fri 8am–5pm Central.</span>
+            </div>
+          </div>
+        </Modal>
+      </div>
+    );
+  };
+
+  // Mount only after the bootstrap payload has resolved (or the loader
+  // has already redirected to /login). By render time window.__AMPLAFAI__
+  // is populated, so the useState initializer + hydrate() see real data.
+  (window.__AMPLAFAI_READY__ || Promise.resolve(null)).then(function () {
+    hydrate(window.__AMPLAFAI__);
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  });
+{% endraw %}
+  </script>
+</body>
+</html>
