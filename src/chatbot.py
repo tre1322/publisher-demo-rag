@@ -108,7 +108,19 @@ def main() -> None:
     app = create_app()
 
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=port)
+
+    # Behind Caddy (TLS terminated at the proxy, app reached over plain
+    # HTTP on the private compose network). Trust X-Forwarded-Proto/For
+    # so request.base_url is https:// — invite/registration links that
+    # publishers send to owners must not say http://. Only Caddy can
+    # reach this port (web has no published port), so allow-ips="*".
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=port,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
+    )
 
 
 if __name__ == "__main__":
