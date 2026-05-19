@@ -192,7 +192,7 @@
     token:      {{ participant_token | tojson }},
     sessionId:  {{ session_id | tojson }},
     statusUrl:  "/business/pmc/voice/status?sid=" + encodeURIComponent({{ session_id | tojson }}),
-    redirectTo: "/business/pmc/"
+    redirectTo: "/business/?view=profile"
   };
 </script>
 <script src="/static/js/pmc_interview.js"></script>
