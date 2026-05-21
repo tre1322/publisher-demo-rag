@@ -81,11 +81,13 @@ def _approval_payload(a: Approval) -> dict[str, Any]:
 def _review_payload(r: Review) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "id": r.external_id or f"r{r.id}",
+        "internalId": r.id,
         "platform": r.platform,
         "stars": r.stars,
         "when": r.when_label,
         "author": r.author,
         "body": r.body,
+        "responseStatus": r.response_status,
     }
     if r.flagged:
         payload["response"] = "(see flagged response above)"
@@ -98,12 +100,14 @@ def _review_payload(r: Review) -> dict[str, Any]:
 def _pinned_review_payload(r: Review) -> dict[str, Any]:
     return {
         "id": r.external_id or f"r{r.id}",
+        "internalId": r.id,
         "platform": r.platform,
         "stars": r.stars,
         "when": r.when_label,
         "author": r.author,
         "body": r.body,
-        "response": r.ai_draft_response or r.owner_response,
+        "response": r.owner_response or r.ai_draft_response,
+        "responseStatus": r.response_status,
         "note": r.response_note,
     }
 

@@ -124,7 +124,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-21 · v17 — Phase B.4 Settings save + Talk-to-human → /api/escalations';
+  const BUILD_VERSION = '2026-05-21 · v18 — Phase B.5 Review responses → POST /api/reviews/:id/respond';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -2568,6 +2568,66 @@
      ============================================================ */
   const ReviewsView = () => {
     const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings } = useDashboard();
+    const mutate = useDashboardMutate();
+    const [editing, setEditing] = useState(null);    // {review, text}
+    const [inFlight, setInFlight] = useState({});    // { [internalId]: true }
+    const [skipped, setSkipped] = useState({});      // local-only "Skip" hide
+    const [error, setError] = useState(null);
+    const [toast, setToast] = useState(null);
+
+    useEffect(() => {
+      if (!toast) return;
+      const t = setTimeout(() => setToast(null), 3500);
+      return () => clearTimeout(t);
+    }, [toast]);
+
+    const respond = async (review, response, action) => {
+      if (!review.internalId) {
+        setError("Backend is offline — response won't persist.");
+        return false;
+      }
+      if (inFlight[review.internalId]) return false;
+      setInFlight(f => ({ ...f, [review.internalId]: true }));
+      setError(null);
+      try {
+        const resp = await fetch(`/api/reviews/${review.internalId}/respond`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ response, action }),
+        });
+        if (!resp.ok) {
+          const detail = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
+          throw new Error(detail.detail || `HTTP ${resp.status}`);
+        }
+        const json = await resp.json();
+        // Update context: replace this review wherever it lives.
+        mutate(prev => {
+          if (!prev?.reviews) return prev;
+          const apply = (r) => r.id === json.review.id
+            ? { ...r, response: json.review.response, responseStatus: json.review.responseStatus }
+            : r;
+          return {
+            ...prev,
+            reviews: {
+              ...prev.reviews,
+              recent: (prev.reviews.recent || []).map(apply),
+              pinned: prev.reviews.pinned && prev.reviews.pinned.id === json.review.id
+                ? { ...prev.reviews.pinned, response: json.review.response, responseStatus: json.review.responseStatus }
+                : prev.reviews.pinned,
+            },
+          };
+        });
+        if (action === 'send') setToast(`Response sent to ${review.author}.`);
+        return true;
+      } catch (e) {
+        console.error('[reviews.respond] failed', e);
+        setError(`Couldn't ${action === 'send' ? 'send' : 'save'} response — ${e.message || e}.`);
+        return false;
+      } finally {
+        setInFlight(f => { const { [review.internalId]: _, ...rest } = f; return rest; });
+      }
+    };
+
     return (
       <div className="fade-in">
         <TopBar
@@ -2582,6 +2642,24 @@
             </div>
           }
         />
+        {error && (
+          <div className="mx-8 mt-5 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-start gap-2">
+            <Icon name="alert" size={16} className="mt-0.5 shrink-0" />
+            <div className="flex-1">{error}</div>
+            <button className="text-bad/60 hover:text-bad" onClick={() => setError(null)}>
+              <Icon name="x" size={14} />
+            </button>
+          </div>
+        )}
+        {toast && (
+          <div className="mx-8 mt-5 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 flex items-start gap-2">
+            <Icon name="check" size={16} className="mt-0.5 shrink-0" />
+            <div className="flex-1">{toast}</div>
+            <button className="text-emerald-700/60 hover:text-emerald-800" onClick={() => setToast(null)}>
+              <Icon name="x" size={14} />
+            </button>
+          </div>
+        )}
         <div className="px-8 py-7 grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* Aggregate + sparkline */}
           <Card>
@@ -2632,11 +2710,31 @@
                   <p className="text-sm text-ink leading-relaxed bg-surface rounded-lg p-3 border border-surface-edge">{reviews.pinned.response}</p>
                 </div>
                 <p className="text-xs text-ink-soft italic flex items-start gap-2"><Icon name="sparkles" size={12} className="text-brand-500 mt-0.5 shrink-0" /> {reviews.pinned.note}</p>
-                <div className="flex items-center gap-2">
-                  <Button icon="check" variant="ok" className="flex-1">Approve & post</Button>
-                  <Button icon="edit" variant="secondary">Edit</Button>
-                  <Button icon="phone" variant="ghost">Call Karen</Button>
-                </div>
+                {reviews.pinned.responseStatus === 'approved' ? (
+                  <div className="flex items-center gap-2 text-sm text-ok pt-1">
+                    <Icon name="check" size={14} strokeWidth={2.4} />
+                    <span>Response sent — posted publicly.</span>
+                    <Button icon="edit" variant="ghost" size="sm" className="ml-auto"
+                      onClick={() => setEditing({ review: reviews.pinned, text: reviews.pinned.response || '' })}>
+                      Edit again
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Button icon="check" variant="ok" className="flex-1"
+                      disabled={!!inFlight[reviews.pinned.internalId]}
+                      onClick={() => respond(reviews.pinned, reviews.pinned.response || '', 'send')}>
+                      {inFlight[reviews.pinned.internalId] ? 'Sending…' : 'Approve & post'}
+                    </Button>
+                    <Button icon="edit" variant="secondary"
+                      onClick={() => setEditing({ review: reviews.pinned, text: reviews.pinned.response || '' })}>
+                      Edit
+                    </Button>
+                    <a href={`tel:${(business.phone || '').replace(/[^\d+]/g, '')}`}>
+                      <Button icon="phone" variant="ghost">Call {reviews.pinned.author.split(' ')[0]}</Button>
+                    </a>
+                  </div>
+                )}
               </div>
             </Card>
 
@@ -2665,17 +2763,38 @@
                       {r.flagged && <Pill color="red" icon="alert">Flagged</Pill>}
                     </div>
                     <p className="text-sm text-ink-soft mt-3 italic">"{r.body}"</p>
-                    {!r.flagged && (
+                    {!r.flagged && !skipped[r.id] && (
                       <div className="mt-3 ml-12 bg-surface rounded-lg p-3 border-l-2 border-brand-500 border border-surface-edge">
                         <div className="text-[11px] uppercase tracking-wider text-brand-600 font-semibold mb-1 inline-flex items-center gap-1.5">
-                          <Icon name="sparkles" size={11} /> Drafted response
+                          <Icon name="sparkles" size={11} /> {r.responseStatus === 'approved' ? 'Sent response' : 'Drafted response'}
                         </div>
                         <p className="text-sm text-ink">{r.response}</p>
-                        <div className="flex items-center gap-2 mt-3">
-                          <Button icon="check" variant="ok" size="sm">Approve</Button>
-                          <Button icon="edit" variant="secondary" size="sm">Edit</Button>
-                          <Button icon="x" variant="ghost" size="sm">Skip</Button>
-                        </div>
+                        {r.responseStatus === 'approved' ? (
+                          <div className="flex items-center gap-2 mt-3 text-xs text-ok">
+                            <Icon name="check" size={12} strokeWidth={2.4} />
+                            <span>Sent</span>
+                            <Button icon="edit" variant="ghost" size="sm" className="ml-auto"
+                              onClick={() => setEditing({ review: r, text: r.response || '' })}>
+                              Edit again
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 mt-3">
+                            <Button icon="check" variant="ok" size="sm"
+                              disabled={!!inFlight[r.internalId]}
+                              onClick={() => respond(r, r.response || '', 'send')}>
+                              {inFlight[r.internalId] ? 'Sending…' : 'Approve'}
+                            </Button>
+                            <Button icon="edit" variant="secondary" size="sm"
+                              onClick={() => setEditing({ review: r, text: r.response || '' })}>
+                              Edit
+                            </Button>
+                            <Button icon="x" variant="ghost" size="sm"
+                              onClick={() => setSkipped(s => ({ ...s, [r.id]: true }))}>
+                              Skip
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2684,6 +2803,57 @@
             </Card>
           </div>
         </div>
+
+        {/* Edit-response modal — reused for pinned + recent reviews.
+            Two-action footer: Save draft (status='draft') keeps owner iterating;
+            Send (status='approved') locks it in and clocks response_sent_at. */}
+        <Modal
+          open={!!editing}
+          onClose={editing && inFlight[editing.review.internalId] ? () => {} : () => setEditing(null)}
+          title={editing ? `Reply to ${editing.review.author}` : ''}
+          footer={editing && <>
+            <Button variant="ghost" onClick={() => setEditing(null)}
+              disabled={!!inFlight[editing.review.internalId]}>Cancel</Button>
+            <Button variant="secondary" icon="bookmark"
+              disabled={!editing.text.trim() || !!inFlight[editing.review.internalId]}
+              onClick={async () => {
+                const ok = await respond(editing.review, editing.text, 'save');
+                if (ok) setEditing(null);
+              }}>
+              Save draft
+            </Button>
+            <Button variant="primary" icon="send"
+              disabled={!editing.text.trim() || !!inFlight[editing.review.internalId]}
+              onClick={async () => {
+                const ok = await respond(editing.review, editing.text, 'send');
+                if (ok) setEditing(null);
+              }}>
+              {inFlight[editing.review.internalId] ? 'Sending…' : 'Send response'}
+            </Button>
+          </>}>
+          {editing && (
+            <div className="space-y-3">
+              <div className="bg-surface border border-surface-edge rounded-lg p-3 text-sm">
+                <div className="text-xs uppercase tracking-wider font-medium text-ink-faint mb-1.5">
+                  {editing.review.author} · {editing.review.stars}★ · {editing.review.when}
+                </div>
+                <p className="text-ink italic">"{editing.review.body}"</p>
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-wider font-medium text-ink-faint mb-1.5 block">Your reply</label>
+                <textarea
+                  className="w-full px-3 py-2 rounded-lg border border-surface-edge text-[15px] leading-relaxed focus:outline-none focus:border-brand-500"
+                  rows="7"
+                  value={editing.text}
+                  onChange={(e) => setEditing(ed => ed ? { ...ed, text: e.target.value } : ed)}
+                />
+              </div>
+              <p className="text-xs text-ink-faint">
+                <span className="font-medium">Save draft</span> keeps your edits private. <span className="font-medium">Send</span> posts publicly on {(editing.review.platform || '').toUpperCase()}.
+              </p>
+            </div>
+          )}
+        </Modal>
       </div>
     );
   };
