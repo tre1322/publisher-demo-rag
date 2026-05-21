@@ -20,7 +20,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from .db import _add_col_if_missing, init_db
-from .routers import approvals, bootstrap, chat, performance, posts, reviews, settings
+from .routers import approvals, bootstrap, chat, marketing_plan, performance, posts, reviews, settings
 from .seed import seed_if_empty
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -108,6 +108,7 @@ app.include_router(approvals.router, prefix="/api", tags=["approvals"])
 app.include_router(reviews.router, prefix="/api", tags=["reviews"])
 app.include_router(performance.router, prefix="/api", tags=["performance"])
 app.include_router(settings.router, prefix="/api", tags=["settings"])
+app.include_router(marketing_plan.router, prefix="/api", tags=["marketing-plan"])
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 
 

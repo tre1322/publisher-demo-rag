@@ -124,7 +124,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-21 · v20 — Phase B.7 Home attention nav + scroll-to-item + live sidebar badge';
+  const BUILD_VERSION = '2026-05-21 · v21 — Phase B.8 Marketing plan inline edit (autosave-on-blur)';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -3005,7 +3005,47 @@
      ============================================================ */
   const MarketingPlanView = () => {
     const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings } = useDashboard();
+    const mutate = useDashboardMutate();
     const [tab, setTab] = useState('strategy');
+    const [editing, setEditing] = useState(null);  // field key currently open for edit
+    const [savingPlan, setSavingPlan] = useState(false);
+    const [planError, setPlanError] = useState(null);
+    const [planToast, setPlanToast] = useState(null);
+
+    useEffect(() => {
+      if (!planToast) return;
+      const t = setTimeout(() => setPlanToast(null), 3000);
+      return () => clearTimeout(t);
+    }, [planToast]);
+
+    // PUT a single field. autosave-on-blur: caller passes the field key and
+    // new value, we POST and update context. Errors surface in the banner.
+    const saveField = async (field, value) => {
+      if (savingPlan) return;
+      setSavingPlan(true);
+      setPlanError(null);
+      try {
+        const resp = await fetch('/api/marketing-plan', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [field]: value }),
+        });
+        if (!resp.ok) {
+          const detail = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
+          throw new Error(detail.detail || `HTTP ${resp.status}`);
+        }
+        const json = await resp.json();
+        mutate(prev => prev ? ({ ...prev, marketingPlan: json.marketingPlan }) : prev);
+        setPlanToast('Saved.');
+        return true;
+      } catch (e) {
+        console.error('[marketing-plan.save]', e);
+        setPlanError(`Couldn't save ${field} — ${e.message || e}.`);
+        return false;
+      } finally {
+        setSavingPlan(false);
+      }
+    };
     const titles = {
       strategy: { title: 'Marketing Plan',     subtitle: 'Audience, value prop, and the language we use to talk to your customers.' },
       channels: { title: 'Channels & goals',   subtitle: 'Where the agent invests effort, and how we\'re tracking against Q3.' }
@@ -3028,6 +3068,24 @@
           }
         />
         <div className="px-8 pt-2"><TabBar tabs={tabs} value={tab} onChange={setTab} /></div>
+        {planError && (
+          <div className="mx-8 mt-5 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-start gap-2">
+            <Icon name="alert" size={16} className="mt-0.5 shrink-0" />
+            <div className="flex-1">{planError}</div>
+            <button className="text-bad/60 hover:text-bad" onClick={() => setPlanError(null)}>
+              <Icon name="x" size={14} />
+            </button>
+          </div>
+        )}
+        {planToast && (
+          <div className="mx-8 mt-5 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 flex items-start gap-2">
+            <Icon name="check" size={16} className="mt-0.5 shrink-0" />
+            <div className="flex-1">{planToast}</div>
+            <button className="text-emerald-700/60 hover:text-emerald-800" onClick={() => setPlanToast(null)}>
+              <Icon name="x" size={14} />
+            </button>
+          </div>
+        )}
         <div className="px-8 py-7 space-y-5">
           {/* Goal hero — always visible */}
           <Card className="bg-gradient-to-br from-brand-50 via-white to-white border-brand-100">
@@ -3065,13 +3123,49 @@
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 fade-in">
               <Card>
                 <SectionHeader title="Audience"
-                  right={<Button variant="ghost" size="sm" icon="edit">Edit</Button>} />
-                <p className="text-sm text-ink-soft leading-relaxed">{marketingPlan.audience}</p>
+                  right={editing === 'audience'
+                    ? <span className="text-xs text-ink-faint">{savingPlan ? 'Saving…' : 'Click outside to save'}</span>
+                    : <Button variant="ghost" size="sm" icon="edit" onClick={() => setEditing('audience')}>Edit</Button>} />
+                {editing === 'audience' ? (
+                  <textarea
+                    autoFocus
+                    defaultValue={marketingPlan.audience}
+                    rows="6"
+                    className="w-full px-3 py-2 rounded-lg border border-surface-edge text-sm leading-relaxed focus:outline-none focus:border-brand-500"
+                    onBlur={async (e) => {
+                      const v = e.target.value.trim();
+                      if (v && v !== (marketingPlan.audience || '').trim()) {
+                        await saveField('audience', v);
+                      }
+                      setEditing(null);
+                    }}
+                  />
+                ) : (
+                  <p className="text-sm text-ink-soft leading-relaxed">{marketingPlan.audience}</p>
+                )}
               </Card>
               <Card>
                 <SectionHeader title="Value proposition"
-                  right={<Button variant="ghost" size="sm" icon="edit">Edit</Button>} />
-                <p className="text-sm text-ink leading-relaxed font-medium italic border-l-2 border-brand-500 pl-3">"{marketingPlan.valueProp}"</p>
+                  right={editing === 'valueProp'
+                    ? <span className="text-xs text-ink-faint">{savingPlan ? 'Saving…' : 'Click outside to save'}</span>
+                    : <Button variant="ghost" size="sm" icon="edit" onClick={() => setEditing('valueProp')}>Edit</Button>} />
+                {editing === 'valueProp' ? (
+                  <textarea
+                    autoFocus
+                    defaultValue={marketingPlan.valueProp}
+                    rows="6"
+                    className="w-full px-3 py-2 rounded-lg border border-surface-edge text-sm leading-relaxed focus:outline-none focus:border-brand-500"
+                    onBlur={async (e) => {
+                      const v = e.target.value.trim();
+                      if (v && v !== (marketingPlan.valueProp || '').trim()) {
+                        await saveField('valueProp', v);
+                      }
+                      setEditing(null);
+                    }}
+                  />
+                ) : (
+                  <p className="text-sm text-ink leading-relaxed font-medium italic border-l-2 border-brand-500 pl-3">"{marketingPlan.valueProp}"</p>
+                )}
               </Card>
               <Card className="lg:col-span-2">
                 <SectionHeader title="Switching forces"
@@ -3105,12 +3199,32 @@
               </Card>
               <Card>
                 <SectionHeader title="Customer language"
-                  subtitle="Verbatim phrases pulled from your reviews and customer messages." />
-                <div className="flex flex-wrap gap-2">
-                  {marketingPlan.customerLanguage.map((p, i) => (
-                    <span key={i} className="bg-brand-50 text-brand-700 text-sm px-3 py-1.5 rounded-lg border border-brand-100">{p}</span>
-                  ))}
-                </div>
+                  subtitle="Verbatim phrases pulled from your reviews and customer messages."
+                  right={editing === 'customerLanguage'
+                    ? <span className="text-xs text-ink-faint">{savingPlan ? 'Saving…' : 'One per line · click outside to save'}</span>
+                    : <Button variant="ghost" size="sm" icon="edit" onClick={() => setEditing('customerLanguage')}>Edit</Button>} />
+                {editing === 'customerLanguage' ? (
+                  <textarea
+                    autoFocus
+                    defaultValue={(marketingPlan.customerLanguage || []).join('\n')}
+                    rows="6"
+                    className="w-full px-3 py-2 rounded-lg border border-surface-edge text-sm focus:outline-none focus:border-brand-500"
+                    onBlur={async (e) => {
+                      const lines = e.target.value.split('\n').map(s => s.trim()).filter(Boolean);
+                      const original = marketingPlan.customerLanguage || [];
+                      if (JSON.stringify(lines) !== JSON.stringify(original)) {
+                        await saveField('customerLanguage', lines);
+                      }
+                      setEditing(null);
+                    }}
+                  />
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {marketingPlan.customerLanguage.map((p, i) => (
+                      <span key={i} className="bg-brand-50 text-brand-700 text-sm px-3 py-1.5 rounded-lg border border-brand-100">{p}</span>
+                    ))}
+                  </div>
+                )}
               </Card>
               <Card>
                 <SectionHeader title="Proof points" subtitle="What we lean on in social and ad copy." />
