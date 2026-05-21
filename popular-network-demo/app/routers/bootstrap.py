@@ -226,6 +226,7 @@ def get_bootstrap(business_id: int = 1, db: Session = Depends(get_db)) -> dict[s
         "chat": [_chat_payload(t) for t in chat_turns],
         "settings": {
             "cadence": settings_row.cadence if settings_row else "weekly",
+            "notifications": (settings_row.notifications_json if settings_row else None) or [],
             "connections": [
                 {
                     "platform": c.platform,

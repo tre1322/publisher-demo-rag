@@ -157,6 +157,9 @@ class SettingsRow(Base):
 
     business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"), primary_key=True)
     cadence: Mapped[str] = mapped_column(String(16), default="weekly")  # each|weekly|auto
+    # Notification preferences — list[{key, label, on, via, muted?}].
+    # Added 2026-05-21 in B.4; nullable so existing DBs survive.
+    notifications_json: Mapped[Any] = mapped_column(JSON, nullable=True)
 
 
 class Connection(Base):

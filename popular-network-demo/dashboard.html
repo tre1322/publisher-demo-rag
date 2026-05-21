@@ -124,7 +124,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-21 · v16 — Phase B.3 polish: distinct buttons + Send confirm';
+  const BUILD_VERSION = '2026-05-21 · v17 — Phase B.4 Settings save + Talk-to-human → /api/escalations';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -2974,8 +2974,66 @@
      ============================================================ */
   const SettingsView = ({ onTalkToHuman }) => {
     const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings } = useDashboard();
+    const mutate = useDashboardMutate();
     const [tab, setTab] = useState('account');
     const [cadence, setCadence] = useState(settings.cadence);
+    const [notifs, setNotifs] = useState(() => (settings.notifications || []).map(n => ({ ...n })));
+    const [savingSettings, setSavingSettings] = useState(false);
+    const [settingsError, setSettingsError] = useState(null);
+    const [settingsToast, setSettingsToast] = useState(null);
+
+    // Dirty tracking: any difference between local state and server-of-record
+    // (current bootstrap.settings) means there's something to save.
+    const dirty = useMemo(() => {
+      if (cadence !== settings.cadence) return true;
+      const serverNotifs = settings.notifications || [];
+      if (notifs.length !== serverNotifs.length) return true;
+      for (let i = 0; i < notifs.length; i++) {
+        if (notifs[i].key !== serverNotifs[i].key) return true;
+        if (notifs[i].on !== serverNotifs[i].on) return true;
+      }
+      return false;
+    }, [cadence, notifs, settings.cadence, settings.notifications]);
+
+    useEffect(() => {
+      if (!settingsToast) return;
+      const t = setTimeout(() => setSettingsToast(null), 4000);
+      return () => clearTimeout(t);
+    }, [settingsToast]);
+
+    const toggleNotif = (key) => {
+      setNotifs(prev => prev.map(n => n.key === key && !n.muted ? { ...n, on: !n.on } : n));
+    };
+
+    const saveNotifications = async () => {
+      if (!dirty || savingSettings) return;
+      setSavingSettings(true);
+      setSettingsError(null);
+      try {
+        const resp = await fetch('/api/settings/notifications', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cadence, notifications: notifs }),
+        });
+        if (!resp.ok) {
+          const detail = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
+          throw new Error(detail.detail || `HTTP ${resp.status}`);
+        }
+        const json = await resp.json();
+        // Reconcile context with the server payload so dirty-tracking resets.
+        mutate(prev => prev ? ({
+          ...prev,
+          settings: { ...prev.settings, cadence: json.settings.cadence, notifications: json.settings.notifications },
+        }) : prev);
+        setSettingsToast('Notification settings saved.');
+      } catch (e) {
+        console.error('[settings.save] failed', e);
+        setSettingsError(`Couldn't save — ${e.message || e}.`);
+      } finally {
+        setSavingSettings(false);
+      }
+    };
+
     const cadenceOptions = [
       { id: 'each',  label: 'Approve each post',      hint: 'Maximum control. The agent sends every draft to your inbox.' },
       { id: 'weekly',label: 'Approve weekly batch',   hint: 'You see a batch of posts once a week and sign off all at once. Recommended.' },
@@ -3172,25 +3230,53 @@
               <Card>
                 <SectionHeader title="When to ping you" subtitle="Pick the moments worth interrupting your day." />
                 <ul className="space-y-3">
-                  {[
-                    { label: 'New negative review (2★ or below)',  on: true,  via: 'Email + push' },
-                    { label: 'Posts approaching scheduled time',   on: true,  via: 'Email digest' },
-                    { label: 'Ad spend pacing alerts',             on: true,  via: 'Email' },
-                    { label: 'Weekly performance digest',          on: true,  via: 'Email · Mondays 8am' },
-                    { label: 'Knowledge-gap detector findings',    on: false, via: '—' },
-                    { label: 'Competitive intel digest (Tier 3)',  on: false, via: 'Tier 3 only', muted: true }
-                  ].map((n, i) => (
-                    <li key={i} className={`flex items-center justify-between p-3 rounded-lg border ${n.muted ? 'border-surface-edge bg-surface opacity-60' : 'border-surface-edge bg-white'}`}>
+                  {notifs.map((n) => (
+                    <li key={n.key} className={`flex items-center justify-between p-3 rounded-lg border ${n.muted ? 'border-surface-edge bg-surface opacity-60' : 'border-surface-edge bg-white'}`}>
                       <div>
                         <div className={`text-sm font-medium ${n.muted ? 'text-ink-faint' : 'text-ink'}`}>{n.label}</div>
                         <div className="text-xs text-ink-faint">{n.via}</div>
                       </div>
-                      <div className={`w-9 h-5 rounded-full transition-all ${n.on ? 'bg-brand-500' : 'bg-surface-edge'} relative`}>
+                      <button
+                        type="button"
+                        onClick={() => toggleNotif(n.key)}
+                        disabled={n.muted}
+                        aria-pressed={n.on}
+                        aria-label={`${n.label} — toggle ${n.on ? 'off' : 'on'}`}
+                        className={`w-9 h-5 rounded-full transition-all relative ${n.on ? 'bg-brand-500' : 'bg-surface-edge'} ${n.muted ? 'cursor-not-allowed' : 'cursor-pointer hover:opacity-80'}`}>
                         <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-all ${n.on ? 'left-[18px]' : 'left-0.5'}`}></div>
-                      </div>
+                      </button>
                     </li>
                   ))}
                 </ul>
+              </Card>
+              {/* Save bar — sits between the two prefs cards and the
+                  Talk-to-human card. Always rendered (disabled-visible) so
+                  failures stay diagnosable, not just hidden. */}
+              <Card className="lg:col-span-2">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    {settingsError ? (
+                      <div className="text-sm text-bad flex items-start gap-2">
+                        <Icon name="alert" size={14} className="mt-0.5 shrink-0" />
+                        <span className="flex-1">{settingsError}</span>
+                      </div>
+                    ) : settingsToast ? (
+                      <div className="text-sm text-emerald-700 flex items-center gap-2">
+                        <Icon name="check" size={14} />
+                        <span>{settingsToast}</span>
+                      </div>
+                    ) : dirty ? (
+                      <div className="text-sm text-ink-soft">Unsaved changes — click Save to apply.</div>
+                    ) : (
+                      <div className="text-sm text-ink-faint">Everything's saved.</div>
+                    )}
+                  </div>
+                  <Button icon="check" variant="primary"
+                    onClick={saveNotifications}
+                    disabled={!dirty || savingSettings}>
+                    {savingSettings ? 'Saving…' : 'Save changes'}
+                  </Button>
+                </div>
               </Card>
               <Card className="lg:col-span-2 bg-gradient-to-r from-accent/15 to-brand-50">
                 <div className="flex items-center justify-between gap-6">
@@ -3225,6 +3311,123 @@
       </div>
     </div>
   );
+
+  /* ============================================================
+     Talk-to-a-human modal — Phase B.4 wired to POST /api/escalations
+     Owns its own state so message/send/error/success are scoped to the
+     modal and reset cleanly on close. Records the request server-side;
+     actual notification routing (email to publisher rep + PN team) is
+     Phase F.
+     ============================================================ */
+  const TalkToHumanModal = ({ open, onClose, business }) => {
+    const [message, setMessage] = useState('');
+    const [sending, setSending] = useState(false);
+    const [error, setError] = useState(null);
+    const [success, setSuccess] = useState(false);
+
+    // Reset state on every open so cancel-then-reopen feels fresh.
+    useEffect(() => {
+      if (open) {
+        setMessage('');
+        setError(null);
+        setSuccess(false);
+        setSending(false);
+      }
+    }, [open]);
+
+    const send = async () => {
+      const trimmed = message.trim();
+      if (!trimmed) {
+        setError('Add a quick note so we know what you need.');
+        return;
+      }
+      setSending(true);
+      setError(null);
+      try {
+        const resp = await fetch('/api/escalations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: trimmed }),
+        });
+        if (!resp.ok) {
+          const detail = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
+          throw new Error(detail.detail || `HTTP ${resp.status}`);
+        }
+        setSuccess(true);
+        // Briefly hold the success view, then close so the user sees confirmation.
+        setTimeout(() => { onClose(); }, 1800);
+      } catch (e) {
+        console.error('[escalation] failed', e);
+        setError(`Couldn't send — ${e.message || e}. Try calling instead if it's urgent.`);
+      } finally {
+        setSending(false);
+      }
+    };
+
+    return (
+      <Modal
+        open={open}
+        onClose={sending ? () => {} : onClose}
+        title={success ? 'Sent ✓' : 'Talk to a human'}
+        footer={success ? (
+          <Button variant="primary" onClick={onClose}>Done</Button>
+        ) : (
+          <>
+            <Button variant="ghost" onClick={onClose} disabled={sending}>Cancel</Button>
+            <Button icon="send" variant="primary" onClick={send} disabled={sending || !message.trim()}>
+              {sending ? 'Sending…' : 'Send'}
+            </Button>
+          </>
+        )}>
+        {success ? (
+          <div className="space-y-3 text-sm">
+            <div className="flex items-start gap-3">
+              <div className="shrink-0 w-9 h-9 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                <Icon name="check" size={18} strokeWidth={2.4} />
+              </div>
+              <p className="text-ink leading-relaxed">
+                Your note is in the queue. Your publisher rep at {business.publisher} will reach out within one business day.
+              </p>
+            </div>
+            <p className="text-xs text-ink-faint">Need someone faster? Call (507) 555-0100 Mon–Fri 8am–5pm Central.</p>
+          </div>
+        ) : (
+          <>
+            <p className="text-sm text-ink-soft">
+              We'll get back to you within one business day. Your message goes to your publisher rep at the <span className="font-medium text-ink">{business.publisher}</span> and the Popular Network team.
+            </p>
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="text-xs uppercase tracking-wider font-medium text-ink-faint">From</label>
+                <div className="mt-1 px-3 py-2 rounded-lg border border-surface-edge bg-surface text-sm">{business.owner} · {business.name}</div>
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-wider font-medium text-ink-faint">What's on your mind?</label>
+                <textarea
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-surface-edge text-[15px] focus:outline-none focus:border-brand-500"
+                  rows="4"
+                  placeholder="Tell us what you need help with…"
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  disabled={sending}
+                />
+              </div>
+              {error && (
+                <div className="px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-start gap-2">
+                  <Icon name="alert" size={14} className="mt-0.5 shrink-0" />
+                  <div className="flex-1">{error}</div>
+                </div>
+              )}
+              <div className="text-xs text-ink-faint flex items-start gap-2">
+                <Icon name="phone" size={12} className="mt-0.5 shrink-0" />
+                <span>Or call us at <span className="font-medium text-ink">(507) 555-0100</span> Mon–Fri 8am–5pm Central.</span>
+              </div>
+            </div>
+          </>
+        )}
+      </Modal>
+    );
+  };
 
   const App = () => {
     const [view, setView] = useState('home');
@@ -3294,30 +3497,11 @@
           {view === 'settings'    && <SettingsView onTalkToHuman={() => setHumanOpen(true)} />}
         </main>
 
-        <Modal open={humanOpen} onClose={() => setHumanOpen(false)} title="Talk to a human"
-          footer={<>
-            <Button variant="ghost" onClick={() => setHumanOpen(false)}>Cancel</Button>
-            <Button icon="check" onClick={() => setHumanOpen(false)}>Send</Button>
-          </>}>
-          <p className="text-sm text-ink-soft">
-            We'll get back to you within one business day. Your message goes to your publisher rep at the <span className="font-medium text-ink">{business.publisher}</span> and the Popular Network team.
-          </p>
-          <div className="mt-4 space-y-3">
-            <div>
-              <label className="text-xs uppercase tracking-wider font-medium text-ink-faint">From</label>
-              <div className="mt-1 px-3 py-2 rounded-lg border border-surface-edge bg-surface text-sm">{business.owner} · {business.name}</div>
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-wider font-medium text-ink-faint">What's on your mind?</label>
-              <textarea className="mt-1 w-full px-3 py-2 rounded-lg border border-surface-edge text-[15px] focus:outline-none focus:border-brand-500" rows="4"
-                placeholder="Tell us what you need help with…"></textarea>
-            </div>
-            <div className="text-xs text-ink-faint flex items-start gap-2">
-              <Icon name="phone" size={12} className="mt-0.5 shrink-0" />
-              <span>Or call us at <span className="font-medium text-ink">(507) 555-0100</span> Mon–Fri 8am–5pm Central.</span>
-            </div>
-          </div>
-        </Modal>
+        <TalkToHumanModal
+          open={humanOpen}
+          onClose={() => setHumanOpen(false)}
+          business={business}
+        />
       </div>
       </DashboardContext.Provider>
       </DashboardMutateContext.Provider>

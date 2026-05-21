@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
 from starlette.responses import Response
 
-from .db import init_db
+from .db import _add_col_if_missing, init_db
 from .routers import approvals, bootstrap, chat, performance, posts, reviews, settings
 from .seed import seed_if_empty
 
@@ -34,11 +34,38 @@ app = FastAPI(title="Popular Network — Marketing Dashboard", version="0.1.0")
 @app.on_event("startup")
 def _startup() -> None:
     init_db()
+    # Forward-migrations for existing dev DBs that pre-date a column.
+    # init_db() above creates all tables fresh; this catches the case where
+    # the table exists but a newer column hasn't been added yet.
+    _add_col_if_missing("settings", "notifications_json", "JSON")  # B.4
     inserted = seed_if_empty()
     if inserted:
         log.info("Seeded Westbrook Auto & Tire (business_id=1)")
     else:
         log.info("DB already seeded — skipping")
+    # One-time backfill: settings rows that pre-date notifications_json have
+    # NULL there. Populate with sensible defaults so the Notifications tab
+    # renders something. Safe to re-run on every startup (no-op once filled).
+    _backfill_notification_defaults()
+
+
+def _backfill_notification_defaults() -> None:
+    from .db import SessionLocal
+    from .models import SettingsRow
+
+    defaults = [
+        {"key": "neg_review",        "label": "New negative review (2★ or below)", "on": True,  "via": "Email + push"},
+        {"key": "post_scheduled",    "label": "Posts approaching scheduled time",  "on": True,  "via": "Email digest"},
+        {"key": "ad_pacing",         "label": "Ad spend pacing alerts",            "on": True,  "via": "Email"},
+        {"key": "weekly_digest",     "label": "Weekly performance digest",         "on": True,  "via": "Email · Mondays 8am"},
+        {"key": "knowledge_gap",     "label": "Knowledge-gap detector findings",   "on": False, "via": "—"},
+        {"key": "competitive_intel", "label": "Competitive intel digest (Tier 3)", "on": False, "via": "Tier 3 only", "muted": True},
+    ]
+    with SessionLocal() as db:
+        for row in db.query(SettingsRow).filter(SettingsRow.notifications_json.is_(None)).all():
+            row.notifications_json = defaults
+            log.info(f"Backfilled notifications_json for business_id={row.business_id}")
+        db.commit()
 
 
 @app.middleware("http")

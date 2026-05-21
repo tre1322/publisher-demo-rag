@@ -260,8 +260,19 @@ def seed_if_empty() -> bool:
             ],
         ))
 
-        # Settings + connections — dashboard.html:448-455
-        db.add(SettingsRow(business_id=biz.id, cadence="weekly"))
+        # Settings + connections — dashboard.html:448-455 + notification prefs added 2026-05-21 (B.4)
+        db.add(SettingsRow(
+            business_id=biz.id,
+            cadence="weekly",
+            notifications_json=[
+                {"key": "neg_review",       "label": "New negative review (2★ or below)", "on": True,  "via": "Email + push"},
+                {"key": "post_scheduled",   "label": "Posts approaching scheduled time",  "on": True,  "via": "Email digest"},
+                {"key": "ad_pacing",        "label": "Ad spend pacing alerts",            "on": True,  "via": "Email"},
+                {"key": "weekly_digest",    "label": "Weekly performance digest",         "on": True,  "via": "Email · Mondays 8am"},
+                {"key": "knowledge_gap",    "label": "Knowledge-gap detector findings",   "on": False, "via": "—"},
+                {"key": "competitive_intel","label": "Competitive intel digest (Tier 3)", "on": False, "via": "Tier 3 only", "muted": True},
+            ],
+        ))
         for platform, account, last in [
             ("fb",  "@westbrookautoandtire",      "verified May 4"),
             ("ig",  "@westbrookauto",             "verified May 4"),
