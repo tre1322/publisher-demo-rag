@@ -51,7 +51,7 @@ def _startup() -> None:
 
 def _backfill_notification_defaults() -> None:
     from .db import SessionLocal
-    from .models import SettingsRow
+    from .models import DashboardNotices, SettingsRow
 
     defaults = [
         {"key": "neg_review",        "label": "New negative review (2★ or below)", "on": True,  "via": "Email + push"},
@@ -65,6 +65,26 @@ def _backfill_notification_defaults() -> None:
         for row in db.query(SettingsRow).filter(SettingsRow.notifications_json.is_(None)).all():
             row.notifications_json = defaults
             log.info(f"Backfilled notifications_json for business_id={row.business_id}")
+
+        # B.7: pre-existing attention rows lack `targetId` for the scroll-to-item
+        # nav. Patch them in place — only mutate items that don't already carry it,
+        # so a future edited attention feed isn't clobbered.
+        target_id_map = {"approvals": "a1", "reviews": "r3"}
+        for notices in db.query(DashboardNotices).all():
+            if not notices.attention_json:
+                continue
+            changed = False
+            patched = []
+            for item in notices.attention_json:
+                if "targetId" not in item and item.get("target") in target_id_map:
+                    patched.append({**item, "targetId": target_id_map[item["target"]]})
+                    changed = True
+                else:
+                    patched.append(item)
+            if changed:
+                notices.attention_json = patched
+                log.info(f"Backfilled attention.targetId for business_id={notices.business_id}")
+
         db.commit()
 
 

@@ -124,7 +124,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-21 · v19 — Phase B.6 Performance period selector + insights regen';
+  const BUILD_VERSION = '2026-05-21 · v20 — Phase B.7 Home attention nav + scroll-to-item + live sidebar badge';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -792,11 +792,12 @@
   /* ============================================================
      SIDEBAR
      ============================================================ */
-  const NAV = [
+  // Static nav order. `count` is derived per-render from live data in Sidebar.
+  const NAV_DEFS = [
     { id: 'home',        label: 'Home',          icon: 'home' },
     { id: 'compose',     label: 'Compose',       icon: 'sparkles' },
     { id: 'calendar',    label: 'Calendar',      icon: 'calendar' },
-    { id: 'approvals',   label: 'Approvals',     icon: 'inbox', count: 4 },
+    { id: 'approvals',   label: 'Approvals',     icon: 'inbox' },
     { id: 'performance', label: 'Performance',   icon: 'chart' },
     { id: 'reviews',     label: 'Reviews',       icon: 'star' },
     { id: 'plan',        label: 'Marketing Plan',icon: 'target' },
@@ -805,7 +806,12 @@
   ];
 
   const Sidebar = ({ current, onNavigate }) => {
-    const { business } = useDashboard();
+    const { business, approvals } = useDashboard();
+    // Phase B.7: derive Approvals badge from the live queue length so it
+    // shrinks/grows as the owner works through it.
+    const nav = NAV_DEFS.map(n =>
+      n.id === 'approvals' ? { ...n, count: approvals?.length || 0 } : n
+    );
     return (
     <aside className="w-60 shrink-0 bg-brand-700 text-white flex flex-col h-full">
       <div className="px-5 pt-6 pb-5 border-b border-white/10">
@@ -818,7 +824,7 @@
         </div>
       </div>
       <nav className="flex-1 py-3">
-        {NAV.map(n => (
+        {nav.map(n => (
           <button key={n.id}
             className={`w-full text-left flex items-center gap-3 py-2.5 text-sm ${current === n.id ? 'nav-active text-white' : 'nav-inactive text-white/75 hover:text-white'}`}
             onClick={() => onNavigate(n.id)}>
@@ -1606,7 +1612,7 @@
                   teal:  { bg: 'bg-brand-50', icon: 'text-brand-600' }
                 }[a.tone];
                 return (
-                  <button key={i} onClick={() => onNavigate(a.target)}
+                  <button key={i} onClick={() => onNavigate(a.target, a.targetId || null)}
                     className="flex items-start gap-4 w-full text-left py-4 px-4 hover:bg-surface rounded-lg transition-all">
                     <div className={`shrink-0 w-10 h-10 rounded-lg ${tone.bg} flex items-center justify-center ${tone.icon}`}>
                       <Icon name={a.icon} size={20} />
@@ -2164,7 +2170,7 @@
   /* ============================================================
      VIEW: APPROVALS QUEUE — Phase B.1 wired to /api/approvals/:id/decide
      ============================================================ */
-  const ApprovalsView = () => {
+  const ApprovalsView = ({ scrollToId, onScrollHandled }) => {
     const { approvals } = useDashboard();
     const mutate = useDashboardMutate();
     const [inFlight, setInFlight] = useState({});        // { [externalId]: true }
@@ -2172,6 +2178,27 @@
     const [error, setError]       = useState(null);
     const [toast, setToast]       = useState(null);      // green success ribbon
     const [batching, setBatching] = useState(false);     // approve-all in flight
+    const [highlightId, setHighlightId] = useState(null);
+
+    // Phase B.7: when arrived-here-with-a-scroll-target, find the card and
+    // scrollIntoView + set highlightId. The fade timer lives in a separate
+    // effect (below) so this effect's cleanup — which runs when App clears
+    // scrollToId via onScrollHandled — doesn't cancel the fade timeout.
+    useEffect(() => {
+      if (!scrollToId) return;
+      const el = document.querySelector(`[data-scroll-id="${scrollToId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHighlightId(scrollToId);
+      }
+      onScrollHandled?.();
+    }, [scrollToId]);
+
+    useEffect(() => {
+      if (!highlightId) return;
+      const t = setTimeout(() => setHighlightId(null), 1600);
+      return () => clearTimeout(t);
+    }, [highlightId]);
 
     useEffect(() => {
       if (!toast) return;
@@ -2334,7 +2361,9 @@
           {approvals.map(item => {
             const busy = !!inFlight[item.id];
             return (
-            <Card key={item.id} padded={false} className={`overflow-hidden transition-opacity ${busy ? 'opacity-50' : ''}`}>
+            <Card key={item.id} padded={false}
+              data-scroll-id={item.id}
+              className={`overflow-hidden transition-all ${busy ? 'opacity-50' : ''} ${highlightId === item.id ? 'ring-2 ring-brand-500 ring-offset-2' : ''}`}>
               <div className="p-5 border-b border-surface-edge flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <PlatformChip platform={item.platform} />
@@ -2656,7 +2685,7 @@
   /* ============================================================
      VIEW: REVIEWS
      ============================================================ */
-  const ReviewsView = () => {
+  const ReviewsView = ({ scrollToId, onScrollHandled }) => {
     const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings } = useDashboard();
     const mutate = useDashboardMutate();
     const [editing, setEditing] = useState(null);    // {review, text}
@@ -2664,12 +2693,32 @@
     const [skipped, setSkipped] = useState({});      // local-only "Skip" hide
     const [error, setError] = useState(null);
     const [toast, setToast] = useState(null);
+    const [highlightId, setHighlightId] = useState(null);
 
     useEffect(() => {
       if (!toast) return;
       const t = setTimeout(() => setToast(null), 3500);
       return () => clearTimeout(t);
     }, [toast]);
+
+    // Phase B.7: scroll-to-item on entry from Home attention CTA. Fade timer
+    // in a separate effect so onScrollHandled() clearing scrollToId doesn't
+    // cancel the fade via this effect's cleanup.
+    useEffect(() => {
+      if (!scrollToId) return;
+      const el = document.querySelector(`[data-scroll-id="${scrollToId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHighlightId(scrollToId);
+      }
+      onScrollHandled?.();
+    }, [scrollToId]);
+
+    useEffect(() => {
+      if (!highlightId) return;
+      const t = setTimeout(() => setHighlightId(null), 1600);
+      return () => clearTimeout(t);
+    }, [highlightId]);
 
     const respond = async (review, response, action) => {
       if (!review.internalId) {
@@ -2774,7 +2823,9 @@
 
           {/* Pinned negative + recent list */}
           <div className="lg:col-span-2 space-y-5">
-            <Card className="border-l-4 border-bad" padded={false}>
+            <Card padded={false}
+              data-scroll-id={reviews.pinned?.id}
+              className={`border-l-4 border-bad transition-all ${highlightId === reviews.pinned?.id ? 'ring-2 ring-brand-500 ring-offset-2' : ''}`}>
               <div className="p-5 border-b border-red-100 bg-red-50/40 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Icon name="alert" size={16} className="text-bad" />
@@ -2835,7 +2886,8 @@
               </div>
               <div className="divide-y divide-surface-edge">
                 {reviews.recent.map(r => (
-                  <div key={r.id} className={`p-5 ${r.flagged ? 'bg-red-50/30' : ''}`}>
+                  <div key={r.id} data-scroll-id={r.id}
+                    className={`p-5 transition-all ${r.flagged ? 'bg-red-50/30' : ''} ${highlightId === r.id ? 'ring-2 ring-brand-500 ring-inset' : ''}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-xs font-semibold">
@@ -3694,6 +3746,15 @@
     const [humanOpen, setHumanOpen] = useState(false);
     const [bootstrap, setBootstrap] = useState(null);
     const [loadError, setLoadError] = useState(null);
+    // Phase B.7: when navigating from a CTA that links to a specific item
+    // (e.g. Home → Approvals → highlight a1), the destination view reads this
+    // and scrollIntoView + flashes a highlight ring. Auto-clears so a manual
+    // re-visit doesn't re-trigger the scroll.
+    const [scrollToId, setScrollToId] = useState(null);
+    const navigate = (nextView, nextScrollToId = null) => {
+      setView(nextView);
+      setScrollToId(nextScrollToId);
+    };
 
     useEffect(() => {
       let cancelled = false;
@@ -3744,14 +3805,14 @@
       <DashboardContext.Provider value={data}>
       <div className="flex h-screen w-full bg-surface">
         {loadError && <BootstrapErrorBanner message={loadError} />}
-        <Sidebar current={view} onNavigate={setView} />
+        <Sidebar current={view} onNavigate={(v) => navigate(v)} />
         <main className={`flex-1 overflow-y-auto ${loadError ? 'pt-9' : ''}`}>
-          {view === 'home'        && <HomeView onNavigate={setView} />}
-          {view === 'compose'     && <ComposeView onNavigate={setView} />}
-          {view === 'calendar'    && <CalendarView onNavigate={setView} />}
-          {view === 'approvals'   && <ApprovalsView />}
+          {view === 'home'        && <HomeView onNavigate={navigate} />}
+          {view === 'compose'     && <ComposeView onNavigate={navigate} />}
+          {view === 'calendar'    && <CalendarView onNavigate={navigate} />}
+          {view === 'approvals'   && <ApprovalsView scrollToId={scrollToId} onScrollHandled={() => setScrollToId(null)} />}
           {view === 'performance' && <PerformanceView />}
-          {view === 'reviews'     && <ReviewsView />}
+          {view === 'reviews'     && <ReviewsView scrollToId={scrollToId} onScrollHandled={() => setScrollToId(null)} />}
           {view === 'plan'        && <MarketingPlanView />}
           {view === 'chat'        && <ChatView />}
           {view === 'settings'    && <SettingsView onTalkToHuman={() => setHumanOpen(true)} />}
