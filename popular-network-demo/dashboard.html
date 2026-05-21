@@ -124,7 +124,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-21 · v14 — Phase B.2 Calendar edit-in-place';
+  const BUILD_VERSION = '2026-05-21 · v16 — Phase B.3 polish: distinct buttons + Send confirm';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -882,14 +882,25 @@
   /* ============================================================
      VIEW: COMPOSE — brief + per-platform editor + live preview
      ============================================================ */
-  const ComposeView = () => {
+  const ComposeView = ({ onNavigate }) => {
     const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings } = useDashboard();
+    const mutate = useDashboardMutate();
     const [topic, setTopic] = useState('Memorial Day pre-trip safety check');
     const [notes, setNotes] = useState('Lake-bound traffic peaks Friday afternoon. Lean into the safety angle, not a discount. Mention the $59 inspection.');
     const [chosen, setChosen] = useState(['fb', 'ig', 'gbp', 'web']);
     const [imageMode, setImageMode] = useState('owner');
     const [tone, setTone] = useState('friendly');
     const [activeTab, setActiveTab] = useState('fb');
+    const [saving, setSaving] = useState(null);   // 'draft' | 'pending' | null
+    const [saveError, setSaveError] = useState(null);
+    const [saveToast, setSaveToast] = useState(null);
+    const [confirmSend, setConfirmSend] = useState(false);
+
+    useEffect(() => {
+      if (!saveToast) return;
+      const t = setTimeout(() => setSaveToast(null), 5000);
+      return () => clearTimeout(t);
+    }, [saveToast]);
     const [drafts, setDrafts] = useState({
       fb: {
         text: 'Headed to the lake this Memorial Day weekend? $59 pre-trip safety check covers oil, tire pressure, brakes, and fluid top-off.\n\nWe\'d rather you find a problem in our bay than 80 miles down the road. Friday and Saturday slots open. Call (507) 555-0143.',
@@ -941,6 +952,119 @@
       { id: 'urgent',    label: 'Urgent' }
     ];
 
+    // Each platform packs its own per-channel fields into the (title, draft)
+    // pair the Post model exposes. Keep the brief topic as the title fallback
+    // so the Approvals queue and Calendar grid render meaningful labels.
+    const platformPayload = (p) => {
+      const d = drafts[p];
+      switch (p) {
+        case 'fb':
+          return {
+            title: topic.trim() || 'Untitled Facebook post',
+            draft: d.text + (d.cta ? `\n\nCTA: ${d.cta}` : ''),
+          };
+        case 'ig':
+          return {
+            title: topic.trim() || 'Untitled Instagram post',
+            draft: d.caption + (d.hashtags ? `\n\n${d.hashtags}` : ''),
+          };
+        case 'gbp':
+          return {
+            title: d.headline.trim() || topic.trim() || 'Untitled GBP post',
+            draft: d.text + (d.cta ? `\n\nCTA: ${d.cta}` : ''),
+          };
+        case 'web':
+          return {
+            title: d.title.trim() || topic.trim() || 'Untitled blog post',
+            draft: (d.subtitle ? d.subtitle + '\n\n' : '') + d.body,
+          };
+        default:
+          return { title: topic, draft: '' };
+      }
+    };
+
+    // Sequential POST per chosen platform. status='draft' or 'pending'.
+    // On 'pending', the backend also creates an Approval row pointing at the
+    // new Post, which we slot into the queue optimistically. Stops on the
+    // first failure so partial errors are recoverable from the toast.
+    const submit = async (status) => {
+      if (saving || chosen.length === 0) return;
+      setSaving(status);
+      setSaveError(null);
+      setSaveToast(null);
+      const failed = [];
+      const succeeded = [];
+
+      for (const platform of chosen) {
+        const payload = platformPayload(platform);
+        if (!payload.draft || !payload.draft.trim()) {
+          failed.push({ platform, error: 'empty draft' });
+          continue;
+        }
+        try {
+          const resp = await fetch('/api/posts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              platform,
+              status,
+              title: payload.title,
+              draft: payload.draft,
+              reasoning: notes.trim() || null,
+            }),
+          });
+          if (!resp.ok) {
+            const detail = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
+            throw new Error(detail.detail || `HTTP ${resp.status}`);
+          }
+          const json = await resp.json();
+          succeeded.push({ platform, post: json.post, approval: json.approval });
+          // Slot into context so Calendar/Approvals reflect immediately
+          mutate(prev => {
+            if (!prev) return prev;
+            const next = { ...prev, posts: [...(prev.posts || []), json.post] };
+            if (json.approval) {
+              next.approvals = [...(prev.approvals || []), {
+                id: json.approval.id,
+                internalId: json.approval.internalId,
+                platform: json.approval.platform,
+                title: json.approval.title,
+                draft: json.approval.draft,
+                note: json.approval.note,
+                kind: 'post',
+              }];
+            }
+            return next;
+          });
+        } catch (e) {
+          console.error(`[compose] POST ${platform} failed`, e);
+          failed.push({ platform, error: e.message || String(e) });
+          break;   // halt the chain on error; remaining platforms are recoverable
+        }
+      }
+
+      setSaving(null);
+
+      if (failed.length === 0) {
+        const verb = status === 'draft' ? 'Saved' : 'Sent';
+        const where = status === 'draft' ? 'Drafts' : 'Approval queue';
+        setSaveToast(`${verb} ${succeeded.length} post${succeeded.length === 1 ? '' : 's'} to ${where}.`);
+        // Auto-navigate after the toast has had time to be read (1.5s).
+        // Owner sees the confirmation, then arrives on the destination.
+        setTimeout(() => {
+          if (onNavigate) onNavigate(status === 'draft' ? 'calendar' : 'approvals');
+        }, 1500);
+      } else {
+        const f = failed[0];
+        const ok = succeeded.length;
+        setSaveError(
+          ok
+            ? `Saved ${ok} before ${f.platform.toUpperCase()} failed: ${f.error}.`
+            : `${f.platform.toUpperCase()} failed: ${f.error}.`
+        );
+      }
+    };
+
     return (
       <div className="fade-in">
         <TopBar
@@ -950,11 +1074,41 @@
           right={
             <div className="flex items-center gap-2">
               <Pill color="violet" icon="sparkles">AI-drafted</Pill>
-              <Button variant="secondary" size="sm" icon="upload">Save draft</Button>
-              <Button variant="primary" icon="check">Send to approval queue</Button>
+              {/* Save = stash. Distinct icon (bookmark), grey, on the left. */}
+              <Button variant="secondary" size="sm" icon="bookmark"
+                onClick={() => submit('draft')}
+                disabled={!!saving || chosen.length === 0}>
+                {saving === 'draft' ? 'Saving…' : `Save as draft${chosen.length > 1 ? `s (${chosen.length})` : ''}`}
+              </Button>
+              {/* Visual gap so Send doesn't sit immediately next to Save. */}
+              <div className="w-px h-8 bg-surface-edge mx-2" aria-hidden="true" />
+              {/* Send = commit to review. Different icon (paper plane), blue, on the right. */}
+              <Button variant="primary" icon="send"
+                onClick={() => setConfirmSend(true)}
+                disabled={!!saving || chosen.length === 0}>
+                {saving === 'pending' ? 'Sending…' : `Send ${chosen.length === 1 ? '' : `${chosen.length} `}for review`}
+              </Button>
             </div>
           }
         />
+        {saveError && (
+          <div className="mx-8 mt-5 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-start gap-2">
+            <Icon name="alert" size={16} className="mt-0.5 shrink-0" />
+            <div className="flex-1">{saveError}</div>
+            <button className="text-bad/60 hover:text-bad" onClick={() => setSaveError(null)}>
+              <Icon name="x" size={14} />
+            </button>
+          </div>
+        )}
+        {saveToast && (
+          <div className="mx-8 mt-5 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 flex items-start gap-2">
+            <Icon name="check" size={16} className="mt-0.5 shrink-0" />
+            <div className="flex-1">{saveToast}</div>
+            <button className="text-emerald-700/60 hover:text-emerald-800" onClick={() => setSaveToast(null)}>
+              <Icon name="x" size={14} />
+            </button>
+          </div>
+        )}
         <div className="px-8 py-7 grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)_420px] gap-6 max-w-[1600px] mx-auto">
 
           {/* LEFT: brief */}
@@ -1200,6 +1354,41 @@
             </div>
           </div>
         </div>
+
+        {/* Send-to-queue confirmation — Save stays one-click (reversible),
+            Send asks once because the post lands in front of you for sign-off
+            and a misclick wastes the agent's draft labour. */}
+        <Modal
+          open={confirmSend}
+          onClose={() => setConfirmSend(false)}
+          title="Send for review?"
+          footer={<>
+            <Button variant="ghost" onClick={() => setConfirmSend(false)} disabled={!!saving}>Cancel</Button>
+            <Button icon="send" variant="primary"
+              onClick={() => { setConfirmSend(false); submit('pending'); }}
+              disabled={!!saving}>
+              {`Yes, send ${chosen.length} for review`}
+            </Button>
+          </>}>
+          <div className="space-y-3 text-sm text-ink-soft leading-relaxed">
+            <p>
+              {chosen.length === 1 ? 'This post' : `These ${chosen.length} posts`} will appear in your <span className="font-medium text-ink">Approvals queue</span> with status <span className="font-medium text-ink">pending</span>. Nothing publishes yet — you can still approve, edit, or reject each one before it goes live.
+            </p>
+            <div className="bg-surface rounded-lg border border-surface-edge px-3 py-2">
+              <div className="text-xs uppercase tracking-wider font-medium text-ink-faint mb-1.5">Sending</div>
+              <ul className="space-y-1">
+                {chosen.map(p => (
+                  <li key={p} className="flex items-center gap-2 text-[13px]">
+                    <Icon name={PLATFORMS[p].icon} size={13} className="text-ink-faint" />
+                    <span className="text-ink">{PLATFORMS[p].label.split(' ')[0]}</span>
+                    <span className="text-ink-faint">·</span>
+                    <span className="text-ink-soft truncate">{platformPayload(p).title}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </Modal>
       </div>
     );
   };
@@ -3095,7 +3284,7 @@
         <Sidebar current={view} onNavigate={setView} />
         <main className={`flex-1 overflow-y-auto ${loadError ? 'pt-9' : ''}`}>
           {view === 'home'        && <HomeView onNavigate={setView} />}
-          {view === 'compose'     && <ComposeView />}
+          {view === 'compose'     && <ComposeView onNavigate={setView} />}
           {view === 'calendar'    && <CalendarView onNavigate={setView} />}
           {view === 'approvals'   && <ApprovalsView />}
           {view === 'performance' && <PerformanceView />}
