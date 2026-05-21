@@ -124,7 +124,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-21 · v22 — Modal bug fix: max-h-90vh + internal scroll';
+  const BUILD_VERSION = '2026-05-21 · v23 — Compose: Topic is canonical title across all 4 platforms';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -959,33 +959,35 @@
     ];
 
     // Each platform packs its own per-channel fields into the (title, draft)
-    // pair the Post model exposes. Keep the brief topic as the title fallback
-    // so the Approvals queue and Calendar grid render meaningful labels.
+    // pair the Post model exposes. The Brief Topic is the canonical Post.title
+    // for ALL four platforms so the Approvals queue / Calendar / Drafts label
+    // posts uniformly. Per-platform headline/title inputs (GBP, Web) become
+    // body content embedded into the draft text — they're auxiliary, not the
+    // unified row label.
     const platformPayload = (p) => {
       const d = drafts[p];
+      const title = topic.trim() || `Untitled ${PLATFORMS[p].label.split(' ')[0]} post`;
       switch (p) {
         case 'fb':
-          return {
-            title: topic.trim() || 'Untitled Facebook post',
-            draft: d.text + (d.cta ? `\n\nCTA: ${d.cta}` : ''),
-          };
+          return { title, draft: d.text + (d.cta ? `\n\nCTA: ${d.cta}` : '') };
         case 'ig':
-          return {
-            title: topic.trim() || 'Untitled Instagram post',
-            draft: d.caption + (d.hashtags ? `\n\n${d.hashtags}` : ''),
-          };
+          return { title, draft: d.caption + (d.hashtags ? `\n\n${d.hashtags}` : '') };
         case 'gbp':
           return {
-            title: d.headline.trim() || topic.trim() || 'Untitled GBP post',
-            draft: d.text + (d.cta ? `\n\nCTA: ${d.cta}` : ''),
+            title,
+            // Embed the GBP-specific headline as the lead line of the draft
+            // body so it doesn't disappear from the post when we use Topic
+            // as the unified title.
+            draft: (d.headline ? `${d.headline}\n\n` : '') + d.text + (d.cta ? `\n\nCTA: ${d.cta}` : ''),
           };
         case 'web':
           return {
-            title: d.title.trim() || topic.trim() || 'Untitled blog post',
-            draft: (d.subtitle ? d.subtitle + '\n\n' : '') + d.body,
+            title,
+            // Same idea for Web: the blog title and subtitle become body lead.
+            draft: (d.title ? `${d.title}\n\n` : '') + (d.subtitle ? `${d.subtitle}\n\n` : '') + d.body,
           };
         default:
-          return { title: topic, draft: '' };
+          return { title, draft: '' };
       }
     };
 
