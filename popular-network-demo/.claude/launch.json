@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "python", "-m", "app.main"],
+      "port": 8765
+    },
+    {
+      "name": "dashboard-static",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8765"],
+      "port": 8765
+    }
+  ]
+}
