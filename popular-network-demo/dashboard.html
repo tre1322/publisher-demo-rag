@@ -124,7 +124,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-21 · v21 — Phase B.8 Marketing plan inline edit (autosave-on-blur)';
+  const BUILD_VERSION = '2026-05-21 · v22 — Modal bug fix: max-h-90vh + internal scroll';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -588,14 +588,14 @@
     }, [open, onClose]);
     if (!open) return null;
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/30 fade-in" onClick={onClose}>
-        <div className="bg-white rounded-xl shadow-modal max-w-lg w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
-          <div className="px-6 py-4 border-b border-surface-edge flex items-center justify-between">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/30 fade-in overflow-y-auto" onClick={onClose}>
+        <div className="bg-white rounded-xl shadow-modal max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          <div className="px-6 py-4 border-b border-surface-edge flex items-center justify-between shrink-0">
             <h3 className="font-semibold text-ink">{title}</h3>
             <button className="text-ink-faint hover:text-ink rounded-lg p-1 hover:bg-surface" onClick={onClose}><Icon name="x" size={18} /></button>
           </div>
-          <div className="px-6 py-5">{children}</div>
-          {footer && <div className="px-6 py-4 border-t border-surface-edge bg-surface flex items-center justify-end gap-2">{footer}</div>}
+          <div className="px-6 py-5 overflow-y-auto">{children}</div>
+          {footer && <div className="px-6 py-4 border-t border-surface-edge bg-surface flex items-center justify-end gap-2 shrink-0">{footer}</div>}
         </div>
       </div>
     );
