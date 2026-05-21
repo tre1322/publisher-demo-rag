@@ -124,7 +124,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-21 · v23 — Compose: Topic is canonical title across all 4 platforms';
+  const BUILD_VERSION = '2026-05-21 · v24 — Performance period: fix prev30 id + 422 array stringify + clearer labels';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -2475,14 +2475,25 @@
     // Refetch when period changes (skip the default — already in bootstrap).
     useEffect(() => {
       if (period === '30') {
+        // Revert to context performance. Clearing perfError here matters:
+        // if a prior period fetch failed, the banner would persist on
+        // re-selecting Last 30 because the early-return skips the catch.
         setPeriodPerf(null);
+        setPerfError(null);
         return;
       }
       let cancelled = false;
       setPeriodLoading(true);
       setPerfError(null);
       fetch(`/api/performance?period=${period}`)
-        .then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(new Error(j.detail || `HTTP ${r.status}`))))
+        .then(r => r.ok ? r.json() : r.json().then(j => {
+          // FastAPI 422 returns detail as a list of {loc, msg, type} objects;
+          // grab the first msg so the banner doesn't read "[object Object]".
+          let msg = `HTTP ${r.status}`;
+          if (Array.isArray(j.detail) && j.detail[0]?.msg) msg = j.detail[0].msg;
+          else if (typeof j.detail === 'string') msg = j.detail;
+          return Promise.reject(new Error(msg));
+        }))
         .then(data => { if (!cancelled) setPeriodPerf(data); })
         .catch(e => { if (!cancelled) { console.error('[performance.period]', e); setPerfError(`Couldn't load period: ${e.message || e}`); }})
         .finally(() => { if (!cancelled) setPeriodLoading(false); });
@@ -2537,7 +2548,7 @@
           subtitle={titles[tab].subtitle}
           right={
             <div className="flex bg-surface-edge rounded-lg p-0.5 text-sm">
-              {[['30','Last 30'],['prev','Previous 30'],['ytd','YTD']].map(([id, label]) => (
+              {[['30','Last 30 days'],['prev30','Days 31–60 ago'],['ytd','YTD']].map(([id, label]) => (
                 <button key={id} onClick={() => setPeriod(id)}
                   className={`px-3 py-1.5 rounded-md font-medium transition-all ${period === id ? 'bg-white text-ink shadow-sm' : 'text-ink-soft hover:text-ink'}`}>{label}</button>
               ))}
