@@ -124,7 +124,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-21 · v18 — Phase B.5 Review responses → POST /api/reviews/:id/respond';
+  const BUILD_VERSION = '2026-05-21 · v19 — Phase B.6 Performance period selector + insights regen';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -2423,11 +2423,71 @@
      VIEW: PERFORMANCE
      ============================================================ */
   const PerformanceView = () => {
-    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings } = useDashboard();
-    const dailyReachCurrent = performance.dailyReachCurrent;
-    const dailyReachPrev    = performance.dailyReachPrev;
+    const { business, stats, attention, weekRecap, posts, approvals, performance: ctxPerformance, reviews, marketingPlan, chat, settings } = useDashboard();
+    const mutate = useDashboardMutate();
     const [period, setPeriod] = useState('30');
     const [tab, setTab] = useState('overview');
+    // Local override when a non-default period is selected. Falls back to
+    // context performance for period=30 (the bootstrap default).
+    const [periodPerf, setPeriodPerf] = useState(null);
+    const [periodLoading, setPeriodLoading] = useState(false);
+    const [regenerating, setRegenerating] = useState(false);
+    const [perfError, setPerfError] = useState(null);
+    const [perfToast, setPerfToast] = useState(null);
+
+    useEffect(() => {
+      if (!perfToast) return;
+      const t = setTimeout(() => setPerfToast(null), 3500);
+      return () => clearTimeout(t);
+    }, [perfToast]);
+
+    // Refetch when period changes (skip the default — already in bootstrap).
+    useEffect(() => {
+      if (period === '30') {
+        setPeriodPerf(null);
+        return;
+      }
+      let cancelled = false;
+      setPeriodLoading(true);
+      setPerfError(null);
+      fetch(`/api/performance?period=${period}`)
+        .then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(new Error(j.detail || `HTTP ${r.status}`))))
+        .then(data => { if (!cancelled) setPeriodPerf(data); })
+        .catch(e => { if (!cancelled) { console.error('[performance.period]', e); setPerfError(`Couldn't load period: ${e.message || e}`); }})
+        .finally(() => { if (!cancelled) setPeriodLoading(false); });
+      return () => { cancelled = true; };
+    }, [period]);
+
+    const performance = periodPerf || ctxPerformance;
+    const dailyReachCurrent = performance.dailyReachCurrent;
+    const dailyReachPrev    = performance.dailyReachPrev;
+
+    const regenerateInsights = async () => {
+      if (regenerating) return;
+      setRegenerating(true);
+      setPerfError(null);
+      try {
+        const resp = await fetch('/api/performance/regenerate-insights', { method: 'POST' });
+        if (!resp.ok) {
+          const detail = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
+          throw new Error(detail.detail || `HTTP ${resp.status}`);
+        }
+        const json = await resp.json();
+        // Push into context so bootstrap stays consistent + other views see it.
+        mutate(prev => prev?.performance
+          ? ({ ...prev, performance: { ...prev.performance, insights: json.insights } })
+          : prev);
+        // Also reflect in the local period view if it's mounted.
+        if (periodPerf) setPeriodPerf(p => p ? { ...p, insights: json.insights } : p);
+        setPerfToast(`Fresh insights — generated ${new Date(json.generatedAt).toLocaleTimeString()}.`);
+      } catch (e) {
+        console.error('[performance.regen] failed', e);
+        setPerfError(`Couldn't regenerate — ${e.message || e}.`);
+      } finally {
+        setRegenerating(false);
+      }
+    };
+
     const titles = {
       overview: { title: 'Performance', subtitle: 'Headline numbers and the daily-reach trend.' },
       channels: { title: 'Channels',     subtitle: 'Organic vs paid by platform — where the lift is coming from.' },
@@ -2454,7 +2514,25 @@
           }
         />
         <div className="px-8 pt-2"><TabBar tabs={insightTabs} value={tab} onChange={setTab} /></div>
-        <div className="px-8 py-7">
+        {perfError && (
+          <div className="mx-8 mt-5 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-start gap-2">
+            <Icon name="alert" size={16} className="mt-0.5 shrink-0" />
+            <div className="flex-1">{perfError}</div>
+            <button className="text-bad/60 hover:text-bad" onClick={() => setPerfError(null)}>
+              <Icon name="x" size={14} />
+            </button>
+          </div>
+        )}
+        {perfToast && (
+          <div className="mx-8 mt-5 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 flex items-start gap-2">
+            <Icon name="check" size={16} className="mt-0.5 shrink-0" />
+            <div className="flex-1">{perfToast}</div>
+            <button className="text-emerald-700/60 hover:text-emerald-800" onClick={() => setPerfToast(null)}>
+              <Icon name="x" size={14} />
+            </button>
+          </div>
+        )}
+        <div className={`px-8 py-7 transition-opacity ${periodLoading ? 'opacity-50' : ''}`}>
           {/* Stat row — always visible */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <StatTile label="Reach"      value={performance.reach.value.toLocaleString()}      delta={performance.reach.delta}      positive={performance.reach.positive}      helper={`vs ${performance.reach.prev.toLocaleString()} last period`} />
@@ -2542,20 +2620,32 @@
           )}
 
           {tab === 'insights' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 fade-in">
-              {performance.insights.map((ins, i) => (
-                <Card key={i} className={ins.kind === 'win' ? 'border-emerald-100' : 'border-amber-100'}>
-                  <div className={`text-xs uppercase tracking-wider font-semibold mb-2 inline-flex items-center gap-1 ${ins.kind === 'win' ? 'text-ok' : 'text-warn'}`}>
-                    <Icon name={ins.kind === 'win' ? 'check' : 'alert'} size={12} strokeWidth={2.4} /> {ins.kind === 'win' ? 'Working' : 'Worth tweaking'}
-                  </div>
-                  <div className="font-semibold text-ink mb-1.5">{ins.title}</div>
-                  <p className="text-sm text-ink-soft leading-relaxed">{ins.body}</p>
-                  <div className="mt-3 pt-3 border-t border-surface-edge flex items-center justify-between text-xs text-ink-faint">
-                    <span className="inline-flex items-center gap-1.5"><Icon name="sparkles" size={11} className="text-brand-500" /> Agent insight</span>
-                    <a className="text-brand-600 font-medium hover:underline cursor-pointer">Apply →</a>
-                  </div>
-                </Card>
-              ))}
+            <div className="space-y-4 fade-in">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-ink-soft">
+                  Generated from your last 30 days. Refresh to rerun the analysis against the latest data.
+                </p>
+                <Button variant="secondary" size="sm" icon="refresh"
+                  onClick={regenerateInsights}
+                  disabled={regenerating}>
+                  {regenerating ? 'Regenerating…' : 'Regenerate insights'}
+                </Button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {performance.insights.map((ins, i) => (
+                  <Card key={`${ins.title}-${i}`} className={ins.kind === 'win' ? 'border-emerald-100' : 'border-amber-100'}>
+                    <div className={`text-xs uppercase tracking-wider font-semibold mb-2 inline-flex items-center gap-1 ${ins.kind === 'win' ? 'text-ok' : 'text-warn'}`}>
+                      <Icon name={ins.kind === 'win' ? 'check' : 'alert'} size={12} strokeWidth={2.4} /> {ins.kind === 'win' ? 'Working' : 'Worth tweaking'}
+                    </div>
+                    <div className="font-semibold text-ink mb-1.5">{ins.title}</div>
+                    <p className="text-sm text-ink-soft leading-relaxed">{ins.body}</p>
+                    <div className="mt-3 pt-3 border-t border-surface-edge flex items-center justify-between text-xs text-ink-faint">
+                      <span className="inline-flex items-center gap-1.5"><Icon name="sparkles" size={11} className="text-brand-500" /> Agent insight</span>
+                      <a className="text-brand-600 font-medium hover:underline cursor-pointer">Apply →</a>
+                    </div>
+                  </Card>
+                ))}
+              </div>
             </div>
           )}
         </div>
