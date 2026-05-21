@@ -53,6 +53,7 @@ def _business_payload(biz: Business) -> dict[str, Any]:
 def _post_payload(p: Post) -> dict[str, Any]:
     return {
         "id": p.external_id or f"p{p.id}",
+        "internalId": p.id,
         "date": p.date,
         "platform": p.platform,
         "status": p.status,

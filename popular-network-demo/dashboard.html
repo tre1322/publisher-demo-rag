@@ -124,7 +124,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-21 · v13 — Phase B.1 Approve-all (post-only, sequential)';
+  const BUILD_VERSION = '2026-05-21 · v14 — Phase B.2 Calendar edit-in-place';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -1476,7 +1476,12 @@
   };
 
   const ScheduleTab = () => {
-    const [selected, setSelected] = useState(posts[3]);
+    const { posts } = useDashboard();
+    // Track selection by ID so PostDetail re-renders against the latest post
+    // data even after an edit-in-place lands.
+    const [selectedId, setSelectedId] = useState(() => posts[3]?.id || null);
+    const [editing, setEditing] = useState(null);  // post being edited
+    const selected = posts.find(p => p.id === selectedId) || null;
     const monthLabel = 'May 2026';
     const firstWeekday = new Date(2026, 4, 1).getDay();
     const daysInMonth = 31;
@@ -1492,7 +1497,7 @@
         (map[d] = map[d] || []).push(p);
       });
       return map;
-    }, []);
+    }, [posts]);
 
     return (
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_400px] gap-6">
@@ -1529,7 +1534,7 @@
                           const stat = STATUSES[p.status];
                           const isSel = selected && selected.id === p.id;
                           return (
-                            <button key={p.id} onClick={() => setSelected(p)}
+                            <button key={p.id} onClick={() => setSelectedId(p.id)}
                               className={`w-full text-left text-[11px] flex items-center gap-1 px-1.5 py-1 rounded ${isSel ? 'ring-2 ring-brand-500' : ''}`}
                               style={{ background: stat.dot + '22', color: stat.dot }}>
                               <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: plat.dot }}></span>
@@ -1548,9 +1553,10 @@
             })}
           </div>
         </Card>
-        {selected ? <PostDetail post={selected} /> : (
+        {selected ? <PostDetail post={selected} onEdit={() => setEditing(selected)} /> : (
           <Card><div className="text-sm text-ink-soft">Click any post on the calendar to see the draft and the agent's reasoning.</div></Card>
         )}
+        <PostEditModal post={editing} onClose={() => setEditing(null)} />
       </div>
     );
   };
@@ -1728,6 +1734,8 @@
   };
 
   const DraftsTab = () => {
+    const { posts } = useDashboard();
+    const [editing, setEditing] = useState(null);
     const draftPosts = posts.filter(p => p.status === 'draft');
     return (
       <div className="space-y-3 max-w-4xl">
@@ -1735,7 +1743,7 @@
           <div className="flex items-start gap-3">
             <div className="shrink-0 w-9 h-9 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center"><Icon name="edit" size={18} /></div>
             <div className="flex-1">
-              <div className="font-semibold text-ink">{draftPosts.length} drafts not yet sent for approval</div>
+              <div className="font-semibold text-ink">{draftPosts.length} draft{draftPosts.length === 1 ? '' : 's'} not yet sent for approval</div>
               <div className="text-sm text-ink-soft">Drafts stay here until you approve them or send them into the queue. Nothing posts publicly from this list.</div>
             </div>
           </div>
@@ -1757,17 +1765,19 @@
               </div>
               <div className="shrink-0 flex flex-col gap-1.5">
                 <Button icon="check" variant="ok" size="sm">Send to queue</Button>
-                <Button icon="edit" variant="secondary" size="sm">Edit</Button>
+                <Button icon="edit" variant="secondary" size="sm" onClick={() => setEditing(p)}>Edit</Button>
               </div>
             </div>
           </Card>
         ))}
+        <PostEditModal post={editing} onClose={() => setEditing(null)} />
       </div>
     );
   };
 
-  const PostDetail = ({ post }) => {
+  const PostDetail = ({ post, onEdit }) => {
     const plat = PLATFORMS[post.platform];
+    const canEdit = post.status !== 'published';
     return (
       <Card className="slide-in-right" padded={false}>
         <div className="px-6 py-4 border-b border-surface-edge flex items-center justify-between">
@@ -1786,28 +1796,179 @@
             <div className="text-xs uppercase tracking-wider text-ink-faint font-medium mb-1.5">Draft</div>
             <p className="text-sm text-ink leading-relaxed bg-surface rounded-lg p-3 border border-surface-edge whitespace-pre-line">{post.draft}</p>
           </div>
-          <div>
-            <div className="text-xs uppercase tracking-wider text-ink-faint font-medium mb-1.5 inline-flex items-center gap-1.5">
-              <Icon name="sparkles" size={12} className="text-brand-500" /> Agent's reasoning
-            </div>
-            <p className="text-sm text-ink-soft leading-relaxed italic border-l-2 border-brand-500 pl-3">
-              {post.reasoning}
-            </p>
-          </div>
-          {post.status !== 'published' && (
-            <div className="flex items-center gap-2 pt-2">
-              <Button icon="check" variant="ok" className="flex-1">Approve</Button>
-              <Button icon="edit" variant="secondary">Edit</Button>
-              <Button icon="x" variant="ghost">Reject</Button>
+          {post.reasoning && (
+            <div>
+              <div className="text-xs uppercase tracking-wider text-ink-faint font-medium mb-1.5 inline-flex items-center gap-1.5">
+                <Icon name="sparkles" size={12} className="text-brand-500" /> Agent's reasoning
+              </div>
+              <p className="text-sm text-ink-soft leading-relaxed italic border-l-2 border-brand-500 pl-3">
+                {post.reasoning}
+              </p>
             </div>
           )}
-          {post.status === 'published' && (
+          {canEdit && (
+            <div className="flex items-center gap-2 pt-2">
+              <Button icon="edit" variant="secondary" className="flex-1" onClick={onEdit}>Edit draft</Button>
+            </div>
+          )}
+          {!canEdit && (
             <div className="flex items-center gap-2 text-sm text-ink-faint pt-2">
-              <Icon name="check" size={14} className="text-ok" /> Published — 287 reach, 18 engagements so far.
+              <Icon name="check" size={14} className="text-ok" /> Published — edits are locked. (Owner amendments will come in a later phase.)
             </div>
           )}
         </div>
       </Card>
+    );
+  };
+
+  /* ============================================================
+     PostEditModal — Phase B.2 edit-in-place via PUT /api/posts/:id
+     Used by ScheduleTab (PostDetail) and DraftsTab. Stays mounted with
+     null `post` until opened, so the modal animation works on close.
+     ============================================================ */
+  const PostEditModal = ({ post, onClose }) => {
+    const mutate = useDashboardMutate();
+    const [form, setForm] = useState({ title: '', draft: '', date: '' });
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+      if (post) {
+        setForm({ title: post.title || '', draft: post.draft || '', date: post.date || '' });
+        setError(null);
+      }
+    }, [post && post.id]);
+
+    if (!post) return null;
+    const isOffline = !post.internalId;
+    const dirty = post && (
+      form.title.trim() !== (post.title || '').trim()
+      || form.draft.trim() !== (post.draft || '').trim()
+      || form.date !== (post.date || '')
+    );
+
+    const save = async () => {
+      if (!dirty || saving) return;
+      if (isOffline) {
+        setError("Backend is offline — edits won't persist.");
+        return;
+      }
+      if (!form.title.trim() || !form.draft.trim()) {
+        setError('Headline and draft are required.');
+        return;
+      }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(form.date)) {
+        setError('Schedule date must look like YYYY-MM-DD.');
+        return;
+      }
+
+      setSaving(true);
+      setError(null);
+      // Optimistic patch: snapshot the row, mutate context, rollback on 5xx.
+      let snapshot = null;
+      mutate(prev => {
+        if (!prev?.posts) return prev;
+        const idx = prev.posts.findIndex(p => p.id === post.id);
+        if (idx < 0) return prev;
+        snapshot = prev.posts[idx];
+        const nextPosts = prev.posts.slice();
+        nextPosts[idx] = { ...snapshot, title: form.title.trim(), draft: form.draft.trim(), date: form.date };
+        return { ...prev, posts: nextPosts };
+      });
+
+      try {
+        const resp = await fetch(`/api/posts/${post.internalId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: form.title.trim(),
+            draft: form.draft.trim(),
+            date: form.date,
+          }),
+        });
+        if (!resp.ok) {
+          const detail = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
+          throw new Error(detail.detail || `HTTP ${resp.status}`);
+        }
+        const json = await resp.json();
+        // Reconcile with the canonical row from the server (in case the
+        // backend normalized something we didn't).
+        if (json.post) {
+          mutate(prev => {
+            if (!prev?.posts) return prev;
+            const idx = prev.posts.findIndex(p => p.id === post.id);
+            if (idx < 0) return prev;
+            const nextPosts = prev.posts.slice();
+            nextPosts[idx] = { ...nextPosts[idx], ...json.post };
+            return { ...prev, posts: nextPosts };
+          });
+        }
+        setSaving(false);
+        onClose();
+      } catch (e) {
+        console.error('[posts.update] failed', e);
+        if (snapshot) {
+          mutate(prev => {
+            if (!prev?.posts) return prev;
+            const idx = prev.posts.findIndex(p => p.id === post.id);
+            if (idx < 0) return prev;
+            const nextPosts = prev.posts.slice();
+            nextPosts[idx] = snapshot;
+            return { ...prev, posts: nextPosts };
+          });
+        }
+        setError(`Couldn't save — ${e.message || e}.`);
+        setSaving(false);
+      }
+    };
+
+    return (
+      <Modal
+        open={!!post}
+        onClose={saving ? () => {} : onClose}
+        title={`Edit "${post.title}"`}
+        footer={<>
+          <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button icon="check" variant="ok" onClick={save} disabled={!dirty || saving}>
+            {saving ? 'Saving…' : 'Save changes'}
+          </Button>
+        </>}>
+        <div className="space-y-4">
+          {error && (
+            <div className="px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-start gap-2">
+              <Icon name="alert" size={14} className="mt-0.5 shrink-0" />
+              <div className="flex-1">{error}</div>
+            </div>
+          )}
+          <div>
+            <label className="text-xs uppercase tracking-wider font-medium text-ink-faint mb-1.5 block">Headline</label>
+            <input
+              className="w-full px-3 py-2 rounded-lg border border-surface-edge text-[15px] focus:outline-none focus:border-brand-500"
+              value={form.title}
+              onChange={(e) => setForm(f => ({ ...f, title: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs uppercase tracking-wider font-medium text-ink-faint mb-1.5 block">Draft</label>
+            <textarea
+              className="w-full px-3 py-2 rounded-lg border border-surface-edge text-[15px] leading-relaxed focus:outline-none focus:border-brand-500"
+              rows="8"
+              value={form.draft}
+              onChange={(e) => setForm(f => ({ ...f, draft: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs uppercase tracking-wider font-medium text-ink-faint mb-1.5 block">Schedule date</label>
+            <input
+              type="date"
+              className="px-3 py-2 rounded-lg border border-surface-edge text-[15px] focus:outline-none focus:border-brand-500"
+              value={form.date}
+              onChange={(e) => setForm(f => ({ ...f, date: e.target.value }))}
+            />
+            <p className="text-xs text-ink-faint mt-1">Posts move to whichever day you set here.</p>
+          </div>
+        </div>
+      </Modal>
     );
   };
 
