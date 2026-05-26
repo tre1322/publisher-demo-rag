@@ -126,7 +126,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-26 · v31 — C.2 streaming: SSE deltas, typewriter cursor, inflight-tool pill, multi-step tool events stream mid-conversation';
+  const BUILD_VERSION = '2026-05-26 · v32 — Westbrook scrub: Goal hero wired to q3Goals, rep card null-tolerant, Compose defaults Quadd-relevant, preview chrome data-driven, dead CreatePostsTab removed';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -810,8 +810,8 @@
   const ComposeView = ({ onNavigate }) => {
     const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings } = useDashboard();
     const mutate = useDashboardMutate();
-    const [topic, setTopic] = useState('Memorial Day pre-trip safety check');
-    const [notes, setNotes] = useState('Lake-bound traffic peaks Friday afternoon. Lean into the safety angle, not a discount. Mention the $59 inspection.');
+    const [topic, setTopic] = useState('Why publishers love the universal document extractor');
+    const [notes, setNotes] = useState('Lead with the Citizen Publishing time-savings testimonial — 2–3 hours/week. Founder credibility (28 years as a publisher) is the wedge. End with the 7-day free trial.');
     const [chosen, setChosen] = useState(['fb', 'ig', 'gbp', 'web']);
     const [imageMode, setImageMode] = useState('owner');
     const [tone, setTone] = useState('friendly');
@@ -828,24 +828,24 @@
     }, [saveToast]);
     const [drafts, setDrafts] = useState({
       fb: {
-        text: 'Headed to the lake this Memorial Day weekend? $59 pre-trip safety check covers oil, tire pressure, brakes, and fluid top-off.\n\nWe\'d rather you find a problem in our bay than 80 miles down the road. Friday and Saturday slots open. Call (507) 555-0143.',
-        cta: 'Call now'
+        text: 'A writer at Citizen Publishing is saving 2-3 hours every week with Quadd.ai. No question.\n\nThat\'s back-to-back interviews she\'s not re-typing. Council meetings she\'s not slogging through before she writes the first word. Actual journalism time, returned.\n\n7-day free trial. See what your newsroom gets back: quadd.ai',
+        cta: 'Learn more'
       },
       ig: {
-        caption: 'Lake weekend ahead? 🛠️ 60-second walk-through of the $59 pre-trip safety check. Mike runs the bay; Dale signs off; you drive.\n\nLink in bio or call (507) 555-0143.',
-        hashtags: '#WestbrookMN #LakeReady #HonestMechanic #MemorialDay #AutoRepair'
+        caption: 'Re-typing court documents? Slogging through transcripts before you can write a single word? Built by a publisher with 28 years in. Quadd.ai gives your staff back 2-3 hours every week. 🗞️\n\nLink in bio.',
+        hashtags: '#NewsroomTools #JournalismLife #LocalNews #PublishingTech #SmallTownNews'
       },
       gbp: {
-        headline: '$59 Memorial Day pre-trip',
-        text: 'Pre-trip safety check covering oil, tires, brakes, and fluids. Open Tue–Sat (closed Memorial Day Monday).',
-        cta: 'Call'
+        headline: 'Quadd.ai · 7-day free trial',
+        text: 'AI tools built for newspaper publishers, by a publisher. Document extraction, AP-style checking, interview transcription.',
+        cta: 'Learn more'
       },
       web: {
-        title: 'Headed to the lake this Memorial Day? Stop in for a $59 pre-trip safety check.',
-        subtitle: 'Twenty minutes in the bay. Peace of mind for the whole weekend.',
-        body: 'Memorial Day weekend in southwestern Minnesota means one thing: the lakes fill up. Currents Lake, Spirit Lake, the Des Moines River — they\'re all calling. We\'d rather you find a soft brake pedal or a tired tire in our shop than 80 miles into your drive.\n\nThat\'s why we\'re running a $59 pre-trip safety check Friday May 22 and Saturday May 23. We cover oil level, all four tire pressures, brake pads and rotors, fluid top-offs, a battery test, and a quick belt-and-hose look-over.\n\nTwenty minutes in the bay. We tell you what\'s wrong, what can wait, and we don\'t upsell — same as always.\n\nCall (507) 555-0143 to book Friday or Saturday. Walk-ins welcome too. Closed Monday May 25 for the holiday — back open Tuesday at 7am.',
-        slug: '/blog/memorial-day-pre-trip-safety-check',
-        readTime: '4 min'
+        title: 'Why publishers love the Universal Document Extractor',
+        subtitle: 'Built by a 28-year publisher who got tired of re-typing court documents by hand.',
+        body: 'Most newsroom staff are spending hours every week on work that has nothing to do with journalism. Re-typing court filings. Reformatting press releases. Slogging through interview audio before they write a single word.\n\nA writer at Citizen Publishing was doing all of that. Then they put Quadd.ai\'s Universal Document Extractor to work. The result: 2-3 hours saved every week. No question. They\'re now rolling it to the rest of the newsroom.\n\nThe tool learns your publication\'s own template and returns formatted, ready-to-use content in minutes. The court document problem — that 38-page filing you used to dread — becomes a non-event.\n\nQuadd.ai includes three tools in one bundle: Universal Document Extractor, AP-Style Checker, and Interview Transcription. The 7-day free trial is exactly that. Free. No card required. Load in your actual documents and see what happens.\n\nIf your staff is still grinding through documents and transcripts before they can write the first word, there\'s a better way.',
+        slug: '/blog/universal-document-extractor-publishers',
+        readTime: '3 min'
       }
     });
 
@@ -1244,12 +1244,12 @@
                     <div>
                       <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">URL slug</label>
                       <div className="flex items-center gap-1 px-3 py-2 rounded-lg border border-surface-edge text-sm bg-surface">
-                        <span className="text-ink-faint">westbrookautomn.com</span>
+                        <span className="text-ink-faint">{deriveDomain(business)}</span>
                         <input value={drafts.web.slug} onChange={e => updateDraft('web', 'slug', e.target.value)}
                           className="bg-transparent flex-1 outline-none text-ink" />
                       </div>
                     </div>
-                    <AgentNote text="Article format auto-generates JSON-LD schema for AI search engines and a /llms.txt entry — when ChatGPT or Perplexity is asked about Westbrook auto repair, this article becomes citable. Publishes to your hosted business page." />
+                    <AgentNote text={`Article format auto-generates JSON-LD schema for AI search engines and a /llms.txt entry — when ChatGPT or Perplexity is asked about ${business.name}, this article becomes citable. Publishes to your hosted business page.`} />
                   </div>
                 )}
               </div>
@@ -1276,7 +1276,7 @@
               {activeTab === 'gbp' && <GBPPreview draft={drafts.gbp} imageMode={imageMode} />}
               {activeTab === 'web' && <WebPreview draft={drafts.web} imageMode={imageMode} />}
               <div className="text-[11px] text-ink-faint mt-3 leading-relaxed">
-                Preview is approximate. Real-platform rendering may vary slightly. {activeTab === 'web' && 'Article will publish to westbrookautomn.com/blog and is auto-indexed for AI search.'}
+                Preview is approximate. Real-platform rendering may vary slightly. {activeTab === 'web' && `Article will publish to ${deriveDomain(business)}/blog and is auto-indexed for AI search.`}
               </div>
             </div>
           </div>
@@ -1329,12 +1329,28 @@
 
   /* Platform-accurate preview cards ------------- */
 
-  const FBPreview = ({ draft, imageMode }) => (
+  // Derive a clean domain from the business name. "Quadd.ai" → "quadd.ai";
+  // "Westbrook Auto" → "westbrookauto.com". Falls back to a generic stub.
+  const deriveDomain = (biz) => {
+    const name = (biz?.name || '').trim();
+    if (!name) return 'yourbusiness.com';
+    const stripped = name.toLowerCase().replace(/[^a-z0-9.]/g, '');
+    return stripped.includes('.') ? stripped : `${stripped}.com`;
+  };
+  const deriveHandle = (biz) => {
+    const name = (biz?.name || '').trim();
+    if (!name) return 'yourbusiness';
+    return name.toLowerCase().replace(/\..*$/, '').replace(/[^a-z0-9]/g, '');
+  };
+
+  const FBPreview = ({ draft, imageMode }) => {
+    const { business } = useDashboard();
+    return (
     <div className="bg-white rounded-lg border border-surface-edge shadow-card overflow-hidden">
       <div className="p-3 flex items-center gap-2.5">
-        <div className="w-10 h-10 rounded-full bg-brand-700 text-white flex items-center justify-center font-serif font-bold text-sm shrink-0">W</div>
+        <div className="w-10 h-10 rounded-full bg-brand-700 text-white flex items-center justify-center font-serif font-bold text-sm shrink-0">{(business?.name || '?')[0].toUpperCase()}</div>
         <div className="flex-1 min-w-0">
-          <div className="font-semibold text-[13px] text-ink leading-tight">Westbrook Auto &amp; Tire</div>
+          <div className="font-semibold text-[13px] text-ink leading-tight">{business?.name || 'Your business'}</div>
           <div className="text-[11px] text-ink-faint flex items-center gap-1">May 5 at 9:00 AM · <Icon name="globe" size={9} /> <span>Public</span></div>
         </div>
         <div className="text-ink-faint"><Icon name="moreh" size={16} /></div>
@@ -1367,17 +1383,20 @@
         </div>
       )}
     </div>
-  );
+    );
+  };
 
-  const IGPreview = ({ draft, imageMode }) => (
+  const IGPreview = ({ draft, imageMode }) => {
+    const { business } = useDashboard();
+    return (
     <div className="bg-white rounded-xl border border-surface-edge shadow-card overflow-hidden max-w-[320px] mx-auto">
       <div className="p-2.5 flex items-center gap-2 border-b border-surface-edge">
         <div className="w-8 h-8 rounded-full p-[2px] bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600">
-          <div className="w-full h-full rounded-full bg-brand-700 text-white flex items-center justify-center font-serif font-bold text-xs">W</div>
+          <div className="w-full h-full rounded-full bg-brand-700 text-white flex items-center justify-center font-serif font-bold text-xs">{(business?.name || '?')[0].toUpperCase()}</div>
         </div>
         <div className="flex-1 min-w-0">
-          <div className="font-semibold text-[12px] text-ink leading-none">westbrookauto</div>
-          <div className="text-[10px] text-ink-faint mt-0.5">Westbrook, MN</div>
+          <div className="font-semibold text-[12px] text-ink leading-none">{deriveHandle(business)}</div>
+          <div className="text-[10px] text-ink-faint mt-0.5">{business?.location || ''}</div>
         </div>
         <div className="text-ink-soft"><Icon name="moreh" size={16} /></div>
       </div>
@@ -1400,13 +1419,14 @@
         </div>
         <div className="text-[12px] font-semibold text-ink mb-1">412 likes</div>
         <p className="text-[12px] leading-snug text-ink whitespace-pre-line">
-          <span className="font-semibold">westbrookauto</span>{' '}{draft.caption}
+          <span className="font-semibold">{deriveHandle(business)}</span>{' '}{draft.caption}
         </p>
         <p className="text-[12px] text-blue-700 mt-1 break-words">{draft.hashtags}</p>
         <div className="text-[10px] text-ink-faint uppercase tracking-wider mt-2">Posts today · 9:00 am</div>
       </div>
     </div>
-  );
+    );
+  };
 
   const GBPPreview = ({ draft, imageMode }) => {
     const { business, reviews } = useDashboard();
@@ -1445,11 +1465,13 @@
     );
   };
 
-  const WebPreview = ({ draft, imageMode }) => (
+  const WebPreview = ({ draft, imageMode }) => {
+    const { business } = useDashboard();
+    return (
     <div className="bg-white rounded-lg border border-surface-edge shadow-card overflow-hidden">
       <div className="px-4 py-2 border-b border-surface-edge bg-surface text-[10px] text-ink-faint flex items-center gap-2">
         <Icon name="globe" size={11} />
-        <span className="truncate">westbrookautomn.com{draft.slug}</span>
+        <span className="truncate">{deriveDomain(business)}{draft.slug}</span>
       </div>
       {imageMode !== 'none' && (
         <div className="aspect-[16/9] bg-gradient-to-br from-amber-100 via-cyan-100 to-blue-100 flex items-center justify-center text-ink-faint relative">
@@ -1460,12 +1482,12 @@
         </div>
       )}
       <div className="p-5">
-        <div className="text-[10px] uppercase tracking-wider font-semibold text-brand-600 mb-2">Westbrook Auto &amp; Tire · Blog</div>
+        <div className="text-[10px] uppercase tracking-wider font-semibold text-brand-600 mb-2">{business?.name || 'Your business'} · Blog</div>
         <h1 className="font-serif text-xl font-bold text-ink leading-tight mb-2">{draft.title}</h1>
         <div className="text-[14px] text-ink-soft italic mb-3 leading-snug">{draft.subtitle}</div>
         <div className="flex items-center gap-2 text-[11px] text-ink-faint mb-4 pb-4 border-b border-surface-edge">
-          <div className="w-6 h-6 rounded-full bg-accent text-brand-800 font-semibold text-[10px] flex items-center justify-center">DH</div>
-          <span>By Dale Henderson</span>
+          <div className="w-6 h-6 rounded-full bg-accent text-brand-800 font-semibold text-[10px] flex items-center justify-center">{business?.ownerInitials || '·'}</div>
+          <span>By {business?.owner || 'the owner'}</span>
           <span>·</span>
           <span>May 5, 2026</span>
           <span>·</span>
@@ -1478,7 +1500,8 @@
         </div>
       </div>
     </div>
-  );
+    );
+  };
 
   /* ============================================================
      VIEW: HOME / OVERVIEW
@@ -1680,266 +1703,6 @@
         )}
         <PostEditModal post={editing} onClose={() => setEditing(null)} />
       </div>
-    );
-  };
-
-  const CreatePostsTab = () => {
-    const [topic, setTopic] = useState('Memorial Day pre-trip safety check');
-    const [notes, setNotes] = useState('Lake-bound traffic peaks Friday afternoon. Lean into the safety angle, not a discount. Mention the $59 inspection.');
-    const [chosen, setChosen] = useState(['fb', 'ig', 'gbp']);
-    const [imageMode, setImageMode] = useState('owner');
-    const [timing, setTiming] = useState('best');
-    const togglePlatform = (p) => setChosen(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]);
-
-    const drafts = [
-      { platform: 'fb',
-        headline: 'Pre-trip safety check — Memorial Day',
-        text: 'Headed to the lake this Memorial Day weekend? $59 pre-trip safety check covers oil, tire pressure, brakes, and fluid top-off. We\'d rather you find a problem in our bay than 80 miles down the road. Friday and Saturday slots open. (507) 555-0143.',
-        imageKind: 'owner-photo',
-        reasoning: 'Lake-bound framing pulled from prior Memorial Day chatbot queries (89% asked about lake routes). Phone before price — your conversion data favors that order on Facebook.' },
-      { platform: 'ig',
-        headline: 'Pre-trip safety reel',
-        text: 'Lake weekend ahead? 60-second walk-through of the $59 pre-trip safety check 🛠️ Mike runs the bay; Dale signs off; you drive. Link in bio or call (507) 555-0143. #WestbrookMN #LakeReady #HonestMechanic',
-        imageKind: 'owner-reel',
-        reasoning: 'Reel format with Mike narrating — your 2.3× engagement-multiplier format. Hashtags pulled from your top three local-discovery posts.' },
-      { platform: 'gbp',
-        headline: '$59 Memorial Day pre-trip',
-        text: '$59 Memorial Day pre-trip safety check. Oil, tires, brakes, fluids. Open Tue–Sat (closed Memorial Day Monday). Call (507) 555-0143.',
-        imageKind: 'none',
-        reasoning: 'GBP-friendly: short, phone-forward, holiday hours embedded. Designed for the search-result preview format, under 250 characters.' }
-    ];
-    const visible = drafts.filter(d => chosen.includes(d.platform));
-    const imageLabel = (kind) => kind === 'owner-photo' ? 'Your photo'
-      : kind === 'owner-reel' ? 'Your reel' : kind === 'ai' ? 'AI-generated' : kind === 'none' ? 'No image' : 'Image';
-
-    return (
-      <div className="grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-5">
-        {/* LEFT: brief form */}
-        <Card>
-          <SectionHeader title="Brief the agent"
-            subtitle="Tell it what you want. It drafts platform-tuned variations."
-            right={<Pill color="violet" icon="sparkles">AI</Pill>} />
-          <div className="space-y-5">
-            <div>
-              <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">What's it about?</label>
-              <input value={topic} onChange={e => setTopic(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-surface-edge text-[15px] focus:outline-none focus:border-brand-500" />
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">Anything else? <span className="font-normal normal-case">(optional)</span></label>
-              <textarea value={notes} onChange={e => setNotes(e.target.value)} rows="3"
-                className="w-full px-3 py-2 rounded-lg border border-surface-edge text-[15px] focus:outline-none focus:border-brand-500 resize-none" />
-              <div className="text-[11px] text-ink-faint mt-1.5 flex items-center gap-1.5">
-                <Icon name="sparkles" size={11} className="text-brand-500" />
-                Agent already knows your audience, voice, and prior posts.
-              </div>
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">Platforms</label>
-              <div className="grid grid-cols-3 gap-2">
-                {['fb', 'ig', 'gbp'].map(p => {
-                  const plat = PLATFORMS[p];
-                  const on = chosen.includes(p);
-                  return (
-                    <button key={p} onClick={() => togglePlatform(p)}
-                      className={`flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 text-xs font-medium transition-all ${
-                        on ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-surface-edge text-ink-soft hover:border-ink-faint/40'
-                      }`}>
-                      <Icon name={plat.icon} size={14} />
-                      {plat.label.split(' ')[0]}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">Image</label>
-              <div className="space-y-1.5">
-                {[
-                  { id: 'owner', label: 'Use a photo from your library', sub: '14 saved' },
-                  { id: 'ai',    label: 'Generate one with AI',           sub: 'You approve before posting' },
-                  { id: 'none',  label: 'No image (text-only post)',      sub: '' }
-                ].map(opt => (
-                  <button key={opt.id} onClick={() => setImageMode(opt.id)}
-                    className={`w-full text-left p-2.5 rounded-lg border-2 transition-all flex items-start gap-3 ${
-                      imageMode === opt.id ? 'border-brand-500 bg-brand-50' : 'border-surface-edge hover:border-ink-faint/40'
-                    }`}>
-                    <div className={`w-4 h-4 rounded-full border-2 mt-0.5 shrink-0 ${
-                      imageMode === opt.id ? 'border-brand-500 bg-white' : 'border-surface-edge'
-                    }`}>
-                      {imageMode === opt.id && <div className="w-2 h-2 rounded-full bg-brand-500 m-0.5"></div>}
-                    </div>
-                    <div className="flex-1 text-sm">
-                      <div className="font-medium text-ink">{opt.label}</div>
-                      {opt.sub && <div className="text-xs text-ink-faint">{opt.sub}</div>}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">When to post</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => setTiming('best')}
-                  className={`p-3 rounded-lg border-2 text-left transition-all ${
-                    timing === 'best' ? 'border-brand-500 bg-brand-50' : 'border-surface-edge hover:border-ink-faint/40'
-                  }`}>
-                  <div className="font-medium text-sm text-ink">Best time</div>
-                  <div className="text-xs text-ink-faint mt-0.5">Agent picks based on your data</div>
-                </button>
-                <button onClick={() => setTiming('pick')}
-                  className={`p-3 rounded-lg border-2 text-left transition-all ${
-                    timing === 'pick' ? 'border-brand-500 bg-brand-50' : 'border-surface-edge hover:border-ink-faint/40'
-                  }`}>
-                  <div className="font-medium text-sm text-ink">Pick a date</div>
-                  <div className="text-xs text-ink-faint mt-0.5">You choose the slot</div>
-                </button>
-              </div>
-            </div>
-            <div className="pt-2 flex items-center gap-2">
-              <Button icon="refresh" variant="primary" className="flex-1">Re-draft</Button>
-              <Button variant="ghost" icon="upload">Save brief</Button>
-            </div>
-          </div>
-        </Card>
-
-        {/* RIGHT: drafts panel */}
-        <div className="space-y-4">
-          <Card padded={false}>
-            <div className="px-6 py-4 border-b border-surface-edge flex items-center justify-between">
-              <div className="min-w-0">
-                <h3 className="font-semibold text-ink">Drafts</h3>
-                <div className="text-xs text-ink-faint mt-0.5 truncate">For: "{topic}"</div>
-              </div>
-              <Pill color="emerald" icon="sparkles">{visible.length} variations</Pill>
-            </div>
-            <div className="p-5 space-y-4">
-              {visible.length === 0 ? (
-                <div className="text-center py-10 text-sm text-ink-faint">Pick at least one platform to see drafts.</div>
-              ) : visible.map((d, i) => (
-                <div key={d.platform} className="bg-surface border border-surface-edge rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <PlatformChip platform={d.platform} />
-                      <span className="text-xs text-ink-faint">Variation {i + 1} of {visible.length}</span>
-                    </div>
-                    <Pill color={d.imageKind === 'none' ? 'slate' : d.imageKind === 'ai' ? 'violet' : 'teal'} icon="image">
-                      {imageLabel(d.imageKind)}
-                    </Pill>
-                  </div>
-                  <div className="font-semibold text-ink mb-2">{d.headline}</div>
-                  <p className="text-sm text-ink leading-relaxed bg-white rounded-lg p-3 border border-surface-edge whitespace-pre-line">{d.text}</p>
-                  <div className="mt-3 flex items-start gap-2 text-xs text-ink-soft italic">
-                    <Icon name="sparkles" size={12} className="text-brand-500 mt-0.5 shrink-0" />
-                    <span>{d.reasoning}</span>
-                  </div>
-                  <div className="mt-3 flex items-center gap-2">
-                    <Button icon="check" variant="ok" size="sm" className="flex-1">Send to approval queue</Button>
-                    <Button icon="edit" variant="secondary" size="sm">Edit</Button>
-                    <Button icon="refresh" variant="ghost" size="sm">Try another</Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-          <Card>
-            <div className="flex items-start gap-3">
-              <div className="shrink-0 w-9 h-9 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center"><Icon name="sparkles" size={18} /></div>
-              <p className="text-sm text-ink-soft flex-1">
-                <span className="font-semibold text-ink">Tip:</span> Be specific. <span className="text-ink">"Memorial Day weekend, lean into safety not discount"</span> outperforms <span className="italic">"Memorial Day post"</span> by 41% in reach for your audience.
-              </p>
-            </div>
-          </Card>
-        </div>
-      </div>
-    );
-  };
-
-  const DraftsTab = () => {
-    const { posts } = useDashboard();
-    const [editing, setEditing] = useState(null);
-    const draftPosts = posts.filter(p => p.status === 'draft');
-    return (
-      <div className="space-y-3 max-w-4xl">
-        <Card>
-          <div className="flex items-start gap-3">
-            <div className="shrink-0 w-9 h-9 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center"><Icon name="edit" size={18} /></div>
-            <div className="flex-1">
-              <div className="font-semibold text-ink">{draftPosts.length} draft{draftPosts.length === 1 ? '' : 's'} not yet sent for approval</div>
-              <div className="text-sm text-ink-soft">Drafts stay here until you approve them or send them into the queue. Nothing posts publicly from this list.</div>
-            </div>
-          </div>
-        </Card>
-        {draftPosts.map(p => (
-          <Card key={p.id}>
-            <div className="flex items-start gap-4">
-              <div className="shrink-0 w-12 h-12 rounded-lg bg-surface flex items-center justify-center text-ink-faint border border-surface-edge">
-                <Icon name="image" size={20} strokeWidth={1.5} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <PlatformChip platform={p.platform} />
-                  <StatusChip status={p.status} />
-                  <span className="text-xs text-ink-faint">For {p.date}</span>
-                </div>
-                <div className="font-semibold text-ink">{p.title}</div>
-                <p className="text-sm text-ink-soft mt-1 line-clamp-2">{p.draft}</p>
-              </div>
-              <div className="shrink-0 flex flex-col gap-1.5">
-                <Button icon="check" variant="ok" size="sm">Send to queue</Button>
-                <Button icon="edit" variant="secondary" size="sm" onClick={() => setEditing(p)}>Edit</Button>
-              </div>
-            </div>
-          </Card>
-        ))}
-        <PostEditModal post={editing} onClose={() => setEditing(null)} />
-      </div>
-    );
-  };
-
-  const PostDetail = ({ post, onEdit }) => {
-    const plat = PLATFORMS[post.platform];
-    const canEdit = post.status !== 'published';
-    return (
-      <Card className="slide-in-right" padded={false}>
-        <div className="px-6 py-4 border-b border-surface-edge flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <PlatformChip platform={post.platform} />
-            <StatusChip status={post.status} />
-          </div>
-          <span className="text-xs text-ink-faint">{post.date}</span>
-        </div>
-        <div className="px-6 py-5 space-y-4">
-          <div>
-            <div className="text-xs uppercase tracking-wider text-ink-faint font-medium mb-1.5">Headline</div>
-            <h3 className="font-semibold text-ink leading-tight">{post.title}</h3>
-          </div>
-          <div>
-            <div className="text-xs uppercase tracking-wider text-ink-faint font-medium mb-1.5">Draft</div>
-            <p className="text-sm text-ink leading-relaxed bg-surface rounded-lg p-3 border border-surface-edge whitespace-pre-line">{post.draft}</p>
-          </div>
-          {post.reasoning && (
-            <div>
-              <div className="text-xs uppercase tracking-wider text-ink-faint font-medium mb-1.5 inline-flex items-center gap-1.5">
-                <Icon name="sparkles" size={12} className="text-brand-500" /> Agent's reasoning
-              </div>
-              <p className="text-sm text-ink-soft leading-relaxed italic border-l-2 border-brand-500 pl-3">
-                {post.reasoning}
-              </p>
-            </div>
-          )}
-          {canEdit && (
-            <div className="flex items-center gap-2 pt-2">
-              <Button icon="edit" variant="secondary" className="flex-1" onClick={onEdit}>Edit draft</Button>
-            </div>
-          )}
-          {!canEdit && (
-            <div className="flex items-center gap-2 text-sm text-ink-faint pt-2">
-              <Icon name="check" size={14} className="text-ok" /> Published — edits are locked. (Owner amendments will come in a later phase.)
-            </div>
-          )}
-        </div>
-      </Card>
     );
   };
 
@@ -2303,7 +2066,12 @@
                 {item.original && (
                   <div className="bg-red-50 border border-red-100 rounded-lg p-3">
                     <div className="text-xs uppercase tracking-wider text-bad font-semibold mb-1 flex items-center gap-1">
-                      <Icon name="alert" size={11} strokeWidth={2.4} /> Karen B. left this 2★ review 4 days ago
+                      <Icon name="alert" size={11} strokeWidth={2.4} />
+                      {[
+                        item.author || 'A customer',
+                        item.stars ? `left this ${item.stars}★ review` : 'left this review',
+                        item.when || 'recently',
+                      ].join(' ')}
                     </div>
                     <p className="text-sm text-ink italic">"{item.original}"</p>
                   </div>
@@ -3186,37 +2954,45 @@
             </Card>
           )}
 
-          {/* Goal hero — always visible */}
-          <Card className="bg-gradient-to-br from-brand-50 via-white to-white border-brand-100">
-            <div className="flex items-start gap-4">
-              <div className="shrink-0 w-12 h-12 rounded-xl bg-brand-500 text-white flex items-center justify-center">
-                <Icon name="target" size={22} strokeWidth={2} />
-              </div>
-              <div className="flex-1">
-                <div className="text-[11px] uppercase tracking-wider font-semibold text-brand-600 mb-1.5">Your goal at signing</div>
-                <h3 className="font-serif text-xl font-semibold text-ink leading-snug mb-2">
-                  "Ten new customers a month from social and the chatbot, by end of Q3."
-                </h3>
-                <p className="text-sm text-ink-soft mb-4">
-                  Set with John Draper on March 19. We track new-customer reviews and chatbot-to-call conversions as the proxy.
-                </p>
-                <div className="grid grid-cols-3 gap-4 pt-3 border-t border-brand-100">
-                  <div>
-                    <div className="text-[11px] text-ink-faint uppercase tracking-wider">Pace last 30 days</div>
-                    <div className="mt-0.5 text-xl font-semibold text-ink">7<span className="text-sm font-normal text-ink-soft"> / 10 per mo</span></div>
+          {/* Goal hero — wired to marketingPlan.q3Goals (first goal is the
+              headline metric; remaining goals + tenure render in the bottom
+              row). Quadd seed: Free-trial signups / Paying publishers / Avg ROI. */}
+          {(() => {
+            const goals = marketingPlan?.q3Goals || [];
+            const primary = goals[0];
+            const secondary = goals.slice(1, 3);
+            if (!primary) return null;
+            return (
+              <Card className="bg-gradient-to-br from-brand-50 via-white to-white border-brand-100">
+                <div className="flex items-start gap-4">
+                  <div className="shrink-0 w-12 h-12 rounded-xl bg-brand-500 text-white flex items-center justify-center">
+                    <Icon name="target" size={22} strokeWidth={2} />
                   </div>
-                  <div>
-                    <div className="text-[11px] text-ink-faint uppercase tracking-wider">Days into year 1</div>
-                    <div className="mt-0.5 text-xl font-semibold text-ink">{business.joinedDaysAgo}<span className="text-sm font-normal text-ink-soft"> / 365</span></div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] text-ink-faint uppercase tracking-wider">Days remaining in Q3</div>
-                    <div className="mt-0.5 text-xl font-semibold text-ink">87<span className="text-sm font-normal text-ink-soft"> days</span></div>
+                  <div className="flex-1">
+                    <div className="text-[11px] uppercase tracking-wider font-semibold text-brand-600 mb-1.5">Your Q3 goals</div>
+                    <h3 className="font-serif text-xl font-semibold text-ink leading-snug mb-2">
+                      {primary.current}<span className="text-ink-soft"> / {primary.target}</span> <span className="text-ink-soft font-normal text-base">{primary.unit || ''}</span>
+                    </h3>
+                    <p className="text-sm text-ink-soft mb-4">
+                      <span className="font-medium text-ink">{primary.label}</span> — your headline metric. The agent tracks this through performance insights and the AI Agent's chat data.
+                    </p>
+                    <div className="grid grid-cols-3 gap-4 pt-3 border-t border-brand-100">
+                      {secondary.map((g, i) => (
+                        <div key={i}>
+                          <div className="text-[11px] text-ink-faint uppercase tracking-wider">{g.label}</div>
+                          <div className="mt-0.5 text-xl font-semibold text-ink">{g.current}<span className="text-sm font-normal text-ink-soft"> / {g.target} {g.unit || ''}</span></div>
+                        </div>
+                      ))}
+                      <div>
+                        <div className="text-[11px] text-ink-faint uppercase tracking-wider">Days since signup</div>
+                        <div className="mt-0.5 text-xl font-semibold text-ink">{business.joinedDaysAgo}<span className="text-sm font-normal text-ink-soft"> / 365</span></div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          </Card>
+              </Card>
+            );
+          })()}
 
           {tab === 'strategy' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 fade-in">
@@ -3962,24 +3738,33 @@
                   <SectionHeader title="Your publisher partner"
                     subtitle="The local trust layer between you and the Popular Network." />
                   <div className="flex items-center gap-4">
-                    <div className="shrink-0 w-14 h-14 rounded-xl bg-brand-50 text-brand-700 flex items-center justify-center font-serif font-bold text-lg border border-brand-100">PCS</div>
+                    <div className="shrink-0 w-14 h-14 rounded-xl bg-brand-50 text-brand-700 flex items-center justify-center font-serif font-bold text-lg border border-brand-100">
+                      {(business.publisher || '').split(' ').filter(Boolean).slice(0, 3).map(w => w[0]).join('').toUpperCase() || '·'}
+                    </div>
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-ink">{business.publisher}</div>
-                      <div className="text-xs text-ink-soft mt-0.5">John Draper, your rep</div>
-                      <div className="text-xs text-ink-faint mt-0.5">Last spoke Apr 28</div>
+                      {business.techName ? (
+                        <>
+                          <div className="text-xs text-ink-soft mt-0.5">{business.techName}, your rep</div>
+                          <div className="text-xs text-ink-faint mt-0.5">Direct line for anything off-platform.</div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-xs text-ink-soft mt-0.5">Rep assignment pending</div>
+                          <div className="text-xs text-ink-faint mt-0.5">A human partner will be assigned in your first 14 days.</div>
+                        </>
+                      )}
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 mt-4">
-                    <Button variant="secondary" size="sm" icon="phone">Call John</Button>
-                    <Button variant="ghost" size="sm" icon="msg">Message</Button>
-                  </div>
+                  {business.techName && (
+                    <div className="grid grid-cols-2 gap-2 mt-4">
+                      <Button variant="secondary" size="sm" icon="phone">Call {business.techName.split(' ')[0]}</Button>
+                      <Button variant="ghost" size="sm" icon="msg">Message</Button>
+                    </div>
+                  )}
                   <p className="text-xs text-ink-soft mt-4 leading-relaxed pt-3 border-t border-surface-edge">
-                    John is your direct human line for anything you'd rather not handle online. Tier 2 includes monthly check-ins; Tier 3 adds a quarterly business review.
+                    Your publisher partner is your direct human line for anything you'd rather not handle online. Tier 2 includes monthly check-ins; Tier 3 adds a quarterly business review.
                   </p>
-                  <div className="mt-3 pt-3 border-t border-surface-edge flex items-center justify-between text-xs">
-                    <span className="text-ink-faint">Next check-in</span>
-                    <span className="font-medium text-ink">May 12 (in 7 days)</span>
-                  </div>
                 </Card>
               </div>
 
@@ -3996,13 +3781,13 @@
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                   {[
                     { icon: 'msg',   title: 'Dedicated business chatbot',
-                      body: 'When customers pick Westbrook Auto in the Grand Network, they enter a focused conversation about your services, hours, and scheduling.' },
+                      body: `When customers ask about ${business.name} in the Popular Network, they enter a focused conversation about your services, pricing, and how to get started.` },
                     { icon: 'phone', title: 'Owner SMS escalation',
                       body: 'When the chatbot needs a human, it texts you and hands the conversation off cleanly.' },
                     { icon: 'eye',   title: 'Competitive intelligence',
-                      body: 'Monthly report on what other auto shops in the territory are posting and promoting.' },
+                      body: 'Monthly report on what others in your category are posting and promoting.' },
                     { icon: 'user',  title: 'Quarterly business review',
-                      body: 'A 60-minute review with John from Pipestone every quarter. We bring the data; you bring the questions.' }
+                      body: `A 60-minute review with your ${business.publisher} partner every quarter. We bring the data; you bring the questions.` }
                   ].map((c, i) => (
                     <div key={i} className="bg-surface border border-surface-edge rounded-lg p-4">
                       <div className="w-9 h-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center mb-3">
