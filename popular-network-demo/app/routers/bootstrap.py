@@ -2,12 +2,15 @@
 
 Shape matches the constants formerly hardcoded in dashboard.html (business,
 stats, attention, weekRecap, posts, approvals, performance, reviews,
-marketingPlan, chat, settings). When dashboard.html switches to fetch this
-endpoint, the visual output should be byte-identical (modulo JSON ordering).
+marketingPlan, chat, settings, voiceBrief). When dashboard.html switches to
+fetch this endpoint, the visual output should be byte-identical (modulo JSON
+ordering).
 """
 from __future__ import annotations
 
-from typing import Any
+import json
+from pathlib import Path
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -28,6 +31,30 @@ from ..models import (
 )
 
 router = APIRouter()
+
+# Where synthesized voice briefs live, keyed by business slug.
+# (Mirrors app/agent/system_prompt._VOICE_BRIEF_DIR — kept independent so a
+# refactor of one doesn't accidentally break the other.)
+_VOICE_BRIEF_DIR = Path(__file__).resolve().parent.parent.parent / "voice-briefs"
+
+
+def _load_voice_brief(slug: str | None) -> Optional[dict[str, Any]]:
+    """Return the parsed voice-brief dict for this business slug, or None.
+
+    The brief is the artifact of the W2.1 PMC pipeline (or local fallback via
+    scripts/synthesize_voice_brief.py). Dashboard surfaces it in the AI Agent
+    side rail ('What the agent knows') and could later show it in Marketing
+    Plan as a structured panel.
+    """
+    if not slug:
+        return None
+    path = _VOICE_BRIEF_DIR / f"{slug}.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
 
 
 def _business_payload(biz: Business) -> dict[str, Any]:
@@ -241,5 +268,10 @@ def get_bootstrap(business_id: int = 1, db: Session = Depends(get_db)) -> dict[s
                 for c in connections
             ],
         },
+        # Voice brief: synthesized artifact from the owner's interview. The
+        # AI Agent already injects it into its system prompt; this surface
+        # makes it visible to the dashboard's UI (e.g. "What the agent knows"
+        # panel). None when no brief exists for this business yet.
+        "voiceBrief": _load_voice_brief(biz.slug),
     }
     return payload

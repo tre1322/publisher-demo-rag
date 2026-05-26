@@ -126,7 +126,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-26 · v26 — Quadd.ai Day-1 seed + voice brief driving AI Agent';
+  const BUILD_VERSION = '2026-05-26 · v27 — Voice brief surfaced in "What the agent knows" panel + Settings stale-Westbrook cleanup';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -1408,36 +1408,42 @@
     </div>
   );
 
-  const GBPPreview = ({ draft, imageMode }) => (
-    <div className="bg-white rounded-lg border border-surface-edge shadow-card overflow-hidden">
-      <div className="p-3 flex items-center gap-2.5 border-b border-surface-edge">
-        <div className="w-9 h-9 rounded-full bg-white border border-surface-edge flex items-center justify-center"><Icon name="google" size={16} /></div>
-        <div className="flex-1 min-w-0">
-          <div className="text-[11px] text-ink-faint">Posted by</div>
-          <div className="font-semibold text-[13px] text-ink leading-tight">Westbrook Auto &amp; Tire</div>
-        </div>
-        <div className="text-[10px] text-ink-faint">2h ago</div>
-      </div>
-      <div className="p-3 flex gap-3">
-        {imageMode !== 'none' && (
-          <div className="shrink-0 w-20 h-20 rounded-lg bg-gradient-to-br from-emerald-100 to-cyan-100 flex items-center justify-center text-ink-faint">
-            <Icon name="image" size={22} strokeWidth={1.3} />
+  const GBPPreview = ({ draft, imageMode }) => {
+    const { business, reviews } = useDashboard();
+    const ratingLabel = reviews && reviews.total > 0
+      ? `${reviews.aggregate} ★ · ${reviews.total} reviews`
+      : 'New listing';
+    return (
+      <div className="bg-white rounded-lg border border-surface-edge shadow-card overflow-hidden">
+        <div className="p-3 flex items-center gap-2.5 border-b border-surface-edge">
+          <div className="w-9 h-9 rounded-full bg-white border border-surface-edge flex items-center justify-center"><Icon name="google" size={16} /></div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[11px] text-ink-faint">Posted by</div>
+            <div className="font-semibold text-[13px] text-ink leading-tight">{business?.name || 'Your business'}</div>
           </div>
-        )}
-        <div className="flex-1 min-w-0">
-          <div className="font-semibold text-[14px] text-ink leading-tight mb-1">{draft.headline}</div>
-          <p className="text-[12px] text-ink-soft leading-snug">{draft.text}</p>
+          <div className="text-[10px] text-ink-faint">2h ago</div>
+        </div>
+        <div className="p-3 flex gap-3">
+          {imageMode !== 'none' && (
+            <div className="shrink-0 w-20 h-20 rounded-lg bg-gradient-to-br from-emerald-100 to-cyan-100 flex items-center justify-center text-ink-faint">
+              <Icon name="image" size={22} strokeWidth={1.3} />
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-[14px] text-ink leading-tight mb-1">{draft.headline}</div>
+            <p className="text-[12px] text-ink-soft leading-snug">{draft.text}</p>
+          </div>
+        </div>
+        <div className="p-3 pt-0">
+          <button className="w-full bg-white border border-[#1A73E8] text-[#1A73E8] text-[13px] font-semibold py-2 rounded-full hover:bg-blue-50 transition-all">{draft.cta}</button>
+        </div>
+        <div className="px-3 py-2 border-t border-surface-edge text-[11px] text-ink-faint flex items-center justify-between">
+          <span>{ratingLabel}</span>
+          <span className="inline-flex items-center gap-1"><Icon name="phone" size={11} /> {business?.phone || ''}</span>
         </div>
       </div>
-      <div className="p-3 pt-0">
-        <button className="w-full bg-white border border-[#1A73E8] text-[#1A73E8] text-[13px] font-semibold py-2 rounded-full hover:bg-blue-50 transition-all">{draft.cta}</button>
-      </div>
-      <div className="px-3 py-2 border-t border-surface-edge text-[11px] text-ink-faint flex items-center justify-between">
-        <span>4.8 ★ · 162 reviews</span>
-        <span className="inline-flex items-center gap-1"><Icon name="phone" size={11} /> (507) 555-0143</span>
-      </div>
-    </div>
-  );
+    );
+  };
 
   const WebPreview = ({ draft, imageMode }) => (
     <div className="bg-white rounded-lg border border-surface-edge shadow-card overflow-hidden">
@@ -3222,7 +3228,7 @@
      VIEW: AI AGENT CHAT
      ============================================================ */
   const ChatView = () => {
-    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings } = useDashboard();
+    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings, voiceBrief } = useDashboard();
     const mutate = useDashboardMutate();
     const [input, setInput] = useState('');
     const [sending, setSending] = useState(false);
@@ -3378,14 +3384,50 @@
           {/* Side rail: context */}
           <div className="space-y-4">
             <Card>
-              <SectionHeader title="What the agent knows" subtitle="" />
-              <ul className="text-sm space-y-2 text-ink-soft">
-                <li className="flex items-start gap-2"><Icon name="check" size={13} className="text-ok mt-0.5 shrink-0" />Your March 21 voice interview transcript</li>
-                <li className="flex items-start gap-2"><Icon name="check" size={13} className="text-ok mt-0.5 shrink-0" />47 days of your post performance and ad data</li>
-                <li className="flex items-start gap-2"><Icon name="check" size={13} className="text-ok mt-0.5 shrink-0" />162 reviews across Google & Facebook</li>
-                <li className="flex items-start gap-2"><Icon name="check" size={13} className="text-ok mt-0.5 shrink-0" />Westbrook seasonal patterns (lake traffic, school calendar)</li>
-                <li className="flex items-start gap-2"><Icon name="check" size={13} className="text-ok mt-0.5 shrink-0" />Pricing & service list from your March voice notes</li>
-              </ul>
+              <SectionHeader title="What the agent knows" subtitle={voiceBrief ? "Live from your voice brief" : "Pre-interview"} />
+              {voiceBrief ? (
+                <div className="space-y-3 text-sm">
+                  {voiceBrief.voice && (
+                    <div className="text-ink-soft leading-relaxed italic">
+                      "{voiceBrief.voice}"
+                    </div>
+                  )}
+                  <ul className="space-y-2 text-ink-soft pt-2 border-t border-surface-edge">
+                    <li className="flex items-start gap-2">
+                      <Icon name="check" size={13} className="text-ok mt-0.5 shrink-0" />
+                      <span><strong className="text-ink">{(voiceBrief.amplify || []).length}</strong> things to play up <span className="text-ink-faint">(AMPLIFY)</span></span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <Icon name="check" size={13} className="text-ok mt-0.5 shrink-0" />
+                      <span><strong className="text-ink">{(voiceBrief.maintain || []).length}</strong> at status quo <span className="text-ink-faint">(MAINTAIN)</span></span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <Icon name="check" size={13} className="text-ok mt-0.5 shrink-0" />
+                      <span><strong className="text-ink">{(voiceBrief.mute || []).length}</strong> things to play down <span className="text-ink-faint">(MUTE)</span></span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <Icon name="check" size={13} className="text-ok mt-0.5 shrink-0" />
+                      <span><strong className="text-ink">{(voiceBrief.customer_language || []).length}</strong> customer phrases captured</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <Icon name="check" size={13} className="text-ok mt-0.5 shrink-0" />
+                      <span><strong className="text-ink">{(voiceBrief.proof_points || []).length}</strong> proof points ready</span>
+                    </li>
+                  </ul>
+                  {(voiceBrief.amplify || []).length > 0 && (
+                    <div className="pt-3 border-t border-surface-edge">
+                      <div className="text-[11px] uppercase tracking-wider font-semibold text-ink-faint mb-1.5">Top AMPLIFY</div>
+                      <div className="text-xs text-ink-soft leading-relaxed">
+                        <strong className="text-ink">{voiceBrief.amplify[0].label}:</strong> {voiceBrief.amplify[0].detail}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <ul className="text-sm space-y-2 text-ink-soft">
+                  <li className="flex items-start gap-2"><Icon name="alert" size={13} className="text-ink-faint mt-0.5 shrink-0" />No voice brief yet — complete your interview to capture your voice.</li>
+                </ul>
+              )}
             </Card>
             <Card>
               <SectionHeader title="Suggestions" subtitle="What you might ask next" />
@@ -3531,23 +3573,23 @@
                   <SectionHeader title="Your plan" />
                   <div className="bg-gradient-to-br from-brand-700 to-brand-900 text-white rounded-lg p-5">
                     <div className="text-xs text-white/70 uppercase tracking-wider font-medium">Current plan</div>
-                    <div className="font-serif text-2xl font-semibold mt-1">Tier 2</div>
-                    <div className="text-sm mt-0.5">Marketing Agent — ${business.monthlyPrice}/month</div>
+                    <div className="font-serif text-2xl font-semibold mt-1">Tier {business.tier}</div>
+                    <div className="text-sm mt-0.5">{(business.tierLabel || '').replace(/^Tier \d+ . /, '')} — ${business.monthlyPrice}/month</div>
                     <div className="text-xs text-white/70 mt-3">Joined {business.joinedDate} · annual contract</div>
                   </div>
                   <div className="mt-4 pt-4 border-t border-surface-edge text-sm space-y-2">
-                    <div className="flex items-center justify-between"><span className="text-ink-soft">Setup fee status</span><span className="font-medium text-ink">$299 · credits back day 90</span></div>
-                    <div className="flex items-center justify-between"><span className="text-ink-soft">Renews</span><span className="font-medium text-ink">March 19, 2027</span></div>
+                    <div className="flex items-center justify-between"><span className="text-ink-soft">Setup fee</span><span className="font-medium text-ink">{business.tier >= 3 ? '$0 (concierge tier)' : '$299 · credits back day 90'}</span></div>
+                    <div className="flex items-center justify-between"><span className="text-ink-soft">Renews</span><span className="font-medium text-ink">{business.joinedDaysAgo === 0 ? '1 year from today' : 'annual cycle'}</span></div>
                     <div className="flex items-center justify-between"><span className="text-ink-soft">Publisher</span><span className="font-medium text-ink">{business.publisher}</span></div>
                   </div>
                   <div className="mt-4 pt-4 border-t border-surface-edge">
                     <div className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-3">Onboarding milestones</div>
                     <div className="space-y-3">
-                      <Milestone done label="Voice interview complete" sub="March 21, 2026" />
-                      <Milestone done label="Marketing plan approved" sub="March 24, 2026" />
-                      <Milestone done label="First post live" sub="March 26, 2026" />
-                      <Milestone current label="Day 90 — $299 setup fee credits back"
-                        sub="June 17, 2026 · 43 days from today"
+                      <Milestone done label="Voice interview complete" sub={business.joinedDaysAgo === 0 ? 'Today' : `${business.joinedDate}`} />
+                      <Milestone done label="Voice brief synthesized" sub={business.joinedDaysAgo === 0 ? 'Today' : `${business.joinedDate}`} />
+                      <Milestone {...(business.joinedDaysAgo === 0 ? { current: true } : { done: true })} label="First post published" sub={business.joinedDaysAgo === 0 ? 'in your Approvals queue' : `${business.joinedDate}`} />
+                      <Milestone current label="Day 90 — full pilot milestone"
+                        sub={business.joinedDaysAgo === 0 ? `90 days from today` : `${90 - business.joinedDaysAgo} days from today`}
                         progress={business.joinedDaysAgo / 90}
                         progressLabel={`Day ${business.joinedDaysAgo} of 90`} />
                     </div>

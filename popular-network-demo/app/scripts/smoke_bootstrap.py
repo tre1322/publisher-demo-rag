@@ -115,6 +115,17 @@ def _run_assertions(client) -> None:
         _fail(f"weekRecap days: {len(data['weekRecap'])} (expected >= 5)")
     _ok(f"attention={len(data['attention'])} weekRecap={len(data['weekRecap'])}")
 
+    # voiceBrief: should load for the Quadd seed (file at voice-briefs/quadd_ai.json)
+    vb = data.get("voiceBrief")
+    if vb is None:
+        _fail("voiceBrief is None — expected the synthesized Quadd brief to load")
+    for key in ("voice", "amplify", "maintain", "mute", "customer_language", "proof_points"):
+        if key not in vb:
+            _fail(f"voiceBrief.{key} missing")
+    if not vb["amplify"] or not vb["customer_language"]:
+        _fail(f"voiceBrief amplify/customer_language unexpectedly empty: {vb}")
+    _ok(f"voiceBrief → amplify={len(vb['amplify'])} mute={len(vb['mute'])} customerLanguage={len(vb['customer_language'])}")
+
     sett = data["settings"]
     if "cadence" not in sett or "connections" not in sett:
         _fail("settings missing cadence/connections")
