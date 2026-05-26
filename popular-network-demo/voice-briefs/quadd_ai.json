@@ -1,0 +1,103 @@
+{
+  "voice": "Trevor speaks in a practical, plain-spoken cadence \u2014 short declarative sentences, thinks out loud, comfortable with self-interruption. He has a newspaper publisher's instinct for the concrete over the abstract ('saves five hours a week,' 'two to three hours each week, no question'). Self-deprecating about the tech side ('he technically coded it, I vibe coded it') but confident and a little witty when talking about the product's value.",
+  "amplify": [
+    {
+      "label": "Universal Document Extractor",
+      "detail": "'The universal text extractor is game changing' \u2014 it learns a publication's own template and returns formatted content in minutes, solving the exact problem that started the whole company."
+    },
+    {
+      "label": "Real hours saved, real ROI",
+      "detail": "'This is truly a time saver' \u2014 one writer at Citizen Publishing is saving two to three hours each week, no question, and the broader pitch is five hours a week back to your staff."
+    },
+    {
+      "label": "Built by a publisher, for publishers",
+      "detail": "Trevor is a third-generation newspaper publisher with 28 years in the industry \u2014 he didn't guess at newsroom problems, he lived them."
+    },
+    {
+      "label": "Leading edge of AI in publishing",
+      "detail": "Trevor wants to 'show the world that we are on the leading edge of AI and publishing' \u2014 the product is positioned as a credible, professional AI tool, not a gimmick."
+    },
+    {
+      "label": "Seven-day free trial",
+      "detail": "'We give a seven-day trial for free' \u2014 a low-risk on-ramp for skeptical or budget-conscious publishers to see it work with their own documents."
+    },
+    {
+      "label": "All three tools in one bundle",
+      "detail": "'If you get one, you get all three' \u2014 the interview-to-story pipeline, the AP style proofer, and the universal document extractor are sold as a package, keeping the value story clean."
+    }
+  ],
+  "maintain": [
+    {
+      "label": "AP Style Proofer",
+      "detail": "Solid supporting feature with a clear accept/reject workflow and human-in-the-loop final check \u2014 Trevor is satisfied with it as part of the bundle but doesn't need it to be the headline."
+    },
+    {
+      "label": "Interview-to-Story Pipeline",
+      "detail": "Transcribes, diarizes voices, and builds a chatbot from interviewee quotes \u2014 valued by users but Trevor ranks it third in priority; it holds its place in the package."
+    },
+    {
+      "label": "Three-tier plan structure",
+      "detail": "'We're going to just test what we have right now with the three different levels of plans' \u2014 pricing architecture is set; not looking to restructure it right now."
+    }
+  ],
+  "mute": [
+    {
+      "label": "TikTok or youth slang",
+      "detail": "'I don't like the new kid's lingo, the TikTok lingo, so to speak' \u2014 any casual, trendy, or youth-coded language is off-brand."
+    },
+    {
+      "label": "Big metro / enterprise positioning",
+      "detail": "Large metros likely have dedicated tech teams and enterprise contracts already \u2014 this isn't the target and shouldn't be implied in messaging."
+    },
+    {
+      "label": "AI skepticism or apology",
+      "detail": "Trevor acknowledges AI resistance in journalism but doesn't want to dwell on it \u2014 the message is 'free up enough time in your schedule,' not a defense of AI."
+    },
+    {
+      "label": "Price sensitivity framing",
+      "detail": "'Publishing industries, newspapers especially, are strange' with price points a real objection \u2014 Trevor doesn't want to lead with cost or discounting; ROI is the counter-frame, not cheapness."
+    }
+  ],
+  "audience": "Small to medium weekly newspaper and magazine publishers who are resource-constrained \u2014 'the publisher is the editor and the sales person and everything.' Ranges from a single-paper operation to a group of 21, but the pain point is the same: shrinking staff, budget cuts, and too many hours lost to tasks that aren't journalism.",
+  "value_prop": "'We are the tool that saves hours each week with ROI' \u2014 specifically freeing journalists from re-typing documents, slogging through transcriptions, and manual proofing so they can get back to actual storytelling.",
+  "customer_language": [
+    "'Oh my gosh, I can't believe I've been re-typing all this information'",
+    "'Having to go through an interview for a half hour before I even start writing the story'",
+    "'It's saving them two to three hours each week, no question'",
+    "'Free enough time in your schedule'"
+  ],
+  "proof_points": [
+    {
+      "label": "Citizen Publishing writer testimonial",
+      "detail": "A writer at Citizen Publishing \u2014 described as the heaviest user in that organization \u2014 confirmed saving two to three hours each week, no question."
+    },
+    {
+      "label": "Customer range: 1 paper to 21 papers",
+      "detail": "Trevor has a customer currently using the product that operates 21 newspapers and another that runs just one, demonstrating the tool works across scales."
+    },
+    {
+      "label": "Founder credibility",
+      "detail": "Trevor is a third-generation newspaper publisher with approximately 28 years in the industry \u2014 the product was built to solve a problem he personally couldn't crack with generic AI tools."
+    },
+    {
+      "label": "Origin use case: court document extraction",
+      "detail": "The company started when Trevor tried and failed to use ChatGPT to extract a 38-page court document into newspaper style \u2014 Quadd.ai was built specifically to do what general-purpose AI couldn't."
+    }
+  ],
+  "constraints": [
+    "Customer service and onboarding support is the first thing that would break under rapid growth \u2014 'answering questions, troubleshooting through certain things' would be hard to scale quickly.",
+    "AI skepticism within newsroom leadership is a real adoption barrier \u2014 the publisher or president has to 'okay the use of AI within the newspaper' before any sale can happen.",
+    "Price sensitivity is a genuine objection in the publishing industry \u2014 no discounts currently planned; ROI argument is the primary counter.",
+    "Tools are only sold as a bundle, not individually."
+  ],
+  "seasonal_patterns": [],
+  "notes": "Interview was cut short mid-question on the topic of discounts, bundles, and guarantees \u2014 Trevor had begun to say there are no significant discounts and they are testing three plan tiers, but the conversation ended before any further detail on pricing, competitive differentiation beyond ChatGPT, or channel/advertising preferences was captured. The 'professional but witty' voice direction is important for copy tone \u2014 Trevor explicitly said he's 'a pretty witty person' and wants some humor, but paired with a leading-edge, credible tech positioning. The bundle-only sales model means marketing should always present all three tools together rather than spotlighting one in isolation, even though the Universal Document Extractor is the lead hook.",
+  "_source": {
+    "business_name": "Quadd.ai",
+    "owner": "Trevor Slette",
+    "transcript_path": "C:\\Users\\trevo\\publisher-demo-rag\\popular-network-demo\\data\\voice-brief\\2_2_transcript.txt",
+    "model": "claude-sonnet-4-6",
+    "input_tokens": 3975,
+    "output_tokens": 1714
+  }
+}

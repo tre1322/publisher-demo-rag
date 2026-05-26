@@ -65,14 +65,16 @@ def _run_assertions(client) -> None:
     for k in ("name", "owner", "ownerInitials", "publisher", "tier", "tierLabel"):
         if k not in biz:
             _fail(f"business.{k} missing")
-    if biz["name"] != "Westbrook Auto & Tire":
-        _fail(f"business.name = {biz['name']!r}, expected Westbrook Auto & Tire")
+    if biz["name"] != "Quadd.ai":
+        _fail(f"business.name = {biz['name']!r}, expected Quadd.ai")
     _ok(f"business → {biz['name']} ({biz['tierLabel']})")
 
-    if len(data["posts"]) < 5:
-        _fail(f"posts: {len(data['posts'])} (expected >= 5)")
+    # Quadd Day-1 seed: 3 posts (1 published + 1 draft + 1 pending).
+    if len(data["posts"]) < 3:
+        _fail(f"posts: {len(data['posts'])} (expected >= 3)")
     _ok(f"posts: {len(data['posts'])} rows")
 
+    # Quadd Day-1 seed: 4 approvals (a1/a2/a3 posts + a4 review response).
     if len(data["approvals"]) < 4:
         _fail(f"approvals: {len(data['approvals'])} (expected >= 4)")
     _ok(f"approvals: {len(data['approvals'])} rows")
@@ -81,8 +83,8 @@ def _run_assertions(client) -> None:
     for k in ("aggregate", "total", "sparkline", "sparklineLabels", "pinned", "recent"):
         if k not in revs:
             _fail(f"reviews.{k} missing")
-    if revs["pinned"] is None or revs["pinned"].get("author") != "Karen B.":
-        _fail(f"reviews.pinned should be the Karen B. 2-star review, got {revs.get('pinned')}")
+    if revs["pinned"] is None or revs["pinned"].get("author") != "Citizen Publishing (early user)":
+        _fail(f"reviews.pinned should be the Citizen Publishing testimonial, got {revs.get('pinned')}")
     _ok(f"reviews → {revs['aggregate']}★ / {revs['total']} total / pinned={revs['pinned']['author']}")
 
     perf = data["performance"]
@@ -100,9 +102,12 @@ def _run_assertions(client) -> None:
             _fail(f"marketingPlan.{k} missing")
     _ok(f"marketingPlan → audience={plan['audience'][:48]}…")
 
-    if len(data["chat"]) < 4:
-        _fail(f"chat turns: {len(data['chat'])} (expected >= 4)")
-    _ok(f"chat turns: {len(data['chat'])}")
+    # Quadd Day-1: chat is empty by design — voice carries via system prompt's
+    # voice brief, not via seeded messages. Asserting >= 0 keeps the shape
+    # check while documenting the intentional Day-1 zero.
+    if not isinstance(data["chat"], list):
+        _fail(f"chat should be a list, got {type(data['chat']).__name__}")
+    _ok(f"chat turns: {len(data['chat'])} (Day-1 expects 0)")
 
     if len(data["attention"]) < 4:
         _fail(f"attention items: {len(data['attention'])} (expected >= 4)")

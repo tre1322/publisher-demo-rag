@@ -84,7 +84,7 @@ def _run_assertions(client, SessionLocal, Approval, Post, Review) -> None:
     _ok(f"approve a1 → new post '{data['post']['title']}' (id={new_post_id}), approval decision='approved'")
 
     # --- edit a2 (post-kind) → Post.draft uses edited text ---
-    edited = "EDITED: Behind-the-scenes oil change at Westbrook — Mike's pace, your peace of mind."
+    edited = "EDITED: 5 hours back per writer per week. Built by a publisher, for publishers. Quadd.ai."
     r = client.post(
         f"/api/approvals/{by_ext['a2']}/decide",
         json={"decision": "edit", "edited_draft": edited},
@@ -135,11 +135,11 @@ def _run_assertions(client, SessionLocal, Approval, Post, Review) -> None:
             _fail("a4 → review_id never linked")
         if review.response_status != "approved":
             _fail(f"a4 → review.response_status={review.response_status}")
-        if review.author != "Karen B.":
+        if review.author != "Citizen Publishing (early user)":
             _fail(f"a4 → linked to wrong review ({review.author})")
         if review.response_sent_at is None:
             _fail("a4 → review.response_sent_at not set")
-    _ok(f"approve a4 → Karen B. review marked approved + response saved")
+    _ok(f"approve a4 → Citizen Publishing review marked approved + response saved")
 
     # --- 409 on second decide of already-decided row ---
     r = client.post(f"/api/approvals/{by_ext['a1']}/decide", json={"decision": "approve"})

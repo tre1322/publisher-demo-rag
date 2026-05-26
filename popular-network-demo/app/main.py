@@ -13,7 +13,18 @@ import logging
 from pathlib import Path
 from typing import Awaitable, Callable
 
+from dotenv import find_dotenv, load_dotenv
 from fastapi import FastAPI
+
+# Phase C: load ANTHROPIC_API_KEY before any router imports the SDK.
+# find_dotenv walks up from CWD, so this picks up either popular-network-demo/.env
+# or the parent publisher-demo-rag/.env if you only set the key once.
+#
+# override=True is deliberate: some shells export ANTHROPIC_API_KEY="" (empty
+# string) at login, which dotenv's default override=False treats as "already
+# set" and refuses to overwrite. The result: load_dotenv returns True but the
+# value stays empty. Override=True ensures the .env value wins.
+load_dotenv(find_dotenv(usecwd=True), override=True)
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
@@ -40,7 +51,7 @@ def _startup() -> None:
     _add_col_if_missing("settings", "notifications_json", "JSON")  # B.4
     inserted = seed_if_empty()
     if inserted:
-        log.info("Seeded Westbrook Auto & Tire (business_id=1)")
+        log.info("Seeded Quadd.ai (business_id=1) — Day-1 customer w/ voice brief loaded")
     else:
         log.info("DB already seeded — skipping")
     # One-time backfill: settings rows that pre-date notifications_json have

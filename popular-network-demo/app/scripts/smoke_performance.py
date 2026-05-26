@@ -57,18 +57,22 @@ def _run_assertions(client, SessionLocal, PerformanceSummary) -> None:
     reach30 = p30["reach"]["value"]
     _ok(f"GET period=30 → reach={reach30}")
 
-    # --- ytd scales up ~5× ---
+    # --- ytd scales up ~5× (or equals 0 when baseline is 0, e.g. Day-1 seed) ---
     r = client.get("/api/performance?period=ytd")
     pytd = r.json()
-    if pytd["reach"]["value"] < reach30 * 4:
+    if reach30 > 0 and pytd["reach"]["value"] < reach30 * 4:
         _fail(f"ytd reach should scale much higher than 30d: ytd={pytd['reach']['value']} 30={reach30}")
+    if reach30 == 0 and pytd["reach"]["value"] != 0:
+        _fail(f"ytd reach should also be 0 when 30d baseline is 0: ytd={pytd['reach']['value']}")
     _ok(f"GET period=ytd → reach scaled to {pytd['reach']['value']} (vs 30d={reach30})")
 
-    # --- prev30 reduces ---
+    # --- prev30 reduces (or stays 0 when baseline is 0) ---
     r = client.get("/api/performance?period=prev30")
     pprev = r.json()
-    if pprev["reach"]["value"] >= reach30:
+    if reach30 > 0 and pprev["reach"]["value"] >= reach30:
         _fail(f"prev30 should be lower than current: prev={pprev['reach']['value']} 30={reach30}")
+    if reach30 == 0 and pprev["reach"]["value"] != 0:
+        _fail(f"prev30 should be 0 when 30d baseline is 0: prev={pprev['reach']['value']}")
     _ok(f"GET period=prev30 → reach scaled down to {pprev['reach']['value']}")
 
     # --- 422 on bogus period ---

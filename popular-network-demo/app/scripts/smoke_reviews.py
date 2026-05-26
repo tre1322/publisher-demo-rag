@@ -47,16 +47,16 @@ def main() -> None:
 def _run_assertions(client, SessionLocal, Review) -> None:
     boot = client.get("/api/bootstrap").json()
     pinned = boot["reviews"]["pinned"]
-    if pinned is None or pinned.get("author") != "Karen B.":
-        _fail(f"pinned review should be Karen B., got {pinned}")
+    if pinned is None or pinned.get("author") != "Citizen Publishing (early user)":
+        _fail(f"pinned review should be Citizen Publishing testimonial, got {pinned}")
     if "internalId" not in pinned:
         _fail("bootstrap pinned review missing internalId")
-    karen_id = pinned["internalId"]
-    _ok(f"bootstrap → pinned review Karen B. (internalId={karen_id})")
+    pinned_id = pinned["internalId"]
+    _ok(f"bootstrap → pinned review Citizen Publishing (internalId={pinned_id})")
 
     # --- send action: marks approved + sets sent_at ---
-    final_reply = "Karen, that's on us — call (507) 555-0143 and ask for Dale. — Dale"
-    r = client.post(f"/api/reviews/{karen_id}/respond", json={
+    final_reply = "Thanks so much — mind if I write back to confirm permission to quote you? — Trevor"
+    r = client.post(f"/api/reviews/{pinned_id}/respond", json={
         "response": final_reply, "action": "send",
     })
     if r.status_code != 200:
@@ -67,7 +67,7 @@ def _run_assertions(client, SessionLocal, Review) -> None:
     if data["review"]["responseSentAt"] is None:
         _fail("send didn't set responseSentAt")
     with SessionLocal() as s:
-        rev = s.get(Review, karen_id)
+        rev = s.get(Review, pinned_id)
         if rev.owner_response != final_reply:
             _fail(f"DB owner_response: {rev.owner_response!r}")
         if rev.response_status != "approved":
@@ -78,13 +78,13 @@ def _run_assertions(client, SessionLocal, Review) -> None:
 
     # --- save action (downgrade): clears approved, keeps sent_at history ---
     draft_reply = "DRAFT EDIT: working on the next version..."
-    r = client.post(f"/api/reviews/{karen_id}/respond", json={
+    r = client.post(f"/api/reviews/{pinned_id}/respond", json={
         "response": draft_reply, "action": "save",
     })
     if r.status_code != 200:
         _fail(f"save → HTTP {r.status_code} {r.text}")
     with SessionLocal() as s:
-        rev = s.get(Review, karen_id)
+        rev = s.get(Review, pinned_id)
         if rev.response_status != "draft":
             _fail(f"save didn't downgrade status: {rev.response_status}")
         if rev.owner_response != draft_reply:
@@ -94,13 +94,13 @@ def _run_assertions(client, SessionLocal, Review) -> None:
     _ok("POST save → status='draft', response updated, sent_at preserved")
 
     # --- 422 on empty response ---
-    r = client.post(f"/api/reviews/{karen_id}/respond", json={"response": "  ", "action": "send"})
+    r = client.post(f"/api/reviews/{pinned_id}/respond", json={"response": "  ", "action": "send"})
     if r.status_code != 422:
         _fail(f"empty response expected 422, got {r.status_code}")
     _ok("POST response='   ' → 422")
 
     # --- 422 on bogus action ---
-    r = client.post(f"/api/reviews/{karen_id}/respond", json={"response": "ok", "action": "delete"})
+    r = client.post(f"/api/reviews/{pinned_id}/respond", json={"response": "ok", "action": "delete"})
     if r.status_code != 422:
         _fail(f"bogus action expected 422, got {r.status_code}")
     _ok("POST action='delete' → 422")

@@ -12,9 +12,11 @@
     Double-click this file. It opens in any modern browser. No build, no
     install. React 18, Tailwind, and Lucide are loaded via CDN.
 
-  THE FICTIONAL BUSINESS
-    Westbrook Auto & Tire — Westbrook, Minnesota
-    Owner: Dale Henderson, Tier 2, day 47 with Popular Network.
+  THE DEMO BUSINESS
+    Quadd.ai — New Ulm, Minnesota
+    Owner: Trevor Slette, Tier 3 Concierge, Day 1 with Popular Network.
+    Voice brief synthesized from a real 23-minute interview
+    (see data/voice-brief/quadd_ai.json).
 
   EIGHT VIEWS
     1. Home / Overview
@@ -33,7 +35,7 @@
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>Popular Network — Westbrook Auto &amp; Tire</title>
+  <title>Popular Network — Quadd.ai</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet" />
@@ -124,7 +126,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-21 · v24 — Performance period: fix prev30 id + 422 array stringify + clearer labels';
+  const BUILD_VERSION = '2026-05-26 · v26 — Quadd.ai Day-1 seed + voice brief driving AI Agent';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -207,52 +209,52 @@
     d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...opts });
 
   const business = {
-    name: 'Westbrook Auto & Tire',
-    owner: 'Dale Henderson',
-    ownerInitials: 'DH',
-    location: 'Westbrook, MN',
-    publisher: 'Pipestone County Star',
-    phone: '(507) 555-0143',
-    tier: 2,
-    tierLabel: 'Tier 2 — Marketing Agent',
-    monthlyPrice: 299,
-    joinedDaysAgo: 47,
-    joinedDate: 'March 19, 2026',
+    name: 'Quadd.ai',
+    owner: 'Trevor Slette',
+    ownerInitials: 'TS',
+    location: 'New Ulm, MN',
+    publisher: 'Cottonwood County Citizen',
+    phone: '(507) 822-1253',
+    tier: 3,
+    tierLabel: 'Tier 3 — Concierge',
+    monthlyPrice: 150,
+    joinedDaysAgo: 0,
+    joinedDate: 'Today',
     voiceInterview: 'complete',
-    techName: 'Mike',
-    yearsInTown: 22,
-    aseCertified: true
+    techName: null,
+    yearsInTown: null,
+    aseCertified: false
   };
 
   const stats = {
-    posts:      { value: 12, prev: 8,  delta: '+4',   helper: 'across FB, IG, GBP' },
-    engagement: { value: '+28%', helper: 'vs prior 30 days', positive: true },
-    reviews:    { value: 7,  rating: 4.8, helper: '4.8 ★ avg' },
-    spend:      { used: 112, budget: 150, helper: '$200 / mo recommended' },
-    chatbot:    { value: 34, helper: 'Tier 3 preview' }
+    posts:      { value: 0,  prev: 0, delta: '—', helper: 'first post pending approval' },
+    engagement: { value: '—', helper: 'no published posts yet', positive: false },
+    reviews:    { value: 0,  rating: 0.0, helper: 'no public reviews yet' },
+    spend:      { used: 0, budget: 150, helper: '$150/mo concierge tier' },
+    chatbot:    { value: 0, helper: 'not yet configured' }
   };
 
   const attention = [
-    { kind: 'pending',  title: '3 posts pending your approval',
-      detail: 'Memorial Day pre-trip post, Insta reel script, GBP holiday hours.',
-      cta: 'Review queue', icon: 'inbox', tone: 'amber', target: 'approvals' },
-    { kind: 'review',   title: '2★ review from Karen B. on Google',
-      detail: '"Wait was longer than told." A response is drafted and waiting.',
-      cta: 'View & respond', icon: 'alert', tone: 'red', target: 'reviews' },
-    { kind: 'gap',      title: 'Content gap surfaced from chatbot queries',
-      detail: '5 customers asked the Westbrook chatbot about online appointment booking this month. The Knowledge Gap Detector recommends a "how to book" GBP post and a placeholder booking page.',
-      cta: 'See suggestion', icon: 'sparkles', tone: 'teal', target: 'plan' },
-    { kind: 'spend',    title: 'Spend reallocation recommendation',
-      detail: 'Shift $30 from the Eagles boost (frequency capped) to a GBP promotion. Estimated 3.1× expected ROAS.',
-      cta: 'See details', icon: 'trending', tone: 'teal', target: 'performance' }
+    { kind: 'pending',  title: '1 post pending your approval',
+      detail: '"Built by a publisher, for publishers" — drafted from your voice brief, ready when you are.',
+      cta: 'Review & approve', icon: 'inbox', tone: 'amber', target: 'approvals', targetId: 'a1' },
+    { kind: 'gap',      title: 'Your voice brief is ready',
+      detail: '23 minutes of interview synthesized into AMPLIFY/MAINTAIN/MUTE buckets. The AI Agent is using it to draft every post.',
+      cta: 'View brief', icon: 'sparkles', tone: 'teal', target: 'plan' },
+    { kind: 'spend',    title: 'First post not published yet',
+      detail: 'Approve the founder-credibility FB post to start the feedback loop. Once it\'s live we\'ll start measuring reach.',
+      cta: 'Go to Approvals', icon: 'trending', tone: 'teal', target: 'approvals', targetId: 'a1' },
+    { kind: 'review',   title: 'Channel mix needs your input',
+      detail: 'Interview ended before we covered channels. Web + FB + Google ads are starting defaults. Add LinkedIn when you\'re ready for B2B reach.',
+      cta: 'Edit marketing plan', icon: 'alert', tone: 'red', target: 'plan' }
   ];
 
   const weekRecap = [
-    { when: 'Mon, Apr 28', text: 'Drafted 4 Facebook posts (2 awaiting your sign-off)' },
-    { when: 'Tue, Apr 29', text: 'Drafted 3 Instagram posts including a behind-the-scenes reel script' },
-    { when: 'Wed, Apr 30', text: 'Updated Google Business Profile twice — winter→summer hours and a Memorial Day note' },
-    { when: 'Thu, May 1',  text: 'Drafted responses to 6 reviews; 5 auto-approved per your weekly batch setting, Karen B. flagged for your eyes' },
-    { when: 'Fri, May 2',  text: 'Flagged frequency cap on the $30/day Eagles boost — $20/day across 6 days is the cleaner buy' }
+    { when: 'Today, 9:33am',  text: 'Quadd.ai enrolled — concierge tier, Cottonwood County Citizen publisher' },
+    { when: 'Today, 9:37am',  text: 'Voice interview started over LiveKit — 23 minutes captured' },
+    { when: 'Today, 10:01am', text: 'Voice brief synthesized — AMPLIFY/MAINTAIN/MUTE buckets populated from your actual words' },
+    { when: 'Today, 10:15am', text: 'Three posts drafted from the brief — one queued for your approval' },
+    { when: 'Today, ongoing', text: 'AI Agent loaded with your voice brief — try the chat tab' }
   ];
 
   const PLATFORMS = {
@@ -269,204 +271,121 @@
     published: { label: 'Published', cls: 'status-published', dot: '#0E5E6F' }
   };
 
-  // Posts spanning May 2026 (today is May 5). Pre-May-5 = published, May 5+ = pending/draft.
+  // Posts — Day 1: one published founding-story + two drafts from the voice brief.
   const posts = [
-    { id: 1,  date: '2026-05-01', platform: 'gbp', status: 'published', title: 'Memorial Day weekend hours',
-      draft: 'Heads up: closed Monday May 25 for Memorial Day. Open regular hours Tue–Sat. Heading to the lake? Stop in Friday or Saturday for a $59 pre-trip safety check.',
-      reasoning: 'GBP holiday-hours posts get 4× the tap-to-call rate of feed posts in your data. Pairing the closure with the pre-trip service turns the announcement into something actionable.' },
-    { id: 2,  date: '2026-05-02', platform: 'fb',  status: 'published', title: 'Free Saturday brake check',
-      draft: 'Brake pedal feel a little soft? Pull in any Saturday morning — we\'ll take a look at your brakes for free, no appointment. Coffee\'s on, kids get a sticker.',
-      reasoning: 'Saturday-morning posts (8–10am) outperform other windows by 41% for your audience. Free-inspection framing lowers commitment for first-time customers.' },
-    { id: 3,  date: '2026-05-04', platform: 'fb',  status: 'published', title: 'Winter→summer tire swap',
-      draft: 'Snow tires off, summer rubber on. Book your seasonal swap this week — we\'ve got Saturday slots open. Bring \'em in or have them stored with us for next winter, $40 off either way.',
-      reasoning: 'Seasonal urgency post timed to the swap window. Storage upsell pulled from your March voice memo — you mentioned 18 storage slots still empty.' },
-    { id: 4,  date: '2026-05-05', platform: 'ig',  status: 'pending',   title: 'BTS: Mike rebuilds a 2014 Silverado front end',
-      draft: 'Two days, fresh ball joints, control arms, tie rods, and an alignment. This Silverado is going back on the road tighter than when it left the factory. (Behind-the-scenes reel — Mike narrates.)',
-      reasoning: 'Behind-the-scenes content has been your strongest IG format — 2.3× the engagement of static posts. Mike\'s narration adds the personal-craft angle your reviews praise.' },
-    { id: 5,  date: '2026-05-06', platform: 'fb',  status: 'pending',   title: 'Oil change special — coffee\'s on',
-      draft: 'Oil change while you wait. 30 minutes, $49.95 most vehicles, fresh coffee in the lobby. No appointment needed before noon any weekday.',
-      reasoning: 'Promotional anchor post for the slow weekday-morning window. Pulled the price point from your March pricing sheet.' },
-    { id: 6,  date: '2026-05-07', platform: 'fb',  status: 'pending',   title: 'Section playoffs — go Chargers',
-      draft: 'Big game tonight — good luck to the WWG Chargers at sectionals. Stop in tomorrow on your way home from the game and we\'ll knock $10 off any service in your blue-and-white spirit gear. 🏈',
-      reasoning: 'Local sports tie-ins drive 2.3× engagement vs other posts. Tying it to a service discount gives the post a measurable hook.' },
-    { id: 7,  date: '2026-05-08', platform: 'fb',  status: 'pending',   title: 'Memorial Day pre-trip safety check',
-      draft: 'Headed to the lake this Memorial Day weekend? $59 pre-trip safety check covers oil, tire pressure, brakes, and fluid top-off. We\'d rather you find a problem in our bay than 80 miles into your drive. Book Friday or Saturday.',
-      reasoning: 'Lake-bound traffic is the dominant Memorial Day signal in Westbrook — flat sales underperform here. Safety-check angle reframes the same week as a service occasion.' },
-    { id: 8,  date: '2026-05-09', platform: 'fb',  status: 'draft',     title: 'Farm-tire field service',
-      draft: 'Out in the field and got a flat on the tractor or a trailer? We come to you. Call (507) 555-0143 — Mike or I will load up the truck and head out. 22 years doing this.',
-      reasoning: 'Differentiator pulled from your interview ("nobody else around here will come out to the field"). Reaches farmers who don\'t scroll FB casually but call when they\'re stuck.' },
-    { id: 9,  date: '2026-05-12', platform: 'fb',  status: 'approved',  title: '"Did you know" — proper tire balancing',
-      draft: 'Most chain shops static-balance your tires. We dynamic-balance every wheel on a road-force machine. That\'s the difference between a tire that hums at 65 and one that doesn\'t.',
-      reasoning: 'Educational post differentiating your shop from chains. Pulled language from your "we don\'t do shortcuts" voice memo.' },
-    { id: 10, date: '2026-05-14', platform: 'gbp', status: 'approved',  title: 'Memorial Day pre-trip — GBP version',
-      draft: '$59 Memorial Day pre-trip safety check. Oil, tires, brakes, fluids. Open Tue–Sat, closed Memorial Day Monday. Call (507) 555-0143.',
-      reasoning: 'GBP-specific phrasing with phone number front and center for tap-to-call. Same offer as the FB post, formatted for search-result preview.' },
-    { id: 11, date: '2026-05-15', platform: 'fb',  status: 'approved',  title: 'Spring suspension check',
-      draft: 'Pothole season was rough on everyone. Free 5-minute suspension check this week — drive in, no appointment. We\'ll tell you if anything\'s loose, leaking, or worn. No upsell, no pressure.',
-      reasoning: '"No upsell" language is verbatim from your reviews — the customer language repository pulled it as a top-3 phrase. Free-check format consistent with your brake post.' },
-    { id: 12, date: '2026-05-16', platform: 'meta',status: 'approved',  title: 'Memorial Day boost — paid',
-      draft: 'Boosted version of the May 8 pre-trip safety check post. $30 over 3 days, ages 30–65, 25-mile radius around Westbrook.',
-      reasoning: 'You set the parameters in chat May 5. Estimated reach 3,500. Posting Friday 9am — strongest Friday window historically.' },
-    { id: 13, date: '2026-05-18', platform: 'ig',  status: 'draft',     title: 'Customer testimonial repost — Mike P.',
-      draft: '"Honest mechanic. Won\'t sell you what you don\'t need." — Mike P., Google review last week. That\'s the goal, every time. Thanks Mike. 🙏',
-      reasoning: 'Repurposing your strongest recent 5★ review as social proof. Pulled the line that matches your brand voice best.' },
-    { id: 14, date: '2026-05-20', platform: 'fb',  status: 'draft',     title: 'Mid-week reminder — coffee + oil change',
-      draft: 'Wednesday is the slowest day in the bay, which means you\'re in and out in 25 minutes. $49.95 oil change, fresh coffee, no waiting room scrum.',
-      reasoning: 'Capacity-balancing post for your slowest day. Frame the slow-day weakness as a customer benefit (faster turnaround).' },
-    { id: 15, date: '2026-05-22', platform: 'gbp', status: 'draft',     title: 'Holiday hours reminder',
-      draft: 'Memorial Day weekend reminder: open Tue–Sat regular hours, closed Monday May 25. Friday and Saturday filling up with pre-trip checks — call ahead.',
-      reasoning: 'Final reminder before the holiday closure. GBP search visibility peaks the week of the holiday.' },
-    { id: 16, date: '2026-05-25', platform: 'fb',  status: 'draft',     title: 'Memorial Day — closed, thanks vets',
-      draft: 'Closed today. Thank you to the men and women who served, and to the families who waited at home. We\'ll be back Tuesday.',
-      reasoning: 'Sincere closure post. Avoiding promotional language on the holiday — your pattern in past years and consistent with your reviews\' voice.' },
-    { id: 17, date: '2026-05-29', platform: 'ig',  status: 'draft',     title: 'Saturday coffee reminder',
-      draft: 'Reminder: free coffee, free brake check, no appointment needed Saturday mornings. Bring your dog, the kids get stickers, we\'ll have you out before lunch.',
-      reasoning: 'Reinforces the "Saturday mornings = walk-in friendly" pattern. Fits the Saturday-morning engagement window.' }
+    { id: 1, date: '2026-05-25', platform: 'web', status: 'published', title: 'How a 28-year newspaper publisher started Quadd.ai',
+      draft: 'Last December I spent two full days trying to use ChatGPT to extract a 38-page court document into newspaper style. It couldn\'t do it. So we built Quadd.ai. Here\'s the story.',
+      reasoning: 'Founding-story blog post — published last week as the launch announcement. Sets up the founder-credibility positioning the rest of this week\'s drafts lean on.' },
+    { id: 2, date: '2026-05-27', platform: 'web', status: 'draft', title: 'The 5 hours a week most newsrooms throw away',
+      draft: 'If your reporters are still re-typing court documents into newspaper style, you\'re hemorrhaging hours. Our Universal Document Extractor learns your template and returns formatted copy in minutes. One Citizen Publishing writer is reclaiming two to three hours a week, no question. Built by a 28-year newspaper publisher — not a SaaS person guessing at your problems.',
+      reasoning: 'Lead post for quadd.ai/blog. Hooks the Universal Document Extractor (lead amplify item), grounds in the Citizen Publishing testimonial, positions you as founder-publisher. Drafted from voice brief.' },
+    { id: 3, date: '2026-05-28', platform: 'fb', status: 'pending', title: 'Built by a publisher, for publishers',
+      draft: 'After 28 years running a newspaper, I got tired of watching journalists lose hours re-typing court documents into AP style. So we built the tool I wanted: Universal Document Extractor, AP Style Proofer, and an Interview-to-Story pipeline — all three together for one bundled price. Free 7-day trial. quadd.ai',
+      reasoning: 'FB post targeted at publisher-association groups. Pulls the bundle framing from your interview ("if you get one, you get all three"). 7-day trial mentioned as your stated low-risk on-ramp.' }
   ];
 
   const approvals = [
     { id: 'a1', platform: 'fb',
-      title: 'Winter tire stack-out sale',
-      draft: 'Spring cleaning the tire room — we\'ve got studded snows in 16", 17", and 18" at 30–40% off retail. First come, first served, and yes we\'ll mount and balance. Stop in or call (507) 555-0143.',
-      note: 'Pulled this from your inventory voice memo on March 28 — you mentioned the back wall was full of takeoffs. Promo timing aligned with the seasonal-swap traffic this week.' },
-    { id: 'a2', platform: 'ig',
-      title: '60-second oil change tour (reel)',
-      draft: '60 seconds inside the bay 🛠️ Mike walks you through what actually happens during your oil change. (Spoiler: we check 14 things before you drive off.) Book online or call us. #WestbrookMN #LocalShop #HonestMechanic',
-      note: 'Behind-the-scenes content has been your strongest IG format — 2.3× engagement vs static posts. Reel format recommended over photo carousel.' },
-    { id: 'a3', platform: 'gbp',
-      title: 'Memorial Day weekend hours',
-      draft: 'Memorial Day weekend hours: closed Monday May 25. Open regular hours Tue–Sat. Heading to the lake? Stop in Friday or Saturday for a quick pre-trip safety check — $59 covers oil, tires, brakes, fluids.',
-      note: 'GBP holiday-hours posts get a 4× higher tap-to-call rate than feed posts. Pairing the closure note with the pre-trip service brings the closure into a useful announcement.' },
-    { id: 'a4', platform: 'gbp', kind: 'review',
-      title: 'Reply to Karen B., 2★ Google review',
-      original: 'Wait was longer than told. Said 30 min for an oil change, took 1.5 hours. Disappointed.',
-      draft: 'Karen, that\'s on us — when we say 30 minutes we should mean it. I\'m sorry your morning got blown up. I\'d like to make it right: bring your vehicle back any time before May 31 and we\'ll take care of your next oil change on the house. Give me a call directly at (507) 555-0143 and ask for Dale. Thanks for telling us — that\'s how we get better.',
-      note: 'Negative-review responses with a direct phone number from the owner have a 67% callback rate. Drafted in your voice based on prior responses. Recommend approving today — Google\'s response-time tier resets at 48 hours.' }
+      title: 'Built by a publisher, for publishers',
+      draft: 'After 28 years running a newspaper, I got tired of watching journalists lose hours re-typing court documents into AP style. So we built the tool I wanted: Universal Document Extractor, AP Style Proofer, and an Interview-to-Story pipeline — all three together for one bundled price. Free 7-day trial. quadd.ai',
+      note: 'Founder-credibility post leveraging your "28 years" anchor. Bundle framing per voice brief. Sign off to schedule for tomorrow morning.' },
+    { id: 'a2', platform: 'web',
+      title: 'The hidden tax: 5 hours a week most newsrooms throw away',
+      draft: 'If your reporters are still re-typing court documents into newspaper style, you\'re losing 5+ hours a week per writer. A Citizen Publishing writer reclaimed two to three hours, no question, after switching to our Universal Document Extractor. It learns your template and returns formatted copy in minutes.',
+      note: 'Long-form blog post anchored on the lead amplify item. Drafted from voice brief — review and sign off to publish on quadd.ai/blog.' },
+    { id: 'a3', platform: 'google',
+      title: 'Search ad: "newspaper AI tools"',
+      draft: 'Quadd.ai — built by a 28-year publisher. Universal Document Extractor + AP Style Proofer + Interview-to-Story. 7-day free trial. Save 5 hours a week. quadd.ai',
+      note: 'Google search ad targeting "newspaper AI tools" + adjacent keywords. Reject if you\'d rather lead with the founder-story post before paying for clicks.' },
+    { id: 'a4', platform: 'web', kind: 'review',
+      title: 'Response to Citizen Publishing testimonial',
+      original: 'One of our writers is using the Universal Document Extractor every week — saves two to three hours, no question. We\'re rolling it to the rest of the newsroom.',
+      draft: 'Thank you so much — this is exactly the kind of feedback that keeps us building. With your permission, we\'d love to quote this in our marketing as proof that the time savings are real. Mind if I write back to confirm? — Trevor',
+      note: 'Drafted thank-you with an explicit permission request, per your voice brief: "ask permission before quoting publicly." Approve to mark the review\'s response as approved + sent.' }
   ];
 
-  // Daily reach series — 30 days current (May), 30 days previous (April).
-  // Hand-tuned so the totals roughly match the headline numbers.
-  const dailyReachCurrent = [430,380,510,290,340,620,580,410,360,480,290,320,540,610,460,380,420,290,350,580,670,510,440,390,480,320,410,590,640,520];
-  const dailyReachPrev    = [310,280,360,220,260,440,410,290,250,340,220,240,380,430,320,270,300,220,260,410,470,360,310,280,340,230,290,410,450,360];
+  // Daily reach series — Day 1 has no published-post data yet, all zeros.
+  const dailyReachCurrent = new Array(30).fill(0);
+  const dailyReachPrev    = new Array(30).fill(0);
 
   const performance = {
-    reach:      { value: 14200, prev: 10750, delta: '+32%', positive: true },
-    engagement: { value: 1189,  prev: 928,   delta: '+28%', positive: true },
-    followers:  { value: '+47', prev: '+18', delta: '+161%', positive: true, helper: 'net new this period' },
-    ctr:        { value: '3.1%', prev: '2.4%', delta: '+0.7pp', positive: true, helper: 'paid social' },
-    channelMix: [
-      { platform: 'fb',  organic: 5200, paid: 2100 },
-      { platform: 'ig',  organic: 2800, paid:  600 },
-      { platform: 'gbp', organic: 3400, paid:    0 }
-    ],
-    topPosts: [
-      { platform: 'fb', title: '"Big game tonight — good luck Chargers"', metric: '412 likes · 38 shares · 18 comments', note: 'Saturday 8:14am' },
-      { platform: 'fb', title: 'Winter tire stack-out tease',              metric: '287 likes · 14 shares',               note: 'Friday 9:02am' },
-      { platform: 'ig', title: 'Mike rebuilds a 2014 Silverado front end (reel)', metric: '1.2k views · 89 likes · 12 comments', note: 'Wednesday 4:48pm' }
-    ],
+    reach:      { value: 0, prev: 0, delta: '—', positive: false },
+    engagement: { value: 0, prev: 0, delta: '—', positive: false },
+    followers:  { value: '—', prev: '—', delta: '—', positive: false, helper: 'no published posts yet' },
+    ctr:        { value: '—', prev: '—', delta: '—', positive: false, helper: 'no published posts yet' },
+    channelMix: [],
+    topPosts: [],
     insights: [
-      { kind: 'win',  title: 'Local sports tie-ins',
-        body: 'Posts referencing the Chargers, the rink, or the school average 2.3× the engagement of your other posts. Keep this in the rotation when there\'s a real game on the calendar.' },
-      { kind: 'win',  title: 'Saturday-morning timing',
-        body: 'Posts published 8–10am Saturday outperform any other window by 41%. The "free brake check Saturday" anchor doubles down on this rhythm.' },
-      { kind: 'lose', title: 'Static product shots',
-        body: 'Stock-style tire photos and clip-art ads underperform. In-shop and in-vehicle photos drive the engagement — keep Mike\'s phone in his pocket and pull from his shots.' },
-      { kind: 'lose', title: 'Meta budget shape',
-        body: 'Your $30/day Meta boost hits frequency cap by day 4 — meaning the same people see it 4+ times before the run ends. Try $20/day for 6 days: same total spend, 31% more unique reach.' }
+      { kind: 'win',  title: 'Voice brief captured',
+        body: 'Your 23-minute interview synthesized into a structured marketing brief. The AI Agent is using it to shape every draft.' },
+      { kind: 'win',  title: 'Founder-credibility positioning locked',
+        body: '"Built by a publisher, for publishers" — your 28-year tenure is the moat. Lean on it in every founder-voice post.' },
+      { kind: 'lose', title: 'No published-post data yet',
+        body: 'Approve your first post to start the performance feedback loop. Once it\'s live we\'ll start measuring reach, engagement, and CTR.' },
+      { kind: 'lose', title: 'Channel mix undefined',
+        body: 'Voice interview was cut short before we covered channels. Web + FB are seeded as starting points. Add LinkedIn for B2B reach when you\'re ready.' }
     ]
   };
 
   const reviews = {
-    aggregate: 4.8,
-    total: 162,
-    sparkline: [4.6, 4.7, 4.7, 4.7, 4.8, 4.8],
-    sparklineLabels: ['Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May'],
+    aggregate: 0.0,
+    total: 0,
+    sparkline: [],
+    sparklineLabels: [],
     pinned: {
-      id: 'r3', platform: 'gbp', stars: 2, when: '4 days ago',
-      author: 'Karen B.',
-      body: 'Wait was longer than told. Said 30 min for an oil change, took 1.5 hours. Disappointed.',
-      response: 'Karen, that\'s on us — when we say 30 minutes we should mean it. I\'m sorry your morning got blown up. I\'d like to make it right: bring your vehicle back any time before May 31 and we\'ll take care of your next oil change on the house. Give me a call directly at (507) 555-0143 and ask for Dale. Thanks for telling us — that\'s how we get better.',
-      note: 'Owner-signed apologies with a direct phone number have a 67% callback rate.'
+      id: 'r1', platform: 'web', stars: 5, when: 'this week',
+      author: 'Citizen Publishing (early user)',
+      body: 'One of our writers is using the Universal Document Extractor every week — saves two to three hours, no question. We\'re rolling it to the rest of the newsroom.',
+      response: 'Thank you so much — this is exactly the kind of feedback that keeps us building. With your permission, we\'d love to quote this in our marketing as proof that the time savings are real. Mind if I write back to confirm? — Trevor',
+      note: 'Testimonial pulled from voice brief. Permission-request draft ready — per the brief, ask before quoting publicly.'
     },
     recent: [
-      { id: 'r1', platform: 'gbp', stars: 5, when: '2 days ago', author: 'Tom L.',
-        body: 'Quick brake job, fair price. Dale walked me through what was wrong before doing the work. Will be back.',
-        response: 'Tom — appreciate you taking the time. Glad we could get you sorted before the holiday weekend. — Dale' },
-      { id: 'r2', platform: 'fb', stars: 5, when: '3 days ago', author: 'Sarah J.',
-        body: 'Had a flat heading out of town for my daughter\'s graduation. They got me in same day, no extra fuss. Saved my whole weekend.',
-        response: 'Sarah — congrats to your daughter! Glad we could keep the day on track. Drive safe. — Westbrook Auto & Tire' },
-      { id: 'r3', platform: 'gbp', stars: 2, when: '4 days ago', author: 'Karen B.',
-        body: 'Wait was longer than told. Said 30 min for an oil change, took 1.5 hours. Disappointed.',
-        response: '(see flagged response above)',
-        flagged: true },
-      { id: 'r4', platform: 'gbp', stars: 5, when: '1 week ago', author: 'Mike P.',
-        body: 'Honest mechanic. Won\'t sell you what you don\'t need. Told me my brakes had another season in them when the dealership wanted to replace them now. Lifetime customer.',
-        response: 'Mike — we\'d rather you trust us next year than upsell you today. Thanks for the kind words. — Dale' },
-      { id: 'r5', platform: 'fb', stars: 4, when: '1 week ago', author: 'Jenna H.',
-        body: 'Service was great. Only complaint is I wish you took online appointments. Other than that, top notch.',
-        response: 'Jenna — you\'re not alone, we\'ve heard that a few times now. Online booking is on the list for this summer. Until then, (507) 555-0143 will get you on the calendar. — Dale' }
+      { id: 'r1', platform: 'web', stars: 5, when: 'this week', author: 'Citizen Publishing (early user)',
+        body: 'One of our writers is using the Universal Document Extractor every week — saves two to three hours, no question. We\'re rolling it to the rest of the newsroom.',
+        response: 'Thank you so much — this is exactly the kind of feedback that keeps us building. With your permission, we\'d love to quote this in our marketing as proof that the time savings are real. Mind if I write back to confirm? — Trevor' }
     ]
   };
 
   const marketingPlan = {
-    audience: 'Westbrook & Cottonwood County drivers — primarily owner-operators of one or two vehicles they can\'t afford to lose. Skews 35–65: farmers (truck and trailer work), commuters into Marshall and Worthington, and lake-bound weekend travelers heading toward Currents Lake and Spirit Lake.',
-    valueProp: 'Honest small-town mechanic. We tell you what\'s wrong, what can wait, and we don\'t upsell. 22 years in Westbrook, ASE-certified, and we\'ll come to your farm for tire repairs.',
+    audience: 'Small to medium weekly newspaper and magazine publishers — resource-constrained, often where the publisher is also the editor and salesperson. Ranges from single-paper shops up to groups of 21 papers. The pain is shared: shrinking staff, budget cuts, and too many hours lost to tasks that aren\'t journalism.',
+    valueProp: 'The tool that saves hours each week with measurable ROI — freeing journalists from re-typing documents, slogging through transcriptions, and manual proofing so they can get back to actual storytelling.',
     switching: {
-      pulls: ['Honest diagnostics', 'Fair price', 'Fast turnaround', 'Local trust', 'ASE-certified tech', 'Farm-tire field service'],
-      pushes:['Chain shops "finding" extra work', 'Dealership prices', 'Slow appointments', 'No farm service nearby', 'Up-charge culture']
+      pulls: ['Universal Document Extractor (the game-changer)', 'Built by a 28-year publisher', 'Real hours saved: 2–3/week per writer', 'Three tools, one bundle', '7-day free trial', 'Leading-edge AI positioning'],
+      pushes:['ChatGPT can\'t handle long court documents', 'Newsroom AI skepticism (publisher must okay)', 'Price-sensitivity in the publishing industry', 'Generic SaaS that doesn\'t understand newsrooms']
     },
-    customerLanguage: ['"Mike\'s a straight shooter"', '"fair price" (3×)', '"in and out"', '"didn\'t gouge me"', '"saved my weekend"', '"honest mechanic"'],
+    customerLanguage: [
+      '"Oh my gosh, I can\'t believe I\'ve been re-typing all this information"',
+      '"Having to go through an interview for a half hour before I even start writing the story"',
+      '"It\'s saving them two to three hours each week, no question"',
+      '"Free enough time in your schedule"'
+    ],
     proofPoints: [
-      { label: '4.8 ★ Google rating', detail: '162 reviews' },
-      { label: '22 years in Westbrook', detail: 'second-longest tenure of any auto shop in Cottonwood County' },
-      { label: 'ASE-certified tech',     detail: 'Mike — engine, suspension, brakes' },
-      { label: 'Farm-tire field service',detail: 'rare in the county; pulls out-of-town farm work' }
+      { label: 'Citizen Publishing writer testimonial', detail: '2–3 hours/week saved, no question — heaviest user in that org' },
+      { label: 'Customer range: 1 to 21 papers',        detail: 'Works across scales, from single-paper shops to multi-paper groups' },
+      { label: 'Founder credibility',                   detail: 'Trevor Slette, third-generation publisher, ~28 years in the industry' },
+      { label: 'Origin: court document extraction',     detail: 'Built specifically because ChatGPT couldn\'t crack a 38-page court doc' }
     ],
     channels:[
-      { platform: 'fb',  pct: 35, color: '#1B4F9A' },
-      { platform: 'ig',  pct: 20, color: '#9F2A6E' },
-      { platform: 'gbp', pct: 30, color: '#1F6E3D' },
-      { platform: 'paid',pct: 15, color: '#0E5E6F', label: 'Paid (Meta + Google)' }
+      { platform: 'web', pct: 45, color: '#1B4F9A', label: 'quadd.ai blog' },
+      { platform: 'fb',  pct: 30, color: '#1877F2', label: 'Publisher FB groups' },
+      { platform: 'paid',pct: 25, color: '#0E5E6F', label: 'Search ads (Google)' }
     ],
     q3Goals: [
-      { label: 'GBP profile views per week',    target: 200, current: 142, unit: 'views/wk' },
-      { label: 'New-customer reviews per month',target: 8,   current: 7,   unit: 'reviews/mo' },
-      { label: 'Paid social CTR',               target: 3.0, current: 3.1, unit: '%', exceeded: true }
+      { label: 'Free-trial signups per month', target: 25,  current: 0, unit: 'signups/mo' },
+      { label: 'Paying publishers',            target: 8,   current: 0, unit: 'customers' },
+      { label: 'Avg ROI cited by customers',   target: 4.0, current: 0, unit: 'hrs/wk saved' }
     ]
   };
 
-  const chat = [
-    { who: 'owner', when: 'Today, 9:14am', text: 'Should I run a Memorial Day sale?' },
-    { who: 'agent', when: 'Today, 9:14am',
-      text: 'Memorial Day weekend in Westbrook is mostly about people heading to the lake — Currents, Spirit Lake, and the river — not about car shopping. A flat "sale" usually underperforms here. The angle that works in your data is **pre-trip safety**: a $59 inspection covering oil, tire pressure, brakes, and a fluid top-off. Want me to draft the post and a small boost?' },
-    { who: 'owner', when: 'Today, 9:15am', text: 'Yes please. What\'s a reasonable boost?' },
-    { who: 'agent', when: 'Today, 9:15am',
-      text: 'Drafted. For the boost: $40 over 3 days, targeting ages 35–65 within 25 miles of Westbrook. Estimated reach 4,200 with around 130 link clicks. Memorial Day weekend is high-intent for travel prep, so cost-per-click should run about 20% lower than your monthly average. Posting Friday at 9am — your strongest Friday window historically.',
-      attachment: { kind: 'boost-card',
-        budget: '$40 / 3 days',
-        ages: '35–65',
-        radius: '25 mi from Westbrook',
-        reach: '4,200 estimated',
-        clicks: '~130 estimated',
-        post: 'Friday 9:00am'
-      }
-    },
-    { who: 'owner', when: 'Today, 9:16am', text: 'Make it $30 and target 30–65' },
-    { who: 'agent', when: 'Today, 9:16am',
-      text: 'Done — $30 over 3 days, ages 30–65, same 25-mile radius. Adjusted reach estimate: 3,500. The post and the boost are queued in your **Approvals** tab for sign-off. Anything else I can pull together?',
-      attachment: { kind: 'boost-card',
-        budget: '$30 / 3 days', ages: '30–65', radius: '25 mi from Westbrook',
-        reach: '3,500 estimated', clicks: '~110 estimated', post: 'Friday 9:00am'
-      }
-    }
-  ];
+  // Day 1: empty chat thread. Voice carries via the system prompt's voice brief.
+  const chat = [];
 
   const settings = {
     cadence: 'weekly',
     connections: [
-      { platform: 'fb',  account: '@westbrookautoandtire',         status: 'connected', last: 'verified May 4' },
-      { platform: 'ig',  account: '@westbrookauto',                 status: 'connected', last: 'verified May 4' },
-      { platform: 'gbp', account: 'Westbrook Auto & Tire — GBP',    status: 'connected', last: 'verified May 4' }
+      { platform: 'web',    account: 'quadd.ai/blog',         status: 'connected', last: 'verified today' },
+      { platform: 'fb',     account: '@quaddai',              status: 'connected', last: 'verified today' },
+      { platform: 'google', account: 'quadd.ai — Google Ads', status: 'connected', last: 'verified today' }
     ]
   };
 
@@ -3304,6 +3223,78 @@
      ============================================================ */
   const ChatView = () => {
     const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings } = useDashboard();
+    const mutate = useDashboardMutate();
+    const [input, setInput] = useState('');
+    const [sending, setSending] = useState(false);
+    const [chatError, setChatError] = useState(null);
+    const conversationRef = useRef(null);
+
+    // Auto-scroll to bottom when chat array grows (new turns arrive).
+    useEffect(() => {
+      const el = conversationRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }, [chat.length, sending]);
+
+    const send = async (text) => {
+      const trimmed = (text ?? input).trim();
+      if (!trimmed || sending) return;
+      setSending(true);
+      setChatError(null);
+      const whenNow = (() => {
+        const d = new Date();
+        const h12 = d.getHours() % 12 || 12;
+        const ampm = d.getHours() < 12 ? 'am' : 'pm';
+        return `Today, ${h12}:${String(d.getMinutes()).padStart(2, '0')}${ampm}`;
+      })();
+      // Optimistic: drop the owner turn into the conversation immediately.
+      const optimisticOwner = { who: 'owner', when: whenNow, text: trimmed };
+      mutate(prev => prev ? ({ ...prev, chat: [...(prev.chat || []), optimisticOwner] }) : prev);
+      setInput('');
+      try {
+        const resp = await fetch('/api/chat/turn', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: trimmed }),
+        });
+        if (!resp.ok) {
+          const j = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
+          const msg = Array.isArray(j.detail) ? (j.detail[0]?.msg || `HTTP ${resp.status}`) : (j.detail || `HTTP ${resp.status}`);
+          throw new Error(msg);
+        }
+        const json = await resp.json();
+        // Reconcile: drop the optimistic owner turn and add the canonical pair from the server.
+        mutate(prev => {
+          if (!prev) return prev;
+          const without = (prev.chat || []).slice(0, -1);  // pop optimistic owner
+          return { ...prev, chat: [...without, json.ownerTurn, json.agentTurn] };
+        });
+      } catch (e) {
+        // Roll back the optimistic owner turn so the user can retry.
+        mutate(prev => {
+          if (!prev) return prev;
+          return { ...prev, chat: (prev.chat || []).slice(0, -1) };
+        });
+        setInput(trimmed);
+        setChatError(e.message || 'Send failed');
+      } finally {
+        setSending(false);
+      }
+    };
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        send();
+      }
+    };
+
+    const suggestions = [
+      "What's the right time to post on Saturdays?",
+      "Draft a post about our farm-tire field service",
+      "Which review should I respond to first?",
+      "What should my July marketing look like?",
+    ];
+
     return (
       <div className="fade-in flex flex-col" style={{ minHeight: 'calc(100vh - 0px)' }}>
         <TopBar
@@ -3320,13 +3311,13 @@
         <div className="px-8 py-7 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5 flex-1">
           {/* Conversation */}
           <Card padded={false} className="flex flex-col">
-            <div className="p-6 space-y-6 flex-1">
+            <div ref={conversationRef} className="p-6 space-y-6 flex-1 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 260px)' }}>
               {chat.map((m, i) => {
                 const isOwner = m.who === 'owner';
                 return (
                   <div key={i} className={`flex gap-3 ${isOwner ? 'flex-row-reverse' : ''}`}>
                     <div className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold ${isOwner ? 'bg-brand-500 text-white' : 'bg-accent text-brand-800'}`}>
-                      {isOwner ? 'DH' : <Icon name="sparkles" size={16} strokeWidth={2.2} />}
+                      {isOwner ? (business?.ownerInitials || 'DH') : <Icon name="sparkles" size={16} strokeWidth={2.2} />}
                     </div>
                     <div className={`max-w-[68%] ${isOwner ? 'items-end' : 'items-start'} flex flex-col`}>
                       <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${isOwner ? 'bg-brand-500 text-white rounded-tr-md' : 'bg-surface border border-surface-edge text-ink rounded-tl-md'}`}>
@@ -3340,15 +3331,46 @@
                   </div>
                 );
               })}
+              {sending && (
+                <div className="flex gap-3">
+                  <div className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center bg-accent text-brand-800">
+                    <Icon name="sparkles" size={16} strokeWidth={2.2} />
+                  </div>
+                  <div className="rounded-2xl px-4 py-3 text-sm bg-surface border border-surface-edge text-ink-soft rounded-tl-md italic">
+                    Thinking…
+                  </div>
+                </div>
+              )}
             </div>
+            {chatError && (
+              <div className="mx-4 mb-2 px-3 py-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2">
+                <Icon name="alert" size={13} className="mt-0.5 shrink-0" />
+                <span><strong>Send failed:</strong> {chatError}</span>
+                <button onClick={() => setChatError(null)} className="ml-auto text-rose-600 hover:underline">Dismiss</button>
+              </div>
+            )}
             <div className="border-t border-surface-edge p-4 bg-surface">
               <div className="flex items-center gap-2 bg-white border border-surface-edge rounded-xl px-3 py-2">
-                <input type="text" placeholder="Ask the agent anything…" disabled
-                  className="flex-1 bg-transparent text-sm outline-none placeholder:text-ink-faint" />
-                <button disabled className="opacity-50 p-1.5 rounded-lg bg-brand-500 text-white"><Icon name="chevR" size={16} /></button>
+                <input
+                  type="text"
+                  placeholder="Ask the agent anything…"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={onKeyDown}
+                  disabled={sending}
+                  className="flex-1 bg-transparent text-sm outline-none placeholder:text-ink-faint disabled:opacity-60"
+                />
+                <button
+                  onClick={() => send()}
+                  disabled={sending || !input.trim()}
+                  className="p-1.5 rounded-lg bg-brand-500 text-white disabled:opacity-50 hover:bg-brand-600 transition-all"
+                >
+                  <Icon name="chevR" size={16} />
+                </button>
               </div>
               <div className="text-[11px] text-ink-faint mt-2 flex items-center gap-1.5">
-                <Icon name="sparkles" size={11} className="text-brand-500" /> Live agent chat is part of Tier 3. Want to enable it for your account? <a className="text-brand-600 font-medium hover:underline cursor-pointer ml-1">Talk to your rep →</a>
+                <Icon name="sparkles" size={11} className="text-brand-500" /> Live agent chat is part of Tier 3.
+                <a className="text-brand-600 font-medium hover:underline cursor-pointer ml-1">Talk to your rep →</a>
               </div>
             </div>
           </Card>
@@ -3368,13 +3390,15 @@
             <Card>
               <SectionHeader title="Suggestions" subtitle="What you might ask next" />
               <div className="space-y-2">
-                {[
-                  '"What\'s the right time to post on Saturdays?"',
-                  '"Draft a post about our farm-tire field service"',
-                  '"Which review should I respond to first?"',
-                  '"What should my July marketing look like?"'
-                ].map((s, i) => (
-                  <button key={i} className="text-left w-full text-sm text-ink-soft bg-surface hover:bg-brand-50 hover:text-brand-700 transition-all rounded-lg p-2.5 border border-surface-edge">{s}</button>
+                {suggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    onClick={() => send(s)}
+                    disabled={sending}
+                    className="text-left w-full text-sm text-ink-soft bg-surface hover:bg-brand-50 hover:text-brand-700 transition-all rounded-lg p-2.5 border border-surface-edge disabled:opacity-50"
+                  >
+                    "{s}"
+                  </button>
                 ))}
               </div>
             </Card>

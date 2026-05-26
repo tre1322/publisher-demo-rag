@@ -11,3 +11,12 @@ data/*.db-journal
 
 # Scratch worktrees created by Claude agents
 .claude/worktrees/
+
+# Voice-brief raw materials — recordings + transcripts are PII / sensitive.
+# Keep only the synthesized JSON briefs (one per business slug) under VC.
+data/voice-brief/*.ogg
+data/voice-brief/*.wav
+data/voice-brief/*.mp3
+data/voice-brief/*_transcript.txt
+data/voice-brief/*_segments.json
+data/voice-brief/*_EG_*.json

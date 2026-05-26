@@ -48,8 +48,9 @@ def main() -> None:
 def _run_assertions(client, SessionLocal, Post) -> None:
     boot = client.get("/api/bootstrap").json()
     posts = boot["posts"]
-    if len(posts) < 5:
-        _fail(f"expected >= 5 seeded posts, got {len(posts)}")
+    # Quadd Day-1 seed: 3 posts (1 published + 1 draft + 1 pending).
+    if len(posts) < 3:
+        _fail(f"expected >= 3 seeded posts, got {len(posts)}")
     # Confirm bootstrap exposes internalId for posts
     if "internalId" not in posts[0]:
         _fail("bootstrap post payload missing internalId")
