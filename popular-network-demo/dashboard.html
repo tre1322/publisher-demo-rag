@@ -126,7 +126,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-26 · v27 — Voice brief surfaced in "What the agent knows" panel + Settings stale-Westbrook cleanup';
+  const BUILD_VERSION = '2026-05-26 · v28 — Voice brief panel at top of Marketing Plan (full AMPLIFY/MAINTAIN/MUTE viewer)';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -765,7 +765,7 @@
         </div>
         <div className="mt-2 px-3 py-2 rounded-lg bg-brand-800/60 text-[11px] text-white/80">
           <div className="flex items-center justify-between">
-            <span>Tier 2 — $299/mo</span>
+            <span>Tier {business.tier} — ${business.monthlyPrice}/mo</span>
             <Icon name="chevR" size={12} />
           </div>
         </div>
@@ -2942,13 +2942,14 @@
      VIEW: MARKETING PLAN
      ============================================================ */
   const MarketingPlanView = () => {
-    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings } = useDashboard();
+    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings, voiceBrief } = useDashboard();
     const mutate = useDashboardMutate();
     const [tab, setTab] = useState('strategy');
     const [editing, setEditing] = useState(null);  // field key currently open for edit
     const [savingPlan, setSavingPlan] = useState(false);
     const [planError, setPlanError] = useState(null);
     const [planToast, setPlanToast] = useState(null);
+    const [briefOpen, setBriefOpen] = useState(true);  // voice brief panel starts expanded on Day 1
 
     useEffect(() => {
       if (!planToast) return;
@@ -3025,6 +3026,166 @@
           </div>
         )}
         <div className="px-8 py-7 space-y-5">
+          {/* Voice brief — the synthesized source the rest of the plan derives from */}
+          {voiceBrief && (
+            <Card className="bg-gradient-to-br from-violet-50 via-white to-white border-violet-200">
+              <button
+                onClick={() => setBriefOpen(!briefOpen)}
+                className="w-full flex items-start gap-4 text-left"
+              >
+                <div className="shrink-0 w-12 h-12 rounded-xl bg-violet-500 text-white flex items-center justify-center">
+                  <Icon name="sparkles" size={22} strokeWidth={2} />
+                </div>
+                <div className="flex-1">
+                  <div className="text-[11px] uppercase tracking-wider font-semibold text-violet-700 mb-1.5">Your voice brief</div>
+                  <h3 className="font-serif text-xl font-semibold text-ink leading-snug">
+                    Synthesized from your voice interview
+                  </h3>
+                  <p className="text-sm text-ink-soft mt-1">
+                    This is the source the AI Agent reads on every turn — and what the rest of your Marketing Plan derives from. {(voiceBrief.amplify || []).length} things to play up · {(voiceBrief.maintain || []).length} at status quo · {(voiceBrief.mute || []).length} to play down · {(voiceBrief.customer_language || []).length} customer phrases captured.
+                  </p>
+                </div>
+                <Icon name="chevR" size={18} className={`mt-3 text-ink-faint shrink-0 transition-transform ${briefOpen ? 'rotate-90' : ''}`} />
+              </button>
+
+              {briefOpen && (
+                <div className="mt-5 pt-5 border-t border-violet-100 space-y-5">
+                  {voiceBrief.voice && (
+                    <div>
+                      <div className="text-[11px] uppercase tracking-wider font-semibold text-violet-700 mb-2">Voice</div>
+                      <blockquote className="text-sm text-ink leading-relaxed italic border-l-4 border-violet-300 pl-4 py-1">
+                        {voiceBrief.voice}
+                      </blockquote>
+                    </div>
+                  )}
+
+                  {(voiceBrief.amplify || []).length > 0 && (
+                    <div>
+                      <div className="text-[11px] uppercase tracking-wider font-semibold text-emerald-700 mb-2 flex items-center gap-1.5">
+                        <Icon name="trending" size={12} /> AMPLIFY <span className="text-ink-faint normal-case tracking-normal font-normal">— things to play up</span>
+                      </div>
+                      <ul className="space-y-2">
+                        {voiceBrief.amplify.map((item, i) => (
+                          <li key={i} className="text-sm">
+                            <strong className="text-ink">{item.label || `Item ${i + 1}`}:</strong>{' '}
+                            <span className="text-ink-soft">{item.detail || ''}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {(voiceBrief.maintain || []).length > 0 && (
+                    <div>
+                      <div className="text-[11px] uppercase tracking-wider font-semibold text-amber-700 mb-2 flex items-center gap-1.5">
+                        <Icon name="check" size={12} /> MAINTAIN <span className="text-ink-faint normal-case tracking-normal font-normal">— status quo, supporting</span>
+                      </div>
+                      <ul className="space-y-2">
+                        {voiceBrief.maintain.map((item, i) => (
+                          <li key={i} className="text-sm">
+                            <strong className="text-ink">{item.label || `Item ${i + 1}`}:</strong>{' '}
+                            <span className="text-ink-soft">{item.detail || ''}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {(voiceBrief.mute || []).length > 0 && (
+                    <div>
+                      <div className="text-[11px] uppercase tracking-wider font-semibold text-rose-700 mb-2 flex items-center gap-1.5">
+                        <Icon name="alert" size={12} /> MUTE <span className="text-ink-faint normal-case tracking-normal font-normal">— play down or avoid</span>
+                      </div>
+                      <ul className="space-y-2">
+                        {voiceBrief.mute.map((item, i) => (
+                          <li key={i} className="text-sm">
+                            <strong className="text-ink">{item.label || `Item ${i + 1}`}:</strong>{' '}
+                            <span className="text-ink-soft">{item.detail || ''}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    {voiceBrief.audience && (
+                      <div>
+                        <div className="text-[11px] uppercase tracking-wider font-semibold text-violet-700 mb-2">Audience</div>
+                        <p className="text-sm text-ink-soft leading-relaxed">{voiceBrief.audience}</p>
+                      </div>
+                    )}
+                    {voiceBrief.value_prop && (
+                      <div>
+                        <div className="text-[11px] uppercase tracking-wider font-semibold text-violet-700 mb-2">Value prop</div>
+                        <p className="text-sm text-ink-soft leading-relaxed">{voiceBrief.value_prop}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {(voiceBrief.customer_language || []).length > 0 && (
+                    <div>
+                      <div className="text-[11px] uppercase tracking-wider font-semibold text-violet-700 mb-2">Customer language <span className="text-ink-faint normal-case tracking-normal font-normal">— their words, not yours</span></div>
+                      <ul className="space-y-1.5">
+                        {voiceBrief.customer_language.map((phrase, i) => (
+                          <li key={i} className="text-sm text-ink-soft">— {phrase}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {(voiceBrief.proof_points || []).length > 0 && (
+                    <div>
+                      <div className="text-[11px] uppercase tracking-wider font-semibold text-violet-700 mb-2">Proof points</div>
+                      <ul className="space-y-2">
+                        {voiceBrief.proof_points.map((item, i) => (
+                          <li key={i} className="text-sm">
+                            <strong className="text-ink">{item.label || `Item ${i + 1}`}:</strong>{' '}
+                            <span className="text-ink-soft">{item.detail || ''}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {(voiceBrief.constraints || []).length > 0 && (
+                    <div>
+                      <div className="text-[11px] uppercase tracking-wider font-semibold text-violet-700 mb-2">Constraints</div>
+                      <ul className="space-y-1.5">
+                        {voiceBrief.constraints.map((c, i) => (
+                          <li key={i} className="text-sm text-ink-soft">— {c}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {(voiceBrief.seasonal_patterns || []).length > 0 && (
+                    <div>
+                      <div className="text-[11px] uppercase tracking-wider font-semibold text-violet-700 mb-2">Seasonal patterns</div>
+                      <ul className="space-y-1.5">
+                        {voiceBrief.seasonal_patterns.map((s, i) => (
+                          <li key={i} className="text-sm text-ink-soft">— {s}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {voiceBrief.notes && (
+                    <div>
+                      <div className="text-[11px] uppercase tracking-wider font-semibold text-violet-700 mb-2">Notes</div>
+                      <p className="text-sm text-ink-soft leading-relaxed">{voiceBrief.notes}</p>
+                    </div>
+                  )}
+
+                  {voiceBrief._source && (
+                    <div className="pt-4 border-t border-violet-100 text-[11px] text-ink-faint">
+                      Synthesized via <code className="font-mono">{voiceBrief._source.model || 'model'}</code> · {voiceBrief._source.input_tokens || 0} in / {voiceBrief._source.output_tokens || 0} out tokens
+                    </div>
+                  )}
+                </div>
+              )}
+            </Card>
+          )}
+
           {/* Goal hero — always visible */}
           <Card className="bg-gradient-to-br from-brand-50 via-white to-white border-brand-100">
             <div className="flex items-start gap-4">
