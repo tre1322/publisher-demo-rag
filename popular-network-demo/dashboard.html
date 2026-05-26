@@ -126,7 +126,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-26 · v30 — Wire ToolCard nav: draft-post/review/insights cards have real Open buttons that route + scroll to the item';
+  const BUILD_VERSION = '2026-05-26 · v31 — C.2 streaming: SSE deltas, typewriter cursor, inflight-tool pill, multi-step tool events stream mid-conversation';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -3396,11 +3396,32 @@
     const [chatError, setChatError] = useState(null);
     const conversationRef = useRef(null);
 
-    // Auto-scroll to bottom when chat array grows (new turns arrive).
+    // Auto-scroll to bottom when chat grows OR when the streaming agent
+    // turn's text grows. Watching the last agent text length keeps the
+    // viewport pinned to the bottom as deltas stream in.
+    const lastAgentLen = (() => {
+      const last = chat[chat.length - 1];
+      return last && last.who === 'agent' ? (last.text || '').length + (last.attachment?.items?.length || 0) * 100 : 0;
+    })();
     useEffect(() => {
       const el = conversationRef.current;
       if (el) el.scrollTop = el.scrollHeight;
-    }, [chat.length, sending]);
+    }, [chat.length, sending, lastAgentLen]);
+
+    // Mutate the LAST agent turn in the chat array. Used for streaming
+    // updates: append text deltas, set/clear an inflight-tool indicator,
+    // push tool result attachments onto attachment.items[].
+    const updateLastAgentTurn = (updater) => {
+      mutate(prev => {
+        if (!prev) return prev;
+        const chat = (prev.chat || []).slice();
+        const last = chat[chat.length - 1];
+        if (last && last.who === 'agent') {
+          chat[chat.length - 1] = updater(last);
+        }
+        return { ...prev, chat };
+      });
+    };
 
     const send = async (text) => {
       const trimmed = (text ?? input).trim();
@@ -3413,33 +3434,97 @@
         const ampm = d.getHours() < 12 ? 'am' : 'pm';
         return `Today, ${h12}:${String(d.getMinutes()).padStart(2, '0')}${ampm}`;
       })();
-      // Optimistic: drop the owner turn into the conversation immediately.
+      // Optimistic: drop the owner turn + an empty streaming agent turn into
+      // the conversation immediately. The agent turn will mutate as the SSE
+      // stream arrives. `_streaming: true` lets the renderer show a
+      // typewriter-style cursor / thinking indicator.
       const optimisticOwner = { who: 'owner', when: whenNow, text: trimmed };
-      mutate(prev => prev ? ({ ...prev, chat: [...(prev.chat || []), optimisticOwner] }) : prev);
+      const optimisticAgent = {
+        who: 'agent', when: whenNow, text: '',
+        attachment: { items: [] },
+        _streaming: true,
+        _inflightTool: null,
+      };
+      mutate(prev => prev ? ({ ...prev, chat: [...(prev.chat || []), optimisticOwner, optimisticAgent] }) : prev);
       setInput('');
       try {
         const resp = await fetch('/api/chat/turn', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
           body: JSON.stringify({ message: trimmed }),
         });
         if (!resp.ok) {
+          // Validation/auth errors come back as JSON, not SSE.
           const j = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
           const msg = Array.isArray(j.detail) ? (j.detail[0]?.msg || `HTTP ${resp.status}`) : (j.detail || `HTTP ${resp.status}`);
           throw new Error(msg);
         }
-        const json = await resp.json();
-        // Reconcile: drop the optimistic owner turn and add the canonical pair from the server.
-        mutate(prev => {
-          if (!prev) return prev;
-          const without = (prev.chat || []).slice(0, -1);  // pop optimistic owner
-          return { ...prev, chat: [...without, json.ownerTurn, json.agentTurn] };
-        });
+        if (!resp.body) throw new Error('Empty response body — streaming unsupported?');
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let finished = false;
+        let canonical = null;  // populated by the `done` event
+
+        while (!finished) {
+          const { value, done: streamDone } = await reader.read();
+          if (streamDone) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          // SSE events are separated by a blank line (\n\n). Parse each
+          // complete event out of the buffer; leave any partial event behind.
+          let sep;
+          while ((sep = buffer.indexOf('\n\n')) >= 0) {
+            const block = buffer.slice(0, sep);
+            buffer = buffer.slice(sep + 2);
+            let eventName = 'message';
+            let dataStr = '';
+            for (const line of block.split('\n')) {
+              if (line.startsWith('event: ')) eventName = line.slice(7).trim();
+              else if (line.startsWith('data: ')) dataStr += line.slice(6);
+            }
+            if (!dataStr) continue;
+            let data;
+            try { data = JSON.parse(dataStr); } catch { continue; }
+
+            if (eventName === 'delta') {
+              updateLastAgentTurn(a => ({ ...a, text: (a.text || '') + (data.text || '') }));
+            } else if (eventName === 'tool_start') {
+              updateLastAgentTurn(a => ({ ...a, _inflightTool: data.name }));
+            } else if (eventName === 'tool_result') {
+              updateLastAgentTurn(a => {
+                const items = (a.attachment?.items || []).slice();
+                items.push(data.attachment);
+                return { ...a, _inflightTool: null, attachment: { items } };
+              });
+            } else if (eventName === 'done') {
+              canonical = data;
+              finished = true;
+            } else if (eventName === 'error') {
+              throw new Error(data.detail || 'stream error');
+            }
+          }
+        }
+
+        // Reconcile the streamed turns with the canonical pair from the server.
+        // The text + attachments should already match what we built up via
+        // deltas; this swap normalizes timestamps and clears the _streaming flag.
+        if (canonical && canonical.ownerTurn && canonical.agentTurn) {
+          mutate(prev => {
+            if (!prev) return prev;
+            const without = (prev.chat || []).slice(0, -2);
+            return { ...prev, chat: [...without, canonical.ownerTurn, canonical.agentTurn] };
+          });
+        } else {
+          // Stream ended without `done` — fall back to clearing the streaming flag.
+          updateLastAgentTurn(a => ({ ...a, _streaming: false, _inflightTool: null }));
+        }
       } catch (e) {
-        // Roll back the optimistic owner turn so the user can retry.
+        // Roll back the optimistic owner + agent pair so the user can retry.
         mutate(prev => {
           if (!prev) return prev;
-          return { ...prev, chat: (prev.chat || []).slice(0, -1) };
+          return { ...prev, chat: (prev.chat || []).slice(0, -2) };
         });
         setInput(trimmed);
         setChatError(e.message || 'Send failed');
@@ -3488,13 +3573,31 @@
                     </div>
                     <div className={`max-w-[68%] ${isOwner ? 'items-end' : 'items-start'} flex flex-col`}>
                       <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${isOwner ? 'bg-brand-500 text-white rounded-tr-md' : 'bg-surface border border-surface-edge text-ink rounded-tl-md'}`}>
+                        {/* Streaming agent turn with no text yet → show Thinking pill */}
+                        {m._streaming && !m.text && !(m.attachment?.items?.length) && !m._inflightTool && (
+                          <span className="text-ink-soft italic">Thinking<span className="animate-pulse">…</span></span>
+                        )}
                         <FormattedText text={m.text} />
+                        {/* Typewriter cursor while streaming */}
+                        {m._streaming && m.text && !m._inflightTool && (
+                          <span className="inline-block w-[2px] h-[1em] ml-0.5 bg-brand-500 align-middle animate-pulse" />
+                        )}
+                        {/* Inflight tool indicator — mid-conversation tool fire */}
+                        {m._inflightTool && (
+                          <div className="mt-2 text-xs text-brand-700 bg-brand-50 border border-brand-100 rounded-lg px-2.5 py-1.5 inline-flex items-center gap-1.5">
+                            <Icon name="sparkles" size={12} className="animate-pulse" />
+                            {m._inflightTool === 'draft_post' && 'Drafting post…'}
+                            {m._inflightTool === 'propose_boost' && 'Calculating boost…'}
+                            {m._inflightTool === 'draft_review_response' && 'Drafting response…'}
+                            {m._inflightTool === 'regenerate_insights' && 'Refreshing insights…'}
+                          </div>
+                        )}
                         {/* Legacy seeded turn: singular attachment with kind. */}
                         {m.attachment && m.attachment.kind === 'boost-card' && (
                           <BoostCard attachment={m.attachment} />
                         )}
                         {/* C.3 multi-step tool turn: attachment.items[] with mixed kinds. */}
-                        {m.attachment && Array.isArray(m.attachment.items) && (
+                        {m.attachment && Array.isArray(m.attachment.items) && m.attachment.items.length > 0 && (
                           <div className="space-y-2 mt-3">
                             {m.attachment.items.map((it, j) => <ToolCard key={j} attachment={it} onNavigate={onNavigate} />)}
                           </div>
@@ -3505,16 +3608,6 @@
                   </div>
                 );
               })}
-              {sending && (
-                <div className="flex gap-3">
-                  <div className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center bg-accent text-brand-800">
-                    <Icon name="sparkles" size={16} strokeWidth={2.2} />
-                  </div>
-                  <div className="rounded-2xl px-4 py-3 text-sm bg-surface border border-surface-edge text-ink-soft rounded-tl-md italic">
-                    Thinking…
-                  </div>
-                </div>
-              )}
             </div>
             {chatError && (
               <div className="mx-4 mb-2 px-3 py-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2">

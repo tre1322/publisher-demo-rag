@@ -1,28 +1,33 @@
-"""Chat router — Phase C.3 multi-step tool use.
+"""Chat router — Phase C.2 streaming + Phase C.3 multi-step tool use.
 
-POST /api/chat/turn  — owner sends a message, server runs the multi-step
-                      Anthropic tool_use loop (capped at MAX_TOOL_ITERATIONS),
-                      persists owner + final-agent turns (with all tool
-                      attachments inlined on the agent turn), and returns
-                      both in a single response.
+POST /api/chat/turn  — owner sends a message, server returns an SSE stream
+                      that emits text deltas as Claude generates them, tool
+                      events as they fire, and a final `done` event with the
+                      persisted ownerTurn + agentTurn.
 
-Loop shape (chosen 2026-05-26):
-  - Pass TOOL_SCHEMAS on every call.
-  - While stop_reason == "tool_use" and iterations < cap:
-      execute each tool block → append assistant+user-tool_result pair → re-call
-  - When stop_reason == "end_turn" (or cap hit): collect final text + all
-    attachments accumulated across iterations.
+SSE event shapes:
+  event: delta        data: {"text": "..."}            text token arrived
+  event: tool_start   data: {"name": "draft_post"}     model decided to fire a tool
+  event: tool_result  data: {"attachment": {...}}      tool executed, card payload
+  event: done         data: {ok, ownerTurn, agentTurn} final, both turns persisted
+  event: error        data: {"detail": "..."}          something went wrong
+
+Multi-step loop coordinates one Anthropic stream per iteration. Tools execute
+between streams. The final `done` event lands once stop_reason="end_turn" or
+MAX_TOOL_ITERATIONS is hit.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Generator, Optional
 
 from anthropic import Anthropic
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -42,37 +47,6 @@ _LIVE_CONVERSATION_ID = "seed"  # live turns continue the seeded thread
 class ChatTurnRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     business_id: int = 1
-
-
-class ChatTurnPayload(BaseModel):
-    who: str
-    when: str
-    text: str
-    attachment: Optional[dict[str, Any]] = None
-
-
-class ChatTurnResponse(BaseModel):
-    ok: bool
-    ownerTurn: ChatTurnPayload
-    agentTurn: ChatTurnPayload
-
-
-def _format_when(dt: datetime) -> str:
-    """Match the human-readable timestamps used in the seeded thread."""
-    hour = dt.hour % 12 or 12
-    suffix = "am" if dt.hour < 12 else "pm"
-    return f"Today, {hour}:{dt.minute:02d}{suffix}"
-
-
-def _turn_to_message(turn: ChatTurn) -> dict[str, str]:
-    role = "user" if turn.who == "owner" else "assistant"
-    return {"role": role, "content": turn.text}
-
-
-def _extract_text(content_blocks: list[Any]) -> str:
-    """Pull all text blocks out of a Claude response and concatenate."""
-    parts = [b.text for b in content_blocks if getattr(b, "type", None) == "text"]
-    return "".join(parts).strip()
 
 
 # Trigger phrases that force tool_choice={"type":"tool","name":"draft_post"}
@@ -99,12 +73,20 @@ def _detect_forced_tool(message: str) -> Optional[str]:
     return None
 
 
-def _content_blocks_to_dicts(content_blocks: list[Any]) -> list[dict[str, Any]]:
-    """Round-trip the assistant's content blocks back to dicts for the next call.
+def _format_when(dt: datetime) -> str:
+    """Match the human-readable timestamps used in the seeded thread."""
+    hour = dt.hour % 12 or 12
+    suffix = "am" if dt.hour < 12 else "pm"
+    return f"Today, {hour}:{dt.minute:02d}{suffix}"
 
-    The Anthropic SDK returns typed objects; the next messages.create needs them
-    as JSON-shaped dicts so we can append the tool_result user message.
-    """
+
+def _turn_to_message(turn: ChatTurn) -> dict[str, str]:
+    role = "user" if turn.who == "owner" else "assistant"
+    return {"role": role, "content": turn.text}
+
+
+def _content_blocks_to_dicts(content_blocks: list[Any]) -> list[dict[str, Any]]:
+    """Round-trip the assistant's content blocks back to dicts for the next call."""
     out: list[dict[str, Any]] = []
     for b in content_blocks:
         kind = getattr(b, "type", None)
@@ -119,12 +101,20 @@ def _content_blocks_to_dicts(content_blocks: list[Any]) -> list[dict[str, Any]]:
                     "input": b.input,
                 }
             )
-        # ignore unknown block types — model may add new ones over time
     return out
 
 
-@router.post("/chat/turn", response_model=ChatTurnResponse)
-def take_turn(req: ChatTurnRequest, db: Session = Depends(get_db)) -> ChatTurnResponse:
+def _sse(event: str, data: dict[str, Any]) -> str:
+    """Format a single SSE event. data is JSON-encoded on a single line."""
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+@router.post("/chat/turn")
+def take_turn(req: ChatTurnRequest, db: Session = Depends(get_db)) -> StreamingResponse:
+    """Stream the chat turn. Validation errors (422) and missing API key (503)
+    are raised before the generator starts so they surface as proper HTTP
+    statuses rather than SSE errors.
+    """
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise HTTPException(
@@ -153,154 +143,199 @@ def take_turn(req: ChatTurnRequest, db: Session = Depends(get_db)) -> ChatTurnRe
         }
     ]
 
-    client = Anthropic(api_key=api_key)
-
-    # Force a specific tool on iteration 0 when the user message has a clear
-    # trigger phrase. Subsequent iterations stay tool_choice="auto" so the
-    # model can stop naturally with end_turn after the tool_result.
     forced_tool = _detect_forced_tool(req.message)
 
-    # --- multi-step loop --------------------------------------------------- #
-    final_text_parts: list[str] = []
+    return StreamingResponse(
+        _event_generator(
+            api_key=api_key,
+            db=db,
+            business_id=req.business_id,
+            owner_message=req.message,
+            messages=messages,
+            system_blocks=system_blocks,
+            forced_tool=forced_tool,
+        ),
+        media_type="text/event-stream",
+        headers={
+            # Disable proxy buffering so chunks reach the browser immediately.
+            "X-Accel-Buffering": "no",
+            "Cache-Control": "no-cache",
+        },
+    )
+
+
+def _event_generator(
+    *,
+    api_key: str,
+    db: Session,
+    business_id: int,
+    owner_message: str,
+    messages: list[dict[str, Any]],
+    system_blocks: list[dict[str, Any]],
+    forced_tool: Optional[str],
+) -> Generator[str, None, None]:
+    client = Anthropic(api_key=api_key)
+    full_text_parts: list[str] = []
     attachments: list[dict[str, Any]] = []
     total_input_tokens = 0
     total_output_tokens = 0
     total_cache_create = 0
     total_cache_read = 0
 
-    iterations = 0
-    while True:
-        if iterations >= MAX_TOOL_ITERATIONS:
-            # Defensive: cap reached. Treat as final, surface a note.
-            log.warning(
-                f"chat.turn business={req.business_id} hit MAX_TOOL_ITERATIONS={MAX_TOOL_ITERATIONS}"
-            )
-            if not final_text_parts:
-                final_text_parts.append(
-                    "I ran into my tool-call limit before finishing — try asking again "
-                    "in a simpler shape and I'll pick it up."
+    try:
+        iterations = 0
+        while True:
+            if iterations >= MAX_TOOL_ITERATIONS:
+                log.warning(
+                    f"chat.turn business={business_id} hit MAX_TOOL_ITERATIONS={MAX_TOOL_ITERATIONS}"
                 )
-            break
+                if not full_text_parts:
+                    cap_msg = (
+                        "I ran into my tool-call limit before finishing — try asking "
+                        "again in a simpler shape and I'll pick it up."
+                    )
+                    yield _sse("delta", {"text": cap_msg})
+                    full_text_parts.append(cap_msg)
+                break
 
-        # Force the tool only on the first call. After tool_result comes back,
-        # let the model decide whether to fire another tool or end_turn.
-        if iterations == 0 and forced_tool is not None:
-            tool_choice: dict[str, Any] = {"type": "tool", "name": forced_tool}
-            log.info(
-                f"chat.turn business={req.business_id} forcing tool_choice={forced_tool!r}"
-            )
-        else:
-            tool_choice = {"type": "auto"}
+            if iterations == 0 and forced_tool is not None:
+                tool_choice: dict[str, Any] = {"type": "tool", "name": forced_tool}
+                log.info(
+                    f"chat.turn business={business_id} forcing tool_choice={forced_tool!r}"
+                )
+            else:
+                tool_choice = {"type": "auto"}
 
-        try:
-            resp = client.messages.create(
+            iter_text = ""
+            with client.messages.stream(
                 model=_MODEL,
                 max_tokens=_MAX_TOKENS,
                 system=system_blocks,
                 messages=messages,
                 tools=TOOL_SCHEMAS,
                 tool_choice=tool_choice,
-            )
-        except Exception as exc:
-            log.exception("Anthropic call failed")
-            raise HTTPException(status_code=502, detail=f"Claude call failed: {exc}") from exc
+            ) as stream:
+                for event in stream:
+                    etype = getattr(event, "type", None)
+                    if etype == "content_block_start":
+                        block = getattr(event, "content_block", None)
+                        if block is not None and getattr(block, "type", None) == "tool_use":
+                            yield _sse("tool_start", {"name": block.name})
+                    elif etype == "content_block_delta":
+                        delta = getattr(event, "delta", None)
+                        dtype = getattr(delta, "type", None) if delta else None
+                        if dtype == "text_delta":
+                            text = getattr(delta, "text", "")
+                            if text:
+                                iter_text += text
+                                yield _sse("delta", {"text": text})
+                        # input_json_delta chunks are accumulated by the SDK
+                        # internally; we read the final input from get_final_message().
 
-        total_input_tokens += resp.usage.input_tokens
-        total_output_tokens += resp.usage.output_tokens
-        total_cache_create += getattr(resp.usage, "cache_creation_input_tokens", 0) or 0
-        total_cache_read += getattr(resp.usage, "cache_read_input_tokens", 0) or 0
+                final_msg = stream.get_final_message()
 
-        # Collect any text the model emitted in this turn — it may be present
-        # alongside tool_use blocks (model often says "Let me draft that…" then
-        # emits tool_use).
-        step_text = _extract_text(resp.content)
-        if step_text:
-            final_text_parts.append(step_text)
+            usage = getattr(final_msg, "usage", None)
+            if usage is not None:
+                total_input_tokens += getattr(usage, "input_tokens", 0) or 0
+                total_output_tokens += getattr(usage, "output_tokens", 0) or 0
+                total_cache_create += getattr(usage, "cache_creation_input_tokens", 0) or 0
+                total_cache_read += getattr(usage, "cache_read_input_tokens", 0) or 0
 
-        if resp.stop_reason != "tool_use":
-            break
+            if iter_text:
+                full_text_parts.append(iter_text)
 
-        # Execute every tool_use block in this assistant response, collect
-        # tool_result blocks for the next user message.
-        assistant_dict_blocks = _content_blocks_to_dicts(resp.content)
-        tool_result_blocks: list[dict[str, Any]] = []
+            if final_msg.stop_reason != "tool_use":
+                break
 
-        for block in resp.content:
-            if getattr(block, "type", None) != "tool_use":
-                continue
-            tool_name = block.name
-            tool_input = block.input or {}
-            log.info(
-                f"chat.turn business={req.business_id} tool={tool_name} input_keys={list(tool_input)}"
-            )
-            result = execute_tool(tool_name, db, req.business_id, tool_input)
-            attachments.append(result.attachment)
-            tool_result_blocks.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": result.text,
-                    **({"is_error": True} if result.is_error else {}),
-                }
-            )
+            # Execute every tool_use block in this assistant response, emit
+            # tool_result events, and collect tool_result blocks for the next
+            # user message.
+            assistant_dict_blocks = _content_blocks_to_dicts(final_msg.content)
+            tool_result_blocks: list[dict[str, Any]] = []
 
-        # Append the assistant's tool-use turn and the synthetic user
-        # tool_result turn so the next iteration sees them.
-        messages.append({"role": "assistant", "content": assistant_dict_blocks})
-        messages.append({"role": "user", "content": tool_result_blocks})
+            for block in final_msg.content:
+                if getattr(block, "type", None) != "tool_use":
+                    continue
+                tool_name = block.name
+                tool_input = block.input or {}
+                log.info(
+                    f"chat.turn business={business_id} tool={tool_name} input_keys={list(tool_input)}"
+                )
+                result = execute_tool(tool_name, db, business_id, tool_input)
+                attachments.append(result.attachment)
+                yield _sse("tool_result", {"attachment": result.attachment})
+                tool_result_blocks.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result.text,
+                        **({"is_error": True} if result.is_error else {}),
+                    }
+                )
 
-        iterations += 1
+            messages.append({"role": "assistant", "content": assistant_dict_blocks})
+            messages.append({"role": "user", "content": tool_result_blocks})
 
-    log.info(
-        f"chat.turn business={req.business_id} iterations={iterations} "
-        f"tools={len(attachments)} cache_create={total_cache_create} "
-        f"cache_read={total_cache_read} input={total_input_tokens} output={total_output_tokens}"
-    )
+            iterations += 1
 
-    agent_text = "\n\n".join(p for p in final_text_parts if p).strip()
-    if not agent_text and not attachments:
-        raise HTTPException(status_code=502, detail="Claude returned an empty response.")
-    if not agent_text:
-        # Tools fired but no text — surface a minimal acknowledgement.
-        agent_text = "Done. See the card below."
+        log.info(
+            f"chat.turn business={business_id} iterations={iterations} "
+            f"tools={len(attachments)} cache_create={total_cache_create} "
+            f"cache_read={total_cache_read} input={total_input_tokens} "
+            f"output={total_output_tokens}"
+        )
 
-    # Single attachment dict per ChatTurn (schema is one JSON blob). For
-    # multi-tool turns wrap in {"items": [...]}; legacy seeded boost-card uses
-    # the singular shape {"kind": "boost-card", ...}.
-    if len(attachments) == 0:
-        attachment_payload: Optional[dict[str, Any]] = None
-    elif len(attachments) == 1:
-        attachment_payload = {"items": attachments}  # uniform shape for new turns
-    else:
-        attachment_payload = {"items": attachments}
+        agent_text = "\n\n".join(p for p in full_text_parts if p).strip()
+        if not agent_text and not attachments:
+            yield _sse("error", {"detail": "Claude returned an empty response."})
+            return
+        if not agent_text:
+            agent_text = "Done. See the card below."
 
-    now = datetime.utcnow()
-    when_label = _format_when(now)
+        attachment_payload: Optional[dict[str, Any]] = (
+            {"items": attachments} if attachments else None
+        )
 
-    owner_turn = ChatTurn(
-        business_id=req.business_id,
-        conversation_id=_LIVE_CONVERSATION_ID,
-        who="owner",
-        when_label=when_label,
-        text=req.message,
-        attachment_json=None,
-    )
-    agent_turn = ChatTurn(
-        business_id=req.business_id,
-        conversation_id=_LIVE_CONVERSATION_ID,
-        who="agent",
-        when_label=when_label,
-        text=agent_text,
-        attachment_json=attachment_payload,
-    )
-    db.add(owner_turn)
-    db.add(agent_turn)
-    db.commit()
+        now = datetime.utcnow()
+        when_label = _format_when(now)
 
-    return ChatTurnResponse(
-        ok=True,
-        ownerTurn=ChatTurnPayload(who="owner", when=when_label, text=req.message),
-        agentTurn=ChatTurnPayload(
-            who="agent", when=when_label, text=agent_text, attachment=attachment_payload
-        ),
-    )
+        owner_turn = ChatTurn(
+            business_id=business_id,
+            conversation_id=_LIVE_CONVERSATION_ID,
+            who="owner",
+            when_label=when_label,
+            text=owner_message,
+            attachment_json=None,
+        )
+        agent_turn = ChatTurn(
+            business_id=business_id,
+            conversation_id=_LIVE_CONVERSATION_ID,
+            who="agent",
+            when_label=when_label,
+            text=agent_text,
+            attachment_json=attachment_payload,
+        )
+        db.add(owner_turn)
+        db.add(agent_turn)
+        db.commit()
+
+        yield _sse(
+            "done",
+            {
+                "ok": True,
+                "ownerTurn": {
+                    "who": "owner",
+                    "when": when_label,
+                    "text": owner_message,
+                },
+                "agentTurn": {
+                    "who": "agent",
+                    "when": when_label,
+                    "text": agent_text,
+                    "attachment": attachment_payload,
+                },
+            },
+        )
+    except Exception as exc:
+        log.exception("Chat stream failed")
+        yield _sse("error", {"detail": f"Claude call failed: {exc}"})
