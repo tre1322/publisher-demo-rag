@@ -126,7 +126,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-27 · v41 — Phase F polish: Home tile "Chatbot conversations" now reads live count (was stuck on seeded 0); "Train the bot on this" CTA in transcript modal now hands the consumer\'s opening intent to Marketing Plan via a confirm-or-dismiss banner that appends to customer_language.';
+  const BUILD_VERSION = '2026-05-27 · v42 — Phase G: publisher chatbot ingestion. New Settings → Integrations sub-tab (Tier 3+) with API key mint/revoke + relay snippet. New POST /api/chatbot/ingest endpoint auto-extracts topic + sentiment + escalation via app/chatbot_extract.py. Provenance "Demo" chip on seeded fixture rows in ChatbotPreviewView.';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -201,7 +201,9 @@
     clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
     box: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" x2="12" y1="22.08" y2="12"/>',
     convo: '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>',
-    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>'
+    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
+    key: '<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>',
+    copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'
   };
 
   /* ============================================================
@@ -5919,6 +5921,9 @@
                               </div>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
+                              {c.source === 'fixture' && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-surface-edge text-ink-faint bg-surface uppercase tracking-wider font-semibold" title="Seeded demo conversation. Real ingested conversations have no Demo chip.">Demo</span>
+                              )}
                               {c.escalationFlag && (
                                 <Pill color="amber" icon="alert">Escalate</Pill>
                               )}
@@ -6029,6 +6034,73 @@
       }
     }, []);
     useEffect(() => { if (tab === 'billing' && !billingState) refreshBilling(); }, [tab, billingState, refreshBilling]);
+
+    // Phase G — Integrations state. Loaded on demand when the Integrations tab opens.
+    // newKeyRaw holds the just-minted raw key for the "copy this once" banner;
+    // it's cleared on tab-leave so a refresh doesn't re-show a stale secret.
+    const [keys, setKeys] = useState(null);
+    const [keysLoading, setKeysLoading] = useState(false);
+    const [newKeyLabel, setNewKeyLabel] = useState('');
+    const [newKeyBusy, setNewKeyBusy] = useState(false);
+    const [newKeyRaw, setNewKeyRaw] = useState(null);  // { id, label, keyPrefix, rawKey }
+    const [copyToast, setCopyToast] = useState(null);
+    const refreshKeys = useCallback(async () => {
+      setKeysLoading(true);
+      try {
+        const r = await fetch('/api/chatbot/keys');
+        if (r.ok) setKeys(await r.json());
+      } catch (e) {
+        console.error('[settings.keys]', e);
+      } finally {
+        setKeysLoading(false);
+      }
+    }, []);
+    useEffect(() => { if (tab === 'integrations' && keys === null) refreshKeys(); }, [tab, keys, refreshKeys]);
+    useEffect(() => { if (tab !== 'integrations' && newKeyRaw) setNewKeyRaw(null); }, [tab, newKeyRaw]);
+    const handleCreateKey = async () => {
+      const label = (newKeyLabel || '').trim() || `${business.publisher || 'Publisher'} chatbot`;
+      setNewKeyBusy(true);
+      setSettingsError(null);
+      try {
+        const r = await fetch('/api/chatbot/keys', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label }),
+        });
+        if (!r.ok) {
+          const detail = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
+          throw new Error(detail.detail || `HTTP ${r.status}`);
+        }
+        const data = await r.json();
+        setNewKeyRaw(data);
+        setNewKeyLabel('');
+        await refreshKeys();
+      } catch (e) {
+        setSettingsError(`Couldn't mint key: ${e.message || e}`);
+      } finally {
+        setNewKeyBusy(false);
+      }
+    };
+    const handleRevokeKey = async (id) => {
+      if (!window.confirm('Revoke this key? Any chatbot relay using it will stop ingesting immediately.')) return;
+      try {
+        const r = await fetch(`/api/chatbot/keys/${id}`, { method: 'DELETE' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        await refreshKeys();
+      } catch (e) {
+        setSettingsError(`Couldn't revoke: ${e.message || e}`);
+      }
+    };
+    const copyToClipboard = async (text, kind = 'value') => {
+      try {
+        await navigator.clipboard.writeText(text);
+        setCopyToast(`${kind} copied to clipboard.`);
+        setTimeout(() => setCopyToast(null), 2200);
+      } catch {
+        setCopyToast(`Couldn't copy — select + ⌘C manually.`);
+        setTimeout(() => setCopyToast(null), 2200);
+      }
+    };
     const handleTierChange = async (to_tier) => {
       setTierRequestBusy(to_tier);
       try {
@@ -6177,12 +6249,14 @@
       account:       { title: 'Account',         subtitle: 'Your plan, your publisher, and onboarding milestones.' },
       billing:       { title: 'Billing & Usage', subtitle: 'Tier, current-month usage, invoice history, change tier.' },
       connections:   { title: 'Connections',     subtitle: 'Where the agent has permission to read and post.' },
+      integrations:  { title: 'Integrations',    subtitle: 'API keys + embed snippets that connect your publisher\'s chatbot to this dashboard.' },
       notifications: { title: 'Notifications & approvals', subtitle: 'How and how often the agent talks to you.' }
     };
     const tabs = [
       { id: 'account',       label: 'Account',         icon: 'user' },
       { id: 'billing',       label: 'Billing',         icon: 'dollar' },
       { id: 'connections',   label: 'Connections',     icon: 'plus', count: settings.connections.length },
+      ...(business.tier >= 3 ? [{ id: 'integrations', label: 'Integrations', icon: 'key' }] : []),
       { id: 'notifications', label: 'Notifications',   icon: 'bell' }
     ];
 
@@ -6540,6 +6614,154 @@
                   </div>
                 )}
               </Card>
+            </div>
+          )}
+
+          {tab === 'integrations' && (
+            <div className="space-y-5 fade-in">
+              {copyToast && (
+                <div className="px-4 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm flex items-center gap-2">
+                  <Icon name="check" size={14} /> {copyToast}
+                </div>
+              )}
+              {newKeyRaw && (
+                <Card className="border-2 border-amber-300 bg-amber-50">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-amber-200 text-amber-800 inline-flex items-center justify-center shrink-0">
+                      <Icon name="alert" size={16} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-serif text-base font-semibold text-amber-900">Copy your new key now — it's shown ONCE</div>
+                      <p className="text-sm text-amber-800 mt-0.5">
+                        We only store a hash of this key. After you leave this tab it can't be retrieved — only revoked + replaced.
+                      </p>
+                      <div className="mt-3 flex items-center gap-2 bg-white border border-amber-300 rounded-lg px-3 py-2 font-mono text-sm break-all">
+                        <span className="flex-1">{newKeyRaw.rawKey}</span>
+                        <button onClick={() => copyToClipboard(newKeyRaw.rawKey, 'Key')}
+                          className="shrink-0 p-1.5 rounded-md text-amber-700 hover:bg-amber-100" title="Copy key">
+                          <Icon name="copy" size={14} />
+                        </button>
+                      </div>
+                      <div className="text-xs text-amber-700 mt-2">Label: <span className="font-medium">{newKeyRaw.label}</span> · Prefix: <span className="font-mono">{newKeyRaw.keyPrefix}</span></div>
+                    </div>
+                    <button onClick={() => setNewKeyRaw(null)} className="text-amber-700 hover:text-amber-900 p-1">
+                      <Icon name="x" size={14} />
+                    </button>
+                  </div>
+                </Card>
+              )}
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                {/* LEFT — what this does */}
+                <Card className="lg:col-span-1">
+                  <SectionHeader title="Publisher chatbot relay" subtitle="How real conversations flow into this dashboard." />
+                  <div className="text-sm text-ink-soft space-y-3">
+                    <p>
+                      Your publisher's consumer-facing chatbot — the one that answers questions about <span className="font-medium text-ink">{business.name}</span> on their site — POSTs every completed session to this dashboard.
+                    </p>
+                    <p>
+                      Each session lands as a row in <span className="font-medium text-ink">Chatbot Preview</span>, with sentiment, escalation flags, and the full transcript.
+                    </p>
+                    <p>
+                      An API key authenticates the relay. Generate one below, paste it into your publisher's chatbot config, and conversations will start streaming in.
+                    </p>
+                    <div className="mt-3 p-3 rounded-lg bg-surface border border-surface-edge text-xs">
+                      <div className="font-semibold text-ink uppercase tracking-wider mb-1">Ingest endpoint</div>
+                      <div className="font-mono text-ink-soft break-all">POST /api/chatbot/ingest</div>
+                      <div className="font-mono text-ink-soft break-all">Header: X-Amplafai-Key: cbk_live_…</div>
+                    </div>
+                  </div>
+                </Card>
+
+                {/* MIDDLE + RIGHT — keys + snippet */}
+                <div className="lg:col-span-2 space-y-5">
+                  <Card>
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <SectionHeader title="API keys" subtitle="One key per chatbot relay. Revoke + regenerate any time." />
+                    </div>
+                    {keysLoading ? (
+                      <div className="text-sm text-ink-soft">Loading keys…</div>
+                    ) : !keys || keys.length === 0 ? (
+                      <div className="border-2 border-dashed border-surface-edge rounded-xl p-5 text-center">
+                        <div className="inline-flex w-10 h-10 rounded-xl bg-brand-50 text-brand-700 items-center justify-center mb-2">
+                          <Icon name="key" size={18} />
+                        </div>
+                        <div className="text-sm font-medium text-ink">No API keys yet</div>
+                        <p className="text-xs text-ink-soft mt-1 max-w-md mx-auto">Mint your first key and paste it into your publisher's chatbot config to start ingesting live conversations.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {keys.map(k => (
+                          <div key={k.id} className={`border rounded-lg px-3 py-2.5 flex items-center justify-between gap-3 ${k.revoked ? 'border-surface-edge bg-surface opacity-60' : 'border-surface-edge bg-white'}`}>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <div className="text-sm font-medium text-ink truncate">{k.label}</div>
+                                {k.revoked && <Pill color="slate">Revoked</Pill>}
+                              </div>
+                              <div className="text-xs text-ink-faint mt-0.5 font-mono">
+                                {k.keyPrefix}…
+                                <span className="text-ink-soft font-sans ml-3">{k.useCount} session{k.useCount === 1 ? '' : 's'}</span>
+                                {k.lastUsedAt && <span className="text-ink-soft font-sans ml-3">last used {new Date(k.lastUsedAt).toLocaleDateString()}</span>}
+                              </div>
+                            </div>
+                            {!k.revoked && (
+                              <button onClick={() => handleRevokeKey(k.id)}
+                                className="text-xs px-2.5 py-1 rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50">
+                                Revoke
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="mt-4 pt-4 border-t border-surface-edge">
+                      <div className="flex items-end gap-2">
+                        <div className="flex-1">
+                          <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint">New key label</label>
+                          <input value={newKeyLabel} onChange={e => setNewKeyLabel(e.target.value)}
+                            placeholder={`${business.publisher || 'Publisher'} chatbot — production`}
+                            className="mt-1 w-full text-sm border border-surface-edge rounded-lg px-3 py-1.5" />
+                        </div>
+                        <button onClick={handleCreateKey} disabled={newKeyBusy}
+                          className="px-3 py-2 rounded-lg bg-brand-700 text-white text-sm hover:bg-brand-800 disabled:opacity-50 inline-flex items-center gap-2">
+                          <Icon name="plus" size={14} /> {newKeyBusy ? 'Minting…' : 'Mint key'}
+                        </button>
+                      </div>
+                    </div>
+                  </Card>
+
+                  <Card>
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <SectionHeader title="Relay snippet" subtitle="Paste this into your publisher's chatbot config." />
+                      <button onClick={() => copyToClipboard(
+                        `// Drop this at the end of a completed chatbot session.\nfetch('https://amplafai.com/api/chatbot/ingest', {\n  method: 'POST',\n  headers: {\n    'Content-Type': 'application/json',\n    'X-Amplafai-Key': 'cbk_live_…'  // your key from the API keys panel\n  },\n  body: JSON.stringify({\n    external_session_id: session.id,\n    transcript: session.turns,        // [{ who: 'consumer'|'bot', text, at }]\n    referrer_label: session.referrer, // e.g. 'cottonwoodccitizen.com → article'\n    consumer_label: session.label,    // e.g. 'anonymous · iPhone Safari'\n    started_at: session.startedAt,\n    ended_at:   session.endedAt\n  })\n});`,
+                        'Snippet'
+                      )} className="text-xs px-2 py-1 rounded-md border border-surface-edge text-ink-soft hover:bg-surface inline-flex items-center gap-1">
+                        <Icon name="copy" size={12} /> Copy
+                      </button>
+                    </div>
+                    <pre className="bg-ink/90 text-white/90 rounded-lg p-4 overflow-x-auto text-xs leading-relaxed">{`// Drop this at the end of a completed chatbot session.
+fetch('https://amplafai.com/api/chatbot/ingest', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-Amplafai-Key': 'cbk_live_…'  // your key from the API keys panel
+  },
+  body: JSON.stringify({
+    external_session_id: session.id,
+    transcript: session.turns,        // [{ who: 'consumer'|'bot', text, at }]
+    referrer_label: session.referrer, // e.g. 'cottonwoodccitizen.com → article'
+    consumer_label: session.label,    // e.g. 'anonymous · iPhone Safari'
+    started_at: session.startedAt,
+    ended_at:   session.endedAt
+  })
+});`}</pre>
+                    <div className="text-xs text-ink-soft mt-2">
+                      Returns <span className="font-mono">{`{ ok, conversationId, sentiment, escalationFlag }`}</span>. Idempotent on <span className="font-mono">external_session_id</span> — safe to retry after a network blip.
+                    </div>
+                  </Card>
+                </div>
+              </div>
             </div>
           )}
 

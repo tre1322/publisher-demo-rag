@@ -587,3 +587,45 @@ class ChatbotConversation(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     referrer_label: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)  # e.g. "Cottonwood County Citizen → article"
+    # Phase G — distinguishes seeded demo rows ("fixture") from real live ones
+    # ingested via POST /api/chatbot/ingest ("ingested"). Drives the provenance
+    # chip in ChatbotPreviewView so a sales walkthrough can be honest about
+    # which conversations are real vs. demo affordances.
+    source: Mapped[str] = mapped_column(String(16), default="fixture")  # fixture|ingested
+
+
+# ---------------------------------------------------------------------------
+# Phase G — Publisher chatbot ingestion
+# ---------------------------------------------------------------------------
+# When a publisher's consumer-facing chatbot ends a session, it POSTs the
+# transcript to /api/chatbot/ingest with an X-Amplafai-Key header. That key
+# is scoped to a single business and authenticates the publisher's relay.
+#
+# Storage shape: prefix (first 12 chars, displayed in the UI) + sha256 of the
+# full key (verified against on every ingest). We never persist the raw key
+# after creation — the owner sees it once, copies it into their chatbot's
+# config, and we keep only the hash. Pattern mirrors how Stripe / GitHub
+# tokens are handled.
+
+
+class ChatbotIngestionKey(Base):
+    """Per-business public key for the consumer-chatbot relay.
+
+    The full key is shown ONCE at creation (then only the prefix is displayed).
+    On every ingest request we hash the supplied header value and look up the
+    matching row by (prefix, hash). `revoked_at` lets the owner kill a key
+    without deleting the row (audit trail for "this key handled N sessions
+    between date X and date Y").
+    """
+
+    __tablename__ = "chatbot_ingestion_keys"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"))
+    label: Mapped[str] = mapped_column(String(80))  # e.g. "Cottonwood County Citizen — production"
+    key_prefix: Mapped[str] = mapped_column(String(16), index=True)  # first 12 chars, visible (e.g. "cbk_live_a3f9")
+    key_hash: Mapped[str] = mapped_column(String(64))  # sha256 of the full key, 64 hex chars
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    use_count: Mapped[int] = mapped_column(Integer, default=0)

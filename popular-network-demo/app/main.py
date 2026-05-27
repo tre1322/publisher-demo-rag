@@ -83,6 +83,11 @@ def _startup() -> None:
     # Phase F: tier bump (Quadd: 3 → 4) + usage-metric rows for any business
     # that pre-dates the F.2 billing tables. Idempotent.
     _backfill_phase_f()
+    # Phase G: add `source` column to chatbot_conversations if missing, then
+    # backfill existing rows to source='fixture' so they render with the
+    # Demo chip. Idempotent — column is added only when absent; UPDATE only
+    # touches NULL rows.
+    _backfill_phase_g()
 
 
 def _backfill_reach_tiers() -> None:
@@ -223,6 +228,22 @@ def _backfill_phase_f() -> None:
                     if changed:
                         log.info(f"Backfilled dashboard_notices tier copy for business_id={biz.id}")
         db.commit()
+
+
+def _backfill_phase_g() -> None:
+    """Phase G: add `source` column to chatbot_conversations if missing, and
+    backfill any NULL values to 'fixture'. New rows from the seeder + the
+    ingest endpoint set the column explicitly, so this only matters for DBs
+    that pre-date Phase G."""
+    from sqlalchemy import text as _text
+
+    from .db import SessionLocal, engine
+
+    _add_col_if_missing("chatbot_conversations", "source", "VARCHAR(16)")
+    with engine.begin() as conn:
+        conn.execute(
+            _text("UPDATE chatbot_conversations SET source = 'fixture' WHERE source IS NULL")
+        )
 
 
 def _backfill_notification_defaults() -> None:

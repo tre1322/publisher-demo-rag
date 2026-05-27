@@ -135,6 +135,12 @@ def _run_assertions(client) -> None:
         _fail("topTopics should be non-empty after seed")
     _ok(f"topTopics → {len(r['topTopics'])} entries (top: '{r['topTopics'][0]['label'][:48]}')")
 
+    # ---- 9. Phase G — source column on fixture rows ----
+    convos = client.get("/api/chatbot/conversations").json()
+    if not all(c.get("source") == "fixture" for c in convos):
+        _fail(f"Fixture rows should all carry source='fixture', got: {[c.get('source') for c in convos]}")
+    _ok(f"Provenance: all {len(convos)} fixture rows carry source='fixture' (Phase G)")
+
 
 if __name__ == "__main__":
     main()
