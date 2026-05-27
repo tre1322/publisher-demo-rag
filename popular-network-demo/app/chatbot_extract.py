@@ -44,6 +44,10 @@ def extract_topic_label(transcript: Transcript) -> str:
     neutral placeholder. We deliberately don't try to clean punctuation: the
     raw "?" or "!" at the end carries useful information about what the
     consumer was doing (asking vs. exclaiming).
+
+    Truncation cuts at the last space before the limit so we never break
+    mid-word. If no space exists in the second half of the window (a single
+    monster URL or non-spaced text), we fall back to a hard cut.
     """
     first_consumer = next(
         (t.get("text", "") for t in transcript if t.get("who") == "consumer"),
@@ -52,9 +56,15 @@ def extract_topic_label(transcript: Transcript) -> str:
     normalized = " ".join(first_consumer.split())
     if not normalized:
         return "(no consumer messages)"
-    if len(normalized) > _TOPIC_MAX_CHARS:
-        return normalized[: _TOPIC_MAX_CHARS - 1].rstrip() + "…"
-    return normalized
+    if len(normalized) <= _TOPIC_MAX_CHARS:
+        return normalized
+    window = normalized[: _TOPIC_MAX_CHARS - 1]
+    last_space = window.rfind(" ")
+    # Only honor the word boundary if it falls in the back half of the
+    # window — otherwise the headline reads as truncated too aggressively.
+    if last_space >= _TOPIC_MAX_CHARS // 2:
+        window = window[:last_space]
+    return window.rstrip() + "…"
 
 
 # ---------------------------------------------------------------------------
@@ -194,39 +204,54 @@ ESCALATION_BOT_GAVE_UP = (
 def detect_escalation(transcript: Transcript) -> tuple[bool, Optional[str]]:
     """Return (escalate: bool, owner-facing reason: Optional[str]).
 
-    TODO Trevor: write the body. Below is a starter sketch — feel free to
-    replace it wholesale. The five categories above (HUMAN_REQUEST,
-    HIGH_VALUE_LEAD, CHURN_RISK, COVERAGE_GAP, BOT_GAVE_UP) are the
-    signals we extracted from the fixture corpus and from your pilot
-    publisher conversations. Stack rank matters — if a session hits both
-    HIGH_VALUE_LEAD and BOT_GAVE_UP, the lead is the headline.
+    Priority stack — first match wins. Order is deliberate:
 
-    Examples of expected output (from the existing fixtures):
+      1. CHURN_RISK         — losing existing revenue is more urgent than
+                              winning new (an existing customer about to
+                              cancel out-prioritizes a fresh lead).
+      2. HUMAN_REQUEST      — explicit ask. Always honor it.
+      3. HIGH_VALUE_LEAD    — multi-paper / EDU / enterprise inquiry.
+      4. COVERAGE_GAP       — bot couldn't fully answer; surface to
+                              product so the next visitor gets a better
+                              answer.
+      5. BOT_GAVE_UP        — bot explicitly hedged ("let me connect you").
+
+    Reasons are written like owner-facing call-outs — they appear verbatim
+    in the dashboard's "Why flagged" line. Keep them concrete + actionable.
+
+    Examples mapped from the fixture corpus:
 
       "Our group runs 7 weekly papers..."
-        → (True, "Multi-paper group lead (7 papers) — high-value prospect")
+        → (True, "Multi-paper group / EDU / enterprise lead — worth personal outreach")
 
-      "I run a journalism program at a state university — about 80 students"
-        → (True, "Journalism program lead (~80 seats) — institutional license")
+      "I want to cancel my subscription"
+        → (True, "Churn risk — consumer mentioned cancel / refund / switching")
 
       "Does the document extractor output land directly in InDesign?"
-        → (True, "Coverage gap: InDesign export — feature exists but undocumented")
-
-      "Honestly — why pay you when ChatGPT is free?"
-        → (False, None)  # negative-leaning sentiment but no actionable lead
+        → (True, "Coverage gap — bot couldn't answer about an integration / feature")
 
       "What's a typical false-positive rate?"
-        → (False, None)  # neutral information exchange, no escalation
+        → (False, None)  — neutral info exchange, no escalation
     """
-    # ↓↓↓ Trevor — your rules go here. Replace this whole block. ↓↓↓
-    # Below is a minimal placeholder so the function returns something
-    # sensible while you write the real logic. Remove or rewrite freely.
     consumer_text = " ".join(
         (t.get("text", "") or "").lower()
         for t in transcript
         if t.get("who") == "consumer"
     )
+    bot_text = " ".join(
+        (t.get("text", "") or "").lower()
+        for t in transcript
+        if t.get("who") == "bot"
+    )
+
+    if any(p in consumer_text for p in ESCALATION_CHURN_RISK):
+        return True, "Churn risk — consumer mentioned cancel / refund / switching"
     if any(p in consumer_text for p in ESCALATION_HUMAN_REQUEST):
         return True, "Consumer asked to speak with a human"
+    if any(p in consumer_text for p in ESCALATION_HIGH_VALUE_LEAD):
+        return True, "Multi-paper group / EDU / enterprise lead — worth personal outreach"
+    if any(p in consumer_text for p in ESCALATION_COVERAGE_GAP):
+        return True, "Coverage gap — bot couldn't answer about an integration / feature"
+    if any(p in bot_text for p in ESCALATION_BOT_GAVE_UP):
+        return True, "Bot signaled it couldn't fully answer — review the gap"
     return False, None
-    # ↑↑↑ Trevor — your rules go here. ↑↑↑

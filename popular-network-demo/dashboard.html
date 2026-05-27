@@ -126,7 +126,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-27 · v42 — Phase G: publisher chatbot ingestion. New Settings → Integrations sub-tab (Tier 3+) with API key mint/revoke + relay snippet. New POST /api/chatbot/ingest endpoint auto-extracts topic + sentiment + escalation via app/chatbot_extract.py. Provenance "Demo" chip on seeded fixture rows in ChatbotPreviewView.';
+  const BUILD_VERSION = '2026-05-27 · v43 — Phase G polish: detect_escalation now stacks churn > human request > high-value lead > coverage gap > bot-gave-up (was placeholder). New bootstrap.chatbot.hasAnyKey drives a Home "Connect your publisher chatbot" nag for Tier 3+ owners with no key. extract_topic_label truncates at word boundaries (no more mid-word cuts).';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -412,7 +412,7 @@
     invoiceCount: 0, currentUsage: {}, stripeEnabled: false,
   };
   const chatbot = {
-    tierEligible: true, conversationCount: 0, escalationCount: 0,
+    tierEligible: true, conversationCount: 0, escalationCount: 0, hasAnyKey: false,
   };
 
   const FALLBACK_DATA = {
@@ -1869,7 +1869,21 @@
      VIEW: HOME / OVERVIEW
      ============================================================ */
   const HomeView = ({ onNavigate }) => {
-    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings, ads } = useDashboard();
+    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings, ads, chatbot } = useDashboard();
+    // Phase G polish: tier-3+ owner with no active ingest key → prepend a
+    // "Connect your publisher chatbot" nag to the attention feed. Cheap
+    // client-side injection so we don't have to mutate DashboardNotices
+    // for what's really a transient onboarding state.
+    const needsChatbotKey = (chatbot?.tierEligible) && !(chatbot?.hasAnyKey);
+    const effectiveAttention = needsChatbotKey
+      ? [{
+          kind: 'chatbot-key',
+          title: 'Connect your publisher chatbot',
+          detail: 'Tier ' + (business.tier || 3) + ' unlocks the consumer chatbot preview, but no ingestion key is configured yet. Mint a key in Settings → Integrations and paste it into your publisher\'s chatbot config — sessions stream into this dashboard within seconds.',
+          cta: 'Open Integrations', icon: 'key', tone: 'teal',
+          target: 'settings',
+        }, ...attention]
+      : attention;
     return (
       <div className="fade-in">
         <TopBar
@@ -1942,15 +1956,15 @@
               <div>
                 <h2 className="text-xl font-semibold text-ink">Needs your attention</h2>
                 <p className="text-sm text-ink-soft mt-0.5">
-                  {attention.length === 1
+                  {effectiveAttention.length === 1
                     ? 'One thing the agent flagged for your eyes today.'
-                    : `${attention.length} things the agent flagged for your eyes today.`}
+                    : `${effectiveAttention.length} things the agent flagged for your eyes today.`}
                 </p>
               </div>
-              <Pill color="amber">{attention.length} {attention.length === 1 ? 'item' : 'items'}</Pill>
+              <Pill color="amber">{effectiveAttention.length} {effectiveAttention.length === 1 ? 'item' : 'items'}</Pill>
             </div>
             <div className="divide-y divide-surface-edge px-2 pb-2">
-              {attention.map((a, i) => {
+              {effectiveAttention.map((a, i) => {
                 const tone = {
                   amber: { bg: 'bg-amber-50', icon: 'text-amber-700' },
                   red:   { bg: 'bg-red-50',   icon: 'text-bad' },
@@ -5674,6 +5688,7 @@
       mutate(prev => prev ? ({
         ...prev,
         chatbot: {
+          ...(prev.chatbot || {}),  // preserve hasAnyKey (not in /api/chatbot payload)
           tierEligible:      data.tierEligible,
           conversationCount: count,
           escalationCount:   data.totals?.escalationCount || 0,

@@ -26,6 +26,7 @@ from ..models import (
     Business,
     ChatTurn,
     ChatbotConversation,
+    ChatbotIngestionKey,
     Connection,
     DashboardNotices,
     InventoryFeed,
@@ -343,6 +344,17 @@ def get_bootstrap(business_id: int = 1, db: Session = Depends(get_db)) -> dict[s
         )
         .count()
     )
+    # Phase G polish: drives the Home-view "Connect your publisher chatbot"
+    # nag for Tier 3+ owners who haven't minted a key yet. Active (un-revoked)
+    # keys only — a fully-revoked business should still see the nag.
+    chatbot_active_key_count = (
+        db.query(ChatbotIngestionKey)
+        .filter(
+            ChatbotIngestionKey.business_id == business_id,
+            ChatbotIngestionKey.revoked_at.is_(None),
+        )
+        .count()
+    )
 
     payload: dict[str, Any] = {
         "business": _business_payload(biz),
@@ -402,11 +414,12 @@ def get_bootstrap(business_id: int = 1, db: Session = Depends(get_db)) -> dict[s
             "currentUsage":      usage_by_key,
             "stripeEnabled":     False,
         },
-        # Phase F.3 — chatbot slim slice.
+        # Phase F.3 — chatbot slim slice (Phase G polish: + hasAnyKey).
         "chatbot": {
             "tierEligible":      biz.tier >= 3,
             "conversationCount": chatbot_total_count,
             "escalationCount":   chatbot_escalation_ct,
+            "hasAnyKey":         chatbot_active_key_count > 0,
         },
     }
     return payload

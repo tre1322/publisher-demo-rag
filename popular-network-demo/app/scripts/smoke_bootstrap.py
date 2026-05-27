@@ -86,12 +86,14 @@ def _run_assertions(client) -> None:
     if bil["stripeEnabled"] is not False:
         _fail(f"billing.stripeEnabled should be False for the demo: {bil}")
     _ok(f"billing slim slice → tier={bil['tier']} monthlyPrice={bil['monthlyPrice']} invoices={bil['invoiceCount']}")
-    # Phase F.3 chatbot slim slice
+    # Phase F.3 chatbot slim slice (+ Phase G hasAnyKey)
     cb = data["chatbot"]
-    for k in ("tierEligible", "conversationCount", "escalationCount"):
+    for k in ("tierEligible", "conversationCount", "escalationCount", "hasAnyKey"):
         if k not in cb:
             _fail(f"bootstrap.chatbot.{k} missing")
-    _ok(f"chatbot slim slice → eligible={cb['tierEligible']} convos={cb['conversationCount']} escalations={cb['escalationCount']}")
+    if cb["hasAnyKey"] is not False:
+        _fail(f"Day-1 chatbot.hasAnyKey should be False (no keys minted yet): {cb}")
+    _ok(f"chatbot slim slice → eligible={cb['tierEligible']} convos={cb['conversationCount']} hasAnyKey={cb['hasAnyKey']}")
 
     biz = data["business"]
     for k in ("name", "owner", "ownerInitials", "publisher", "tier", "tierLabel"):

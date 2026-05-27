@@ -65,6 +65,28 @@ _HUMAN_REQUEST_TRANSCRIPT = [
     {"who": "bot",      "text": "Let me flag this for owner outreach."},
 ]
 
+_MULTI_PAPER_TRANSCRIPT = [
+    {"who": "consumer", "text": "Our group runs 7 weekly papers across the same county. Can Quadd handle that?"},
+    {"who": "bot",      "text": "Yes — register multiple publications under one account."},
+    {"who": "consumer", "text": "Pricing for 7 papers?"},
+]
+
+_CHURN_TRANSCRIPT = [
+    {"who": "consumer", "text": "I want to cancel my subscription, this isn't working for us."},
+    {"who": "bot",      "text": "Sorry to hear that — let me see what I can do."},
+]
+
+_COVERAGE_GAP_TRANSCRIPT = [
+    {"who": "consumer", "text": "Does it integrate with NewsCycle? I don't see that in the docs."},
+    {"who": "bot",      "text": "Not directly — most users paste from the web interface."},
+]
+
+_NO_ESCALATION_TRANSCRIPT = [
+    {"who": "consumer", "text": "What's a typical false-positive rate on the AP-style proofer?"},
+    {"who": "bot",      "text": "About 5-8%, usually intentional house-style deviations."},
+    {"who": "consumer", "text": "OK, useful to know."},
+]
+
 
 def main() -> None:
     import shutil
@@ -163,15 +185,28 @@ def _run_assertions(client) -> None:
         _fail(f"Neutral transcript → expected 'neutral', got {neu_r.json()['sentiment']}")
     _ok(f"Sentiment matrix: pos/neg/neu transcripts → expected labels")
 
-    # ---- 7. Escalation ----
-    esc_r = client.post("/api/chatbot/ingest",
+    # ---- 7. Escalation priority stack ----
+    # Each category must (a) fire, (b) return its expected reason fragment.
+    cases = [
+        ("sess-esc-human",     _HUMAN_REQUEST_TRANSCRIPT, True,  "speak with a human"),
+        ("sess-esc-multipaper", _MULTI_PAPER_TRANSCRIPT,   True,  "Multi-paper"),
+        ("sess-esc-churn",     _CHURN_TRANSCRIPT,         True,  "Churn risk"),
+        ("sess-esc-coverage",  _COVERAGE_GAP_TRANSCRIPT,  True,  "Coverage gap"),
+        ("sess-esc-noflag",    _NO_ESCALATION_TRANSCRIPT, False, None),
+    ]
+    for sid, transcript, expect_flag, expect_reason_fragment in cases:
+        r = client.post("/api/chatbot/ingest",
                         headers={"X-Amplafai-Key": raw_key},
-                        json={"external_session_id": "sess-esc-1", "transcript": _HUMAN_REQUEST_TRANSCRIPT})
-    if not esc_r.json().get("escalationFlag"):
-        _fail(f"'talk to a human' should fire escalation: {esc_r.json()}")
-    if not esc_r.json().get("escalationReason"):
-        _fail(f"Escalation should include a human-readable reason: {esc_r.json()}")
-    _ok(f"Escalation: 'talk to a human' → flag=True, reason='{esc_r.json()['escalationReason']}'")
+                        json={"external_session_id": sid, "transcript": transcript})
+        if r.status_code != 200:
+            _fail(f"Escalation ingest {sid} → {r.status_code}: {r.text}")
+        flag = r.json().get("escalationFlag")
+        reason = r.json().get("escalationReason") or ""
+        if flag != expect_flag:
+            _fail(f"{sid}: expected flag={expect_flag}, got {flag} (reason={reason!r})")
+        if expect_reason_fragment and expect_reason_fragment.lower() not in reason.lower():
+            _fail(f"{sid}: expected reason containing '{expect_reason_fragment}', got {reason!r}")
+    _ok(f"Escalation priority stack: 5 cases (human / multi-paper / churn / coverage / no-flag) all correct")
 
     # Topic — first consumer turn becomes the topic label.
     pos_convo = client.get(f"/api/chatbot/conversations/{pos_conv_id}").json()
@@ -179,12 +214,42 @@ def _run_assertions(client) -> None:
         _fail(f"Topic should mirror first consumer turn, got '{pos_convo['topicLabel']}'")
     _ok(f"Topic extracted from first consumer turn: '{pos_convo['topicLabel'][:60]}…'")
 
+    # Phase G polish — long opening turn must truncate at a word boundary.
+    long_turn = (
+        "Honestly I have been thinking about this for a long time and "
+        "I really want to understand whether your platform supports the "
+        "kind of multi-paper publishing workflow that we operate across "
+        "the entire southwest Minnesota region every single week."
+    )
+    long_r = client.post("/api/chatbot/ingest",
+                         headers={"X-Amplafai-Key": raw_key},
+                         json={"external_session_id": "sess-long-topic-1",
+                               "transcript": [{"who": "consumer", "text": long_turn}]})
+    if long_r.status_code != 200:
+        _fail(f"Long-topic ingest → {long_r.status_code}: {long_r.text}")
+    long_topic = long_r.json()["topicLabel"]
+    if not long_topic.endswith("…"):
+        _fail(f"Long topic should end with ellipsis, got: {long_topic!r}")
+    # The char immediately before the ellipsis must be a complete word —
+    # i.e. the truncated text (sans ellipsis + rstrip) must NOT end mid-word.
+    # Easiest check: the truncated body must end with a letter that's followed
+    # in the original by a non-letter (space/punct), or end at a word in the
+    # original. Strict assertion: truncated body is a prefix of the input,
+    # AND original[len(body)] is a space or end-of-string.
+    body = long_topic[:-1].rstrip()
+    if not long_turn.startswith(body):
+        _fail(f"Truncated topic should be a prefix of the original: body={body!r}")
+    next_char = long_turn[len(body):len(body)+1]
+    if next_char and next_char != " ":
+        _fail(f"Truncation broke a word: body ends '...{body[-12:]!r}', next char '{next_char!r}'")
+    _ok(f"Topic truncation: word-boundary preserved ('…{body[-20:]}…')")
+
     # ---- 8. List keys shows bumped useCount + lastUsedAt ----
     keys = client.get("/api/chatbot/keys").json()
     if len(keys) != 1:
         _fail(f"Expected 1 key, got {len(keys)}")
     key_row = keys[0]
-    if key_row["useCount"] < 5:  # 1 dedup + 1 + 1 + 1 + 1 = 5 successful ingests
+    if key_row["useCount"] < 8:  # happy + dedup + neg + neu + 5 escalation cases = 9 expected
         _fail(f"useCount should reflect successful ingests, got {key_row['useCount']}")
     if not key_row["lastUsedAt"]:
         _fail(f"lastUsedAt should be set after ingests")
