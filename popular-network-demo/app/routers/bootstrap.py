@@ -17,14 +17,17 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import (
+    AdImpressionsByTerritory,
     Approval,
     Business,
     ChatTurn,
     Connection,
     DashboardNotices,
+    LocalFirstLog,
     MarketingPlan,
     PerformanceSummary,
     Post,
+    ReachTier,
     Review,
     ReviewAggregate,
     SettingsRow,
@@ -237,6 +240,27 @@ def get_bootstrap(business_id: int = 1, db: Session = Depends(get_db)) -> dict[s
         .all()
     )
 
+    # Phase D: reach tiers + territory revenue + local-first telemetry.
+    # Tiers are always seeded (config); the two telemetry slices are empty
+    # for a Day-1 customer and populate as the chatbot serves real ads.
+    reach_tiers = (
+        db.query(ReachTier)
+        .filter(ReachTier.business_id == business_id)
+        .order_by(ReachTier.multiplier_pct.asc())
+        .all()
+    )
+    impressions_rows = (
+        db.query(AdImpressionsByTerritory)
+        .filter(AdImpressionsByTerritory.business_id == business_id)
+        .all()
+    )
+    local_first_rows = (
+        db.query(LocalFirstLog)
+        .filter(LocalFirstLog.business_id == business_id)
+        .order_by(LocalFirstLog.log_date.asc())
+        .all()
+    )
+
     payload: dict[str, Any] = {
         "business": _business_payload(biz),
         "stats": _stats_payload(notices, agg),
@@ -273,5 +297,77 @@ def get_bootstrap(business_id: int = 1, db: Session = Depends(get_db)) -> dict[s
         # makes it visible to the dashboard's UI (e.g. "What the agent knows"
         # panel). None when no brief exists for this business yet.
         "voiceBrief": _load_voice_brief(biz.slug),
+        # Phase D — Display Ad Amplification surfaces.
+        "reach": _reach_payload(reach_tiers, impressions_rows, local_first_rows),
     }
     return payload
+
+
+# 65 / 25 / 10 split when an ad sold by Publisher A surfaces in Publisher B's
+# chatbot territory. Source: amplora_business_plan.md §7.2.
+_REVENUE_SPLIT = {"selling": 0.65, "receiving": 0.25, "platform": 0.10}
+
+
+def _reach_payload(
+    tiers: list[ReachTier],
+    impressions: list[AdImpressionsByTerritory],
+    local_first: list[LocalFirstLog],
+) -> dict[str, Any]:
+    # ---- tier ladder (always present, sourced from seed) ----
+    tier_payload = [
+        {
+            "key": t.tier_key,
+            "label": t.label,
+            "multiplierPct": t.multiplier_pct,
+            "radiusMiles": t.radius_miles,
+            "territories": t.territories_json,
+            "description": t.description,
+        }
+        for t in tiers
+    ]
+
+    # ---- territory revenue (Day-1 honest: empty when no served ads yet) ----
+    by_territory: dict[str, dict[str, Any]] = {}
+    total_impressions = 0
+    total_gross_cents = 0
+    for row in impressions:
+        bucket = by_territory.setdefault(
+            row.territory_code,
+            {"code": row.territory_code, "label": row.territory_label, "impressions": 0, "grossCents": 0},
+        )
+        bucket["impressions"] += row.impressions
+        bucket["grossCents"] += row.revenue_cents
+        total_impressions += row.impressions
+        total_gross_cents += row.revenue_cents
+
+    by_territory_list = sorted(by_territory.values(), key=lambda b: b["impressions"], reverse=True)
+    revenue_split = {
+        "sellingCents":   int(round(total_gross_cents * _REVENUE_SPLIT["selling"])),
+        "receivingCents": int(round(total_gross_cents * _REVENUE_SPLIT["receiving"])),
+        "platformCents":  int(round(total_gross_cents * _REVENUE_SPLIT["platform"])),
+        "split":          _REVENUE_SPLIT,
+    }
+
+    # ---- local-first telemetry (Day-1 honest: empty when no queries yet) ----
+    queries_total = sum(r.queries_total for r in local_first)
+    queries_local_first = sum(r.queries_local_first for r in local_first)
+    queries_oot_paid = sum(r.queries_out_of_territory_paid for r in local_first)
+    local_first_pct = (queries_local_first / queries_total) if queries_total else None
+
+    return {
+        "tiers": tier_payload,
+        "territoryRevenue": {
+            "totalImpressions": total_impressions,
+            "totalGrossCents":  total_gross_cents,
+            "byTerritory":      by_territory_list,
+            "split":            revenue_split,
+            "hasData":          total_impressions > 0,
+        },
+        "localFirst": {
+            "queriesTotal":             queries_total,
+            "queriesLocalFirst":        queries_local_first,
+            "queriesOutOfTerritoryPaid": queries_oot_paid,
+            "localFirstPct":            local_first_pct,
+            "hasData":                  queries_total > 0,
+        },
+    }

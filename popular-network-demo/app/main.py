@@ -31,7 +31,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from .db import _add_col_if_missing, init_db
-from .routers import approvals, bootstrap, chat, marketing_plan, performance, posts, reviews, settings
+from .routers import approvals, bootstrap, chat, marketing_plan, performance, posts, reach, reviews, settings
 from .seed import seed_if_empty
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -58,6 +58,25 @@ def _startup() -> None:
     # NULL there. Populate with sensible defaults so the Notifications tab
     # renders something. Safe to re-run on every startup (no-op once filled).
     _backfill_notification_defaults()
+    # Phase D.1: businesses that pre-date the reach_tiers table need their
+    # tier ladder seeded. Idempotent: only inserts when the business has zero
+    # rows. Same call as in seed.py's fresh-DB path.
+    _backfill_reach_tiers()
+
+
+def _backfill_reach_tiers() -> None:
+    """Insert the Phase D reach-tier ladder for any business that doesn't have it."""
+    from .db import SessionLocal
+    from .models import Business, ReachTier
+    from .seed import _seed_reach_tiers
+
+    with SessionLocal() as db:
+        for biz in db.query(Business).all():
+            has_any = db.query(ReachTier).filter(ReachTier.business_id == biz.id).first()
+            if has_any is None:
+                _seed_reach_tiers(db, business_id=biz.id)
+                log.info(f"Backfilled reach tier ladder for business_id={biz.id} ({biz.slug})")
+        db.commit()
 
 
 def _backfill_notification_defaults() -> None:
@@ -121,6 +140,7 @@ app.include_router(performance.router, prefix="/api", tags=["performance"])
 app.include_router(settings.router, prefix="/api", tags=["settings"])
 app.include_router(marketing_plan.router, prefix="/api", tags=["marketing-plan"])
 app.include_router(chat.router, prefix="/api", tags=["chat"])
+app.include_router(reach.router, prefix="/api", tags=["reach"])
 
 
 @app.get("/", include_in_schema=False)

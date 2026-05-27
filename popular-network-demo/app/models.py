@@ -213,3 +213,78 @@ class Escalation(Base):
     message: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     handled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Phase D — Display Ad Amplification (Phase 1.5 of the business plan)
+# ---------------------------------------------------------------------------
+# Source of truth: docs/amplora_business_plan.md §3.2.
+# - Local Reach (default, +0%):  selling pub + that territory's chatbot only
+# - Regional Reach (+50%):       adjacent territories within ~50 miles
+# - Network Reach (+100%):       full network within ~100 miles
+# - Maximum Reach (+150–200%):   every licensed territory
+# Worked example: a $200 nursing help-wanted ad becomes $300 / $400 / $500–600.
+# Revenue split when ad surfaces cross-territory: 65 selling / 25 receiving / 10 platform.
+
+
+class ReachTier(Base):
+    """Per-business config for the 4 reach tiers shown in the Reach Configurator.
+
+    Seeded once per business; mutable later if a publisher wants to override the
+    default ladder for their territory. The `multiplier_pct` is what the
+    Compose UI shows next to each tier ("+50% of base ad rate"); the estimator
+    function uses it to compute the price delta.
+    """
+
+    __tablename__ = "reach_tiers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"))
+    tier_key: Mapped[str] = mapped_column(String(16))  # local|regional|network|maximum
+    label: Mapped[str] = mapped_column(String(64))
+    multiplier_pct: Mapped[int] = mapped_column(Integer)  # 0, 50, 100, 175
+    radius_miles: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    territories_json: Mapped[Any] = mapped_column(JSON)  # list[str] of territory codes covered at this tier
+    description: Mapped[str] = mapped_column(Text)
+
+
+class AdImpressionsByTerritory(Base):
+    """Per-post per-territory impression + revenue tally.
+
+    Populated by the chatbot's ad-serve pipeline (out of scope for the demo —
+    rows are seeded fixture-style). The Cross-Territory Revenue card on
+    PerformanceView reads this to show "where did your ad actually surface."
+    """
+
+    __tablename__ = "ad_impressions_by_territory"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"))
+    post_id: Mapped[Optional[int]] = mapped_column(ForeignKey("posts.id"), nullable=True)
+    territory_code: Mapped[str] = mapped_column(String(32))  # e.g. "windom", "marshall", "pipestone"
+    territory_label: Mapped[str] = mapped_column(String(80))
+    impressions: Mapped[int] = mapped_column(Integer)
+    paid_reach_tier: Mapped[str] = mapped_column(String(16))  # local|regional|network|maximum
+    revenue_cents: Mapped[int] = mapped_column(Integer)  # gross before 65/25/10 split
+    is_selling_territory: Mapped[bool] = mapped_column(Boolean, default=False)
+    recorded_on: Mapped[str] = mapped_column(String(10))  # YYYY-MM-DD
+
+
+class LocalFirstLog(Base):
+    """Daily summary of how the Local-First Algorithm performed in this territory.
+
+    Three counters per day:
+    - queries_total: every consumer query the chatbot answered
+    - queries_local_first: queries where local results filled the response
+    - queries_out_of_territory_paid: queries where a paid out-of-territory ad
+      surfaced because local supply didn't fully answer
+    """
+
+    __tablename__ = "local_first_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"))
+    log_date: Mapped[str] = mapped_column(String(10))  # YYYY-MM-DD
+    queries_total: Mapped[int] = mapped_column(Integer, default=0)
+    queries_local_first: Mapped[int] = mapped_column(Integer, default=0)
+    queries_out_of_territory_paid: Mapped[int] = mapped_column(Integer, default=0)

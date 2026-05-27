@@ -24,6 +24,7 @@ from .models import (
     PerformanceSummary,
     Post,
     Approval,
+    ReachTier,
     Review,
     ReviewAggregate,
     SettingsRow,
@@ -271,7 +272,68 @@ def seed_if_empty() -> bool:
         # voice brief on Day 1. The owner's first message is their actual first
         # interaction with the agent.
 
+        # Phase D — reach-tier ladder. Mirrors docs/amplora_business_plan.md §3.2.
+        # The territory list is the SW Peach pilot footprint described in §4.2.
+        # Multipliers anchor on the worked example ($200 → $300/$400/$500–600);
+        # the Maximum tier picks the midpoint of the +150–200% range (175%).
+        _seed_reach_tiers(db, business_id=1)
+
         db.commit()
         return True
     finally:
         db.close()
+
+
+# Pilot-territory footprint. The local tier sees only its own publisher; each
+# higher tier widens the radius until Maximum spans every licensed territory.
+# Codes are the slugified town/city names used by the chatbot's territory router.
+_SW_PEACH_TERRITORIES = {
+    "local":    ["new_ulm"],
+    "regional": ["new_ulm", "windom", "marshall", "pipestone"],
+    "network":  ["new_ulm", "windom", "marshall", "pipestone", "westbrook", "mountain_lake", "fairmont", "tracy"],
+    "maximum":  ["new_ulm", "windom", "marshall", "pipestone", "westbrook", "mountain_lake",
+                 "fairmont", "tracy", "redwood_falls", "worthington", "luverne", "jackson"],
+}
+
+
+def _seed_reach_tiers(db, business_id: int) -> None:
+    ladder = [
+        {
+            "tier_key": "local",
+            "label": "Local Reach",
+            "multiplier_pct": 0,
+            "radius_miles": None,
+            "description": "Included in your base ad rate. Your publication + the Cottonwood County Citizen chatbot in New Ulm.",
+        },
+        {
+            "tier_key": "regional",
+            "label": "Regional Reach (+50%)",
+            "multiplier_pct": 50,
+            "radius_miles": 50,
+            "description": "Adds chatbot reach in adjacent territories within 50 miles. Good fit for help-wanted, real estate, auto sales, ag.",
+        },
+        {
+            "tier_key": "network",
+            "label": "Network Reach (+100%)",
+            "multiplier_pct": 100,
+            "radius_miles": 100,
+            "description": "Full network reach across every territory within 100 miles of New Ulm. Built for advertisers happy to drive customers in from an hour away.",
+        },
+        {
+            "tier_key": "maximum",
+            "label": "Maximum Reach (+175%)",
+            "multiplier_pct": 175,
+            "radius_miles": None,
+            "description": "Every licensed territory across the Amplora network. Use when geography genuinely doesn't matter — niche services, statewide audiences.",
+        },
+    ]
+    for row in ladder:
+        db.add(ReachTier(
+            business_id=business_id,
+            tier_key=row["tier_key"],
+            label=row["label"],
+            multiplier_pct=row["multiplier_pct"],
+            radius_miles=row["radius_miles"],
+            territories_json=_SW_PEACH_TERRITORIES[row["tier_key"]],
+            description=row["description"],
+        ))

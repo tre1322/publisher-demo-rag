@@ -126,7 +126,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-26 · v32 — Westbrook scrub: Goal hero wired to q3Goals, rep card null-tolerant, Compose defaults Quadd-relevant, preview chrome data-driven, dead CreatePostsTab removed';
+  const BUILD_VERSION = '2026-05-27 · v34 — Phase D.3+D.4: Network reach tab on Performance — Cross-Territory Revenue + Local-First Algorithm transparency cards w/ Day-1 empty states';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -808,7 +808,7 @@
      VIEW: COMPOSE — brief + per-platform editor + live preview
      ============================================================ */
   const ComposeView = ({ onNavigate }) => {
-    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings } = useDashboard();
+    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings, reach } = useDashboard();
     const mutate = useDashboardMutate();
     const [topic, setTopic] = useState('Why publishers love the universal document extractor');
     const [notes, setNotes] = useState('Lead with the Citizen Publishing time-savings testimonial — 2–3 hours/week. Founder credibility (28 years as a publisher) is the wedge. End with the 7-day free trial.');
@@ -820,6 +820,50 @@
     const [saveError, setSaveError] = useState(null);
     const [saveToast, setSaveToast] = useState(null);
     const [confirmSend, setConfirmSend] = useState(false);
+
+    // Phase D.2 — Reach Configurator state. Card surfaces only when FB is in
+    // the chosen platforms (paid display channel). Live POST to
+    // /api/reach/estimate whenever tier / base rate / days change.
+    const [reachTier, setReachTier]       = useState('local');
+    const [reachBaseRate, setReachBaseRate] = useState(200);   // dollars
+    const [reachDays, setReachDays]       = useState(7);
+    const [reachEstimate, setReachEstimate] = useState(null);
+    const [reachEstimating, setReachEstimating] = useState(false);
+    const [reachEstimateError, setReachEstimateError] = useState(null);
+
+    const reachVisible = chosen.includes('fb');
+
+    useEffect(() => {
+      if (!reachVisible) { setReachEstimate(null); return; }
+      // Light debounce so rapid-fire typing in the base-rate input doesn't
+      // hammer the endpoint. 200ms feels live without spamming.
+      const ctrl = new AbortController();
+      const t = setTimeout(() => {
+        setReachEstimating(true);
+        setReachEstimateError(null);
+        fetch('/api/reach/estimate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tier_key: reachTier,
+            base_rate_cents: Math.max(0, Math.round(reachBaseRate * 100)),
+            days: Math.max(1, Math.min(90, reachDays | 0)),
+            platforms: chosen,
+          }),
+          signal: ctrl.signal,
+        })
+          .then(r => r.ok ? r.json() : r.text().then(txt => Promise.reject(`HTTP ${r.status}: ${txt}`)))
+          .then(data => setReachEstimate(data))
+          .catch(e => {
+            if (e.name !== 'AbortError') {
+              setReachEstimateError(String(e.message || e));
+              setReachEstimate(null);
+            }
+          })
+          .finally(() => setReachEstimating(false));
+      }, 200);
+      return () => { clearTimeout(t); ctrl.abort(); };
+    }, [reachVisible, reachTier, reachBaseRate, reachDays, chosen.join(',')]);
 
     useEffect(() => {
       if (!saveToast) return;
@@ -1109,6 +1153,128 @@
                 })}
               </div>
             </Card>
+
+            {/* Phase D.2 — Reach Configurator. Visible whenever FB is among
+                the selected platforms (paid display channel). All numbers
+                come live from POST /api/reach/estimate. */}
+            {reachVisible && (
+              <Card>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-violet-50 text-violet-600 flex items-center justify-center">
+                      <Icon name="globe" size={16} />
+                    </div>
+                    <div>
+                      <div className="font-semibold text-ink text-sm">Reach amplification</div>
+                      <div className="text-[11px] text-ink-faint">Phase 1.5 · Network reach add-on</div>
+                    </div>
+                  </div>
+                  {reachEstimating && <Pill color="violet">Updating…</Pill>}
+                </div>
+
+                {/* Base rate + days inputs, inline */}
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <div>
+                    <label className="text-[10px] uppercase tracking-wider font-semibold text-ink-faint mb-1 block">Base ad rate</label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-faint text-sm">$</span>
+                      <input type="number" min="0" step="25"
+                        value={reachBaseRate}
+                        onChange={e => setReachBaseRate(Math.max(0, Number(e.target.value) || 0))}
+                        className="w-full pl-6 pr-2 py-1.5 rounded-lg border border-surface-edge text-sm focus:outline-none focus:border-violet-500" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase tracking-wider font-semibold text-ink-faint mb-1 block">Run for</label>
+                    <div className="relative">
+                      <input type="number" min="1" max="90"
+                        value={reachDays}
+                        onChange={e => setReachDays(Math.max(1, Math.min(90, Number(e.target.value) | 0)))}
+                        className="w-full pl-2.5 pr-12 py-1.5 rounded-lg border border-surface-edge text-sm focus:outline-none focus:border-violet-500" />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint text-xs">days</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tier radio ladder. Reads tiers from bootstrap (static) and
+                    shows live estimate.totalCents per tier when available. */}
+                <div className="space-y-1.5">
+                  {(reach?.tiers || []).map(t => {
+                    const on = reachTier === t.key;
+                    const localCents = Math.max(0, Math.round(reachBaseRate * 100));
+                    const tierTotalCents = localCents + (localCents * t.multiplierPct / 100);
+                    return (
+                      <button key={t.key} onClick={() => setReachTier(t.key)}
+                        className={`w-full text-left px-3 py-2 rounded-lg border-2 transition-all ${
+                          on ? 'border-violet-500 bg-violet-50' : 'border-surface-edge hover:border-ink-faint/40'
+                        }`}>
+                        <div className="flex items-center gap-2">
+                          <div className={`w-3.5 h-3.5 rounded-full border-2 shrink-0 ${on ? 'border-violet-500 bg-white' : 'border-surface-edge'}`}>
+                            {on && <div className="w-1.5 h-1.5 rounded-full bg-violet-500 m-0.5"></div>}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className={`text-sm font-medium truncate ${on ? 'text-ink' : 'text-ink-soft'}`}>
+                                {t.label}
+                              </span>
+                              <span className={`text-sm font-semibold tabular-nums shrink-0 ${on ? 'text-violet-700' : 'text-ink-faint'}`}>
+                                ${(tierTotalCents / 100).toLocaleString(undefined, {maximumFractionDigits: 0})}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-ink-faint truncate">
+                              {t.territories.length === 1 ? '1 territory' : `${t.territories.length} territories`}
+                              {t.radiusMiles ? ` · within ${t.radiusMiles} mi` : ''}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Live estimate result panel */}
+                {reachEstimateError && (
+                  <div className="mt-3 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-xs text-bad flex items-start gap-1.5">
+                    <Icon name="alert" size={12} className="mt-0.5 shrink-0" />
+                    <div>Couldn't fetch estimate: {reachEstimateError}</div>
+                  </div>
+                )}
+                {reachEstimate && !reachEstimateError && (
+                  <div className="mt-3 p-3 rounded-lg bg-gradient-to-br from-violet-50 to-violet-100/40 border border-violet-200">
+                    <div className="grid grid-cols-2 gap-3 mb-2">
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wider font-semibold text-violet-700/70">Impressions</div>
+                        <div className="text-lg font-semibold text-violet-900 tabular-nums">
+                          ~{reachEstimate.estimatedImpressions.toLocaleString()}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wider font-semibold text-violet-700/70">Unique reach</div>
+                        <div className="text-lg font-semibold text-violet-900 tabular-nums">
+                          ~{reachEstimate.estimatedUniqueReach.toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+                    {reachEstimate.costBreakdown.upliftCents > 0 && (
+                      <div className="text-[11px] text-violet-800/80 pt-2 border-t border-violet-200/60">
+                        <span className="font-semibold">+${(reachEstimate.costBreakdown.upliftCents / 100).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
+                        {' '}network uplift over your ${(reachEstimate.costBreakdown.baseCents / 100).toLocaleString(undefined, {maximumFractionDigits: 0})} base rate.
+                      </div>
+                    )}
+                    {reachEstimate.territories && reachEstimate.territories.length > 1 && (
+                      <div className="text-[10px] text-violet-700/70 pt-1.5 leading-relaxed">
+                        Surfaces in: {reachEstimate.territories.map(c => c.replace(/_/g, ' ')).join(' · ')}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!reachEstimate && !reachEstimateError && !reachEstimating && (
+                  <div className="mt-3 text-[11px] text-ink-faint italic">
+                    Pick a tier to see impression estimate.
+                  </div>
+                )}
+              </Card>
+            )}
 
             <Card>
               <div className="font-semibold text-ink text-sm mb-3">Image</div>
@@ -2144,10 +2310,182 @@
   };
 
   /* ============================================================
+     VIEW: PERFORMANCE — Network reach sub-tab (Phase D.3 + D.4)
+     ============================================================ */
+  // Pretty-print a territory code ("mountain_lake" → "Mountain Lake")
+  const formatTerritoryLabel = (code) =>
+    (code || '')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase());
+
+  const NetworkReachTab = ({ reach }) => {
+    const tr = reach?.territoryRevenue || { hasData: false, byTerritory: [], totalImpressions: 0, totalGrossCents: 0, split: {} };
+    const lf = reach?.localFirst       || { hasData: false, queriesTotal: 0, queriesLocalFirst: 0, queriesOutOfTerritoryPaid: 0, localFirstPct: null };
+
+    const split = tr.split || {};
+    const sellingCents   = split.sellingCents   ?? 0;
+    const receivingCents = split.receivingCents ?? 0;
+    const platformCents  = split.platformCents  ?? 0;
+
+    // Bar-row max for impressions visualization. Falls back to 1 to avoid /0.
+    const maxImpressions = Math.max(1, ...tr.byTerritory.map(b => b.impressions));
+    const fmtUSD = (cents) => `$${(cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 fade-in">
+        {/* --- D.3 Cross-Territory Revenue --- */}
+        <Card>
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <div className="text-xs uppercase tracking-wider font-semibold text-violet-700 mb-1 inline-flex items-center gap-1.5">
+                <Icon name="globe" size={11} strokeWidth={2.4} /> Phase 1.5
+              </div>
+              <h3 className="font-semibold text-ink text-base">Cross-Territory Revenue</h3>
+              <p className="text-xs text-ink-soft mt-0.5">Where your amplified ads surface across the publisher network.</p>
+            </div>
+            {tr.hasData && (
+              <Pill color="violet">{tr.totalImpressions.toLocaleString()} impressions</Pill>
+            )}
+          </div>
+
+          {!tr.hasData && (
+            <div className="border-2 border-dashed border-violet-200 rounded-xl px-4 py-8 text-center bg-violet-50/30">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-violet-100 text-violet-600 mb-3">
+                <Icon name="globe" size={22} strokeWidth={1.8} />
+              </div>
+              <h4 className="font-semibold text-ink text-sm mb-1">No cross-territory ad data yet</h4>
+              <p className="text-xs text-ink-soft max-w-xs mx-auto leading-relaxed">
+                When you publish your first amplified post (Regional, Network, or Maximum tier on Compose), this view will populate with per-territory impressions and the 65 / 25 / 10 revenue split.
+              </p>
+              <div className="mt-4 pt-4 border-t border-violet-200/60 grid grid-cols-3 gap-3 text-[10px] uppercase tracking-wider font-semibold">
+                <div className="text-violet-700">
+                  <div className="text-violet-900 text-base font-semibold normal-case tracking-normal">65%</div>
+                  Selling publisher
+                </div>
+                <div className="text-violet-700">
+                  <div className="text-violet-900 text-base font-semibold normal-case tracking-normal">25%</div>
+                  Receiving publishers
+                </div>
+                <div className="text-violet-700">
+                  <div className="text-violet-900 text-base font-semibold normal-case tracking-normal">10%</div>
+                  Amplora platform
+                </div>
+              </div>
+            </div>
+          )}
+
+          {tr.hasData && (
+            <>
+              {/* Per-territory impression bars, top 8 */}
+              <div className="space-y-1.5 mb-5">
+                {tr.byTerritory.slice(0, 8).map(b => (
+                  <div key={b.code} className="flex items-center gap-3 text-sm">
+                    <div className="w-28 shrink-0 text-ink-soft truncate">{b.label || formatTerritoryLabel(b.code)}</div>
+                    <div className="flex-1 h-5 bg-surface rounded overflow-hidden">
+                      <div className="h-full bg-violet-500 rounded transition-all"
+                        style={{ width: `${(b.impressions / maxImpressions) * 100}%` }} />
+                    </div>
+                    <div className="w-16 text-right tabular-nums text-xs text-ink-faint">
+                      {b.impressions.toLocaleString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* 65 / 25 / 10 revenue split */}
+              <div className="pt-4 border-t border-surface-edge">
+                <div className="text-[10px] uppercase tracking-wider font-semibold text-ink-faint mb-2">Revenue split · {fmtUSD(tr.totalGrossCents)} gross</div>
+                <div className="flex h-3 rounded-full overflow-hidden bg-surface mb-3">
+                  <div className="bg-violet-600" style={{ width: `${(split.split?.selling || 0) * 100}%` }} title="Selling publisher" />
+                  <div className="bg-violet-400" style={{ width: `${(split.split?.receiving || 0) * 100}%` }} title="Receiving publishers" />
+                  <div className="bg-violet-300" style={{ width: `${(split.split?.platform || 0) * 100}%` }} title="Amplora platform" />
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-[11px]">
+                  <div>
+                    <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-violet-600" /><span className="font-semibold text-ink">65% selling</span></div>
+                    <div className="text-ink-soft tabular-nums">{fmtUSD(sellingCents)}</div>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-violet-400" /><span className="font-semibold text-ink">25% receiving</span></div>
+                    <div className="text-ink-soft tabular-nums">{fmtUSD(receivingCents)}</div>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-violet-300" /><span className="font-semibold text-ink">10% platform</span></div>
+                    <div className="text-ink-soft tabular-nums">{fmtUSD(platformCents)}</div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </Card>
+
+        {/* --- D.4 Local-First Algorithm transparency --- */}
+        <Card>
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <div className="text-xs uppercase tracking-wider font-semibold text-emerald-700 mb-1 inline-flex items-center gap-1.5">
+                <Icon name="target" size={11} strokeWidth={2.4} /> Local-first algorithm
+              </div>
+              <h3 className="font-semibold text-ink text-base">How local results win</h3>
+              <p className="text-xs text-ink-soft mt-0.5">Local advertisers always surface first. Network reach only fills gaps when local supply doesn't fully answer a query.</p>
+            </div>
+            {lf.hasData && lf.localFirstPct != null && (
+              <Pill color="emerald">{Math.round(lf.localFirstPct * 100)}% local-first</Pill>
+            )}
+          </div>
+
+          {!lf.hasData && (
+            <div className="border-2 border-dashed border-emerald-200 rounded-xl px-4 py-8 text-center bg-emerald-50/30">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 mb-3">
+                <Icon name="target" size={22} strokeWidth={1.8} />
+              </div>
+              <h4 className="font-semibold text-ink text-sm mb-1">Telemetry pending</h4>
+              <p className="text-xs text-ink-soft max-w-xs mx-auto leading-relaxed">
+                Once the Cottonwood County chatbot starts answering consumer queries, this card will show how often local results filled the answer vs. how often paid out-of-territory ads were needed.
+              </p>
+              <ul className="mt-4 pt-4 border-t border-emerald-200/60 text-left text-[11px] text-ink-soft space-y-1.5 max-w-sm mx-auto leading-snug">
+                <li className="flex gap-2"><span className="text-emerald-600 font-semibold shrink-0">1.</span> Local results <strong className="text-ink">always</strong> rank above any out-of-territory match.</li>
+                <li className="flex gap-2"><span className="text-emerald-600 font-semibold shrink-0">2.</span> Adjacent territories surface when local results are thin or the user asks for broader range.</li>
+                <li className="flex gap-2"><span className="text-emerald-600 font-semibold shrink-0">3.</span> Out-of-territory paid ads appear only when (a) the advertiser paid for reach covering this location <em>and</em> (b) local supply didn't fully answer.</li>
+                <li className="flex gap-2"><span className="text-emerald-600 font-semibold shrink-0">4.</span> Distance is always disclosed — out-of-area results labeled clearly ("Hadley, 35 miles from you").</li>
+              </ul>
+            </div>
+          )}
+
+          {lf.hasData && (
+            <>
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="p-3 rounded-lg bg-emerald-50/60 border border-emerald-100">
+                  <div className="text-[10px] uppercase tracking-wider font-semibold text-emerald-700/80">Total queries</div>
+                  <div className="text-xl font-semibold text-ink tabular-nums">{lf.queriesTotal.toLocaleString()}</div>
+                </div>
+                <div className="p-3 rounded-lg bg-emerald-50/60 border border-emerald-100">
+                  <div className="text-[10px] uppercase tracking-wider font-semibold text-emerald-700/80">Local-first served</div>
+                  <div className="text-xl font-semibold text-ink tabular-nums">{lf.queriesLocalFirst.toLocaleString()}</div>
+                </div>
+                <div className="p-3 rounded-lg bg-violet-50/60 border border-violet-100">
+                  <div className="text-[10px] uppercase tracking-wider font-semibold text-violet-700/80">Out-of-territory paid</div>
+                  <div className="text-xl font-semibold text-ink tabular-nums">{lf.queriesOutOfTerritoryPaid.toLocaleString()}</div>
+                </div>
+              </div>
+              <div className="text-sm text-ink-soft leading-relaxed">
+                Local results surfaced first in <strong className="text-ink tabular-nums">{lf.queriesLocalFirst.toLocaleString()}</strong> of <strong className="text-ink tabular-nums">{lf.queriesTotal.toLocaleString()}</strong> queries this month
+                {lf.queriesOutOfTerritoryPaid > 0 && (
+                  <> — paid out-of-territory ads filled supply gaps in <strong className="text-ink tabular-nums">{lf.queriesOutOfTerritoryPaid.toLocaleString()}</strong> queries.</>
+                )}
+              </div>
+            </>
+          )}
+        </Card>
+      </div>
+    );
+  };
+
+  /* ============================================================
      VIEW: PERFORMANCE
      ============================================================ */
   const PerformanceView = () => {
-    const { business, stats, attention, weekRecap, posts, approvals, performance: ctxPerformance, reviews, marketingPlan, chat, settings } = useDashboard();
+    const { business, stats, attention, weekRecap, posts, approvals, performance: ctxPerformance, reviews, marketingPlan, chat, settings, reach } = useDashboard();
     const mutate = useDashboardMutate();
     const [period, setPeriod] = useState('30');
     const [tab, setTab] = useState('overview');
@@ -2226,11 +2564,13 @@
     const titles = {
       overview: { title: 'Performance', subtitle: 'Headline numbers and the daily-reach trend.' },
       channels: { title: 'Channels',     subtitle: 'Organic vs paid by platform — where the lift is coming from.' },
+      network:  { title: 'Network reach', subtitle: 'Cross-territory ad amplification + Local-First Algorithm transparency. Phase 1.5 surfaces.' },
       insights: { title: 'Insights',     subtitle: 'What\'s working and what\'s not, generated from the last 30 days of your data.' }
     };
     const insightTabs = [
       { id: 'overview', label: 'Overview', icon: 'chart' },
       { id: 'channels', label: 'Channels', icon: 'bell' },
+      { id: 'network',  label: 'Network',  icon: 'globe' },
       { id: 'insights', label: 'Insights', icon: 'sparkles', count: performance.insights.length }
     ];
     return (
@@ -2352,6 +2692,10 @@
                 </ul>
               </Card>
             </div>
+          )}
+
+          {tab === 'network' && (
+            <NetworkReachTab reach={reach} />
           )}
 
           {tab === 'insights' && (
