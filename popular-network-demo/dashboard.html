@@ -126,7 +126,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-27 · v39 — Phase E.6: Settings ad accounts (mock OAuth Connect/Disconnect for Meta/Google/TikTok/LinkedIn) + Tier 3 autonomous-spend toggle in Permissions';
+  const BUILD_VERSION = '2026-05-27 · v40 — Phase F: Tier 4 Inventory + Billing/Usage + Chatbot Preview. Quadd bumped to Tier 4 ($799/mo). Three new surfaces — Inventory sidebar tab w/ feed connect + fixture importer + faceted-search visibility; Billing sub-tab in Settings w/ tier picker + usage table + invoice history; Chatbot Preview sidebar tab w/ sentiment + escalation flags + transcript drilldown.';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -198,7 +198,10 @@
     bookmark: '<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>',
     thumbsup: '<path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>',
     share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>',
-    clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'
+    clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+    box: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" x2="12" y1="22.08" y2="12"/>',
+    convo: '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>',
+    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>'
   };
 
   /* ============================================================
@@ -215,9 +218,9 @@
     location: 'New Ulm, MN',
     publisher: 'Cottonwood County Citizen',
     phone: '(507) 822-1253',
-    tier: 3,
-    tierLabel: 'Tier 3 — Concierge',
-    monthlyPrice: 150,
+    tier: 4,
+    tierLabel: 'Tier 4 — Inventory',
+    monthlyPrice: 799,
     joinedDaysAgo: 0,
     joinedDate: 'Today',
     voiceInterview: 'complete',
@@ -394,10 +397,24 @@
   performance.dailyReachCurrent = dailyReachCurrent;
   performance.dailyReachPrev    = dailyReachPrev;
 
+  // Phase F: minimal mock shapes for inventory/billing/chatbot so the
+  // bootstrap-less fallback path (e.g. file:// preview) doesn't crash.
+  const inventory = {
+    tierEligible: true, feedCount: 0, listingCount: 0, staleCount: 0, hasAnyFeed: false,
+  };
+  const billing = {
+    tier: 4, tierLabel: 'Tier 4 — Inventory', monthlyPrice: 799,
+    invoiceCount: 0, currentUsage: {}, stripeEnabled: false,
+  };
+  const chatbot = {
+    tierEligible: true, conversationCount: 0, escalationCount: 0,
+  };
+
   const FALLBACK_DATA = {
     business, stats, attention, weekRecap,
     posts, approvals, performance, reviews,
-    marketingPlan, chat, settings
+    marketingPlan, chat, settings,
+    inventory, billing, chatbot
   };
 
   /* ============================================================
@@ -721,17 +738,29 @@
     { id: 'ads',         label: 'Ads & Spend',   icon: 'dollar' },
     { id: 'reviews',     label: 'Reviews',       icon: 'star' },
     { id: 'plan',        label: 'Marketing Plan',icon: 'target' },
+    // Phase F: Inventory tab (Tier 4 only — hidden for tier < 4).
+    { id: 'inventory',   label: 'Inventory',     icon: 'box', minTier: 4 },
     { id: 'chat',        label: 'AI Agent',      icon: 'msg' },
+    // Phase F: Consumer-facing Chatbot Preview (Tier 3+).
+    { id: 'chatbotpreview', label: 'Chatbot',    icon: 'convo', minTier: 3 },
     { id: 'settings',    label: 'Settings',      icon: 'settings' }
   ];
 
   const Sidebar = ({ current, onNavigate }) => {
-    const { business, approvals } = useDashboard();
+    const { business, approvals, chatbot } = useDashboard();
     // Phase B.7: derive Approvals badge from the live queue length so it
     // shrinks/grows as the owner works through it.
-    const nav = NAV_DEFS.map(n =>
-      n.id === 'approvals' ? { ...n, count: approvals?.length || 0 } : n
-    );
+    // Phase F: filter out tabs whose minTier > current tier (Inventory =
+    // Tier 4+, Chatbot = Tier 3+). The badge on Chatbot shows escalation
+    // count so the owner spots prospects-needing-outreach at a glance.
+    const tier = business?.tier || 0;
+    const nav = NAV_DEFS
+      .filter(n => !n.minTier || tier >= n.minTier)
+      .map(n => {
+        if (n.id === 'approvals') return { ...n, count: approvals?.length || 0 };
+        if (n.id === 'chatbotpreview' && chatbot?.escalationCount) return { ...n, count: chatbot.escalationCount };
+        return n;
+      });
     return (
     <aside className="w-60 shrink-0 bg-brand-700 text-white flex flex-col h-full">
       <div className="px-5 pt-6 pb-5 border-b border-white/10">
@@ -4991,6 +5020,853 @@
   );
 
   /* ============================================================
+     VIEW: INVENTORY  (Phase F.1 — Tier 4 inventory feeds)
+     ============================================================ */
+  // Helper: human-readable money from cents. The inventory listings carry
+  // prices in cents; the Billing view does too.
+  const fmtMoneyCents = (cents) => {
+    if (cents == null) return '—';
+    const dollars = cents / 100;
+    if (dollars >= 1000) return `$${dollars.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+    return `$${dollars.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+  };
+
+  // Sentiment chip colors used by ChatbotPreviewView.
+  const SENTIMENT_CHIP = {
+    positive: { bg: 'bg-emerald-50', text: 'text-emerald-700', dot: '#16a34a' },
+    neutral:  { bg: 'bg-slate-100',  text: 'text-slate-700',   dot: '#64748b' },
+    negative: { bg: 'bg-rose-50',    text: 'text-rose-700',    dot: '#e11d48' },
+    mixed:    { bg: 'bg-amber-50',   text: 'text-amber-700',   dot: '#d97706' },
+  };
+
+  const InventoryView = ({ onNavigate }) => {
+    const { business } = useDashboard();
+    const [invState, setInvState]   = useState(null);
+    const [loading, setLoading]     = useState(true);
+    const [error, setError]         = useState(null);
+    const [tab, setTab]             = useState('overview');
+    const [importing, setImporting] = useState(null);  // feed_type while importing
+    const [syncing, setSyncing]     = useState(null);  // feed_id while syncing
+    const [search, setSearch]       = useState('');
+    const [statusFilter, setStatusFilter] = useState('all');  // all|active|stale|sold|pending
+    const [showConnect, setShowConnect] = useState(false);
+    const [newFeed, setNewFeed]     = useState({ feed_type: 'vauto', location_label: '' });
+    const [creatingFeed, setCreatingFeed] = useState(false);
+
+    const refresh = useCallback(async () => {
+      try {
+        const r = await fetch('/api/inventory');
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        setInvState(await r.json());
+        setError(null);
+      } catch (e) {
+        console.error('[inventory.refresh]', e);
+        setError(`Couldn't load inventory: ${e.message || e}`);
+      } finally {
+        setLoading(false);
+      }
+    }, []);
+    useEffect(() => { refresh(); }, [refresh]);
+
+    const handleImportFixture = async (feed_type) => {
+      setImporting(feed_type);
+      try {
+        const r = await fetch('/api/inventory/import-fixture', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ feed_type }),
+        });
+        if (!r.ok) {
+          const detail = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
+          throw new Error(detail.detail || `HTTP ${r.status}`);
+        }
+        await refresh();
+      } catch (e) {
+        console.error('[inventory.importFixture]', e);
+        setError(`Couldn't import sample: ${e.message || e}`);
+      } finally {
+        setImporting(null);
+      }
+    };
+
+    const handleSync = async (feedId) => {
+      setSyncing(feedId);
+      try {
+        const r = await fetch(`/api/inventory/feeds/${feedId}/sync`, { method: 'POST' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        await refresh();
+      } catch (e) {
+        console.error('[inventory.sync]', e);
+        setError(`Sync failed: ${e.message || e}`);
+      } finally {
+        setSyncing(null);
+      }
+    };
+
+    const handleDisconnect = async (feedId) => {
+      if (!window.confirm('Disconnect this feed? Listings stay but will go stale.')) return;
+      try {
+        const r = await fetch(`/api/inventory/feeds/${feedId}`, { method: 'DELETE' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        await refresh();
+      } catch (e) {
+        console.error('[inventory.disconnect]', e);
+        setError(`Couldn't disconnect: ${e.message || e}`);
+      }
+    };
+
+    const handleCreateFeed = async () => {
+      if (!newFeed.location_label.trim()) {
+        setError('Location label is required.');
+        return;
+      }
+      setCreatingFeed(true);
+      try {
+        const r = await fetch('/api/inventory/feeds', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newFeed),
+        });
+        if (!r.ok) {
+          const detail = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
+          throw new Error(detail.detail || `HTTP ${r.status}`);
+        }
+        setShowConnect(false);
+        setNewFeed({ feed_type: 'vauto', location_label: '' });
+        await refresh();
+      } catch (e) {
+        console.error('[inventory.connect]', e);
+        setError(`Couldn't connect feed: ${e.message || e}`);
+      } finally {
+        setCreatingFeed(false);
+      }
+    };
+
+    if (loading) {
+      return (
+        <div className="px-8 py-7">
+          <TopBar breadcrumb="Inventory" title="Inventory" subtitle="Tier 4 inventory feeds." />
+          <div className="text-ink-soft text-sm mt-6">Loading inventory data…</div>
+        </div>
+      );
+    }
+    if (!invState) {
+      return (
+        <div className="px-8 py-7">
+          <TopBar breadcrumb="Inventory" title="Inventory" subtitle="Tier 4 inventory feeds." />
+          <Card className="mt-6">
+            <div className="text-rose-700 text-sm">{error || 'Inventory endpoint returned no data.'}</div>
+          </Card>
+        </div>
+      );
+    }
+
+    const filteredListings = (invState.listings || []).filter(li => {
+      if (statusFilter === 'all' && !search) return true;
+      if (statusFilter === 'stale' && !li.isStale) return false;
+      if (statusFilter !== 'all' && statusFilter !== 'stale' && li.status !== statusFilter) return false;
+      if (search && !li.title.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    });
+
+    const tabs = [
+      { id: 'overview', label: 'Overview',        icon: 'chart' },
+      { id: 'listings', label: 'Listings',        icon: 'box',  count: invState.totals.listings || undefined },
+      { id: 'search',   label: 'Search visibility', icon: 'search' },
+      { id: 'feeds',    label: 'Feeds',           icon: 'plus', count: invState.feeds?.length || undefined }
+    ];
+
+    const t = invState.totals;
+    return (
+      <div className="fade-in">
+        <TopBar
+          breadcrumb="Inventory"
+          title="Inventory"
+          subtitle={invState.tierEligible
+            ? "Sync listings from your DMS / MLS / marketplace feeds — see what's working in chatbot search."
+            : "Tier 4 unlocks live inventory sync, faceted-search visibility, and stale-listing alerts."}
+          right={
+            <div className="flex items-center gap-2">
+              <Pill color={invState.tierEligible ? 'emerald' : 'slate'}>
+                Tier {invState.tier} — {invState.tierEligible ? 'Inventory eligible' : 'Upgrade required'}
+              </Pill>
+              {invState.tierEligible && (
+                <button
+                  onClick={() => setShowConnect(true)}
+                  className="px-3 py-2 rounded-lg bg-brand-700 text-white text-sm font-medium hover:bg-brand-800 inline-flex items-center gap-2">
+                  <Icon name="plus" size={14} /> Connect feed
+                </button>
+              )}
+            </div>
+          }
+        />
+        <div className="px-8 pt-2"><TabBar tabs={tabs} value={tab} onChange={setTab} /></div>
+
+        {error && (
+          <div className="mx-8 mt-3 px-4 py-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-sm flex items-center justify-between">
+            <span>{error}</span>
+            <button className="text-rose-600 hover:text-rose-800" onClick={() => setError(null)}><Icon name="x" size={14} /></button>
+          </div>
+        )}
+
+        <div className="px-8 py-7 space-y-5">
+          {!invState.tierEligible && (
+            <Card>
+              <div className="flex items-start gap-4">
+                <div className="shrink-0 w-12 h-12 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+                  <Icon name="box" size={22} />
+                </div>
+                <div className="flex-1">
+                  <div className="font-serif text-lg font-semibold text-ink">Tier 4 — Inventory unlocks this view</div>
+                  <p className="text-sm text-ink-soft mt-1">
+                    Connect inventory feeds from DealerCenter, vAuto, TractorHouse, MLS, BoatTrader, or generic CSV.
+                    Listings sync into your publisher's chatbot so consumer searches surface your stock directly.
+                    Tier 4 Base is $799/month with up to 50 listings + one feed integration.
+                  </p>
+                  <div className="mt-3">
+                    <button
+                      onClick={() => onNavigate?.('settings')}
+                      className="px-3 py-2 rounded-lg bg-brand-700 text-white text-sm hover:bg-brand-800">
+                      Upgrade in Settings → Billing
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {tab === 'overview' && (
+            <div className="space-y-5 fade-in">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Card className="bg-gradient-to-br from-brand-700 to-brand-900 text-white">
+                  <div className="text-[11px] uppercase tracking-wider text-white/70 font-medium">Total listings</div>
+                  <div className="font-serif text-3xl font-semibold mt-1">{t.listings}</div>
+                  <div className="text-xs text-white/70 mt-1">{t.active} active · {t.sold} sold</div>
+                </Card>
+                <Card>
+                  <div className="text-[11px] uppercase tracking-wider text-ink-faint font-medium">Stale (30d+)</div>
+                  <div className={`font-serif text-3xl font-semibold mt-1 ${t.stale > 0 ? 'text-amber-700' : 'text-ink'}`}>{t.stale}</div>
+                  <div className="text-xs text-ink-soft mt-1">{t.stale > 0 ? 'Worth a price refresh' : 'Nothing stale yet'}</div>
+                </Card>
+                <Card>
+                  <div className="text-[11px] uppercase tracking-wider text-ink-faint font-medium">Query impressions · 30d</div>
+                  <div className="font-serif text-3xl font-semibold mt-1">{t.impressions30d.toLocaleString()}</div>
+                  <div className="text-xs text-ink-soft mt-1">Chatbot surfacings</div>
+                </Card>
+                <Card>
+                  <div className="text-[11px] uppercase tracking-wider text-ink-faint font-medium">CTR · 30d</div>
+                  <div className="font-serif text-3xl font-semibold mt-1">{t.ctrPct ? t.ctrPct.toFixed(1) + '%' : '—'}</div>
+                  <div className="text-xs text-ink-soft mt-1">{t.clicks30d.toLocaleString()} clicks</div>
+                </Card>
+              </div>
+
+              {/* Empty state OR feeds-and-facets summary */}
+              {!invState.hasAnyFeed ? (
+                <Card>
+                  <div className="border-2 border-dashed border-surface-edge rounded-xl p-7 text-center">
+                    <div className="inline-flex w-12 h-12 rounded-xl bg-brand-50 text-brand-700 items-center justify-center mb-3">
+                      <Icon name="box" size={24} />
+                    </div>
+                    <div className="font-serif text-lg font-semibold text-ink">No feeds connected yet</div>
+                    <p className="text-sm text-ink-soft mt-1 max-w-2xl mx-auto">
+                      Connect a feed from your DMS, MLS, or marketplace and your listings start showing up
+                      in your publisher's chatbot results within an hour. Or import a sample so you can see
+                      what a populated dashboard looks like.
+                    </p>
+                    {invState.tierEligible && (
+                      <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                        <button
+                          disabled={importing === 'vauto'}
+                          onClick={() => handleImportFixture('vauto')}
+                          className="px-3 py-2 rounded-lg border border-surface-edge bg-white text-ink-soft text-sm hover:border-brand-700 hover:text-brand-700 inline-flex items-center gap-2 disabled:opacity-50">
+                          {importing === 'vauto' ? 'Importing…' : 'Import sample · auto dealer'}
+                        </button>
+                        <button
+                          disabled={importing === 'mls'}
+                          onClick={() => handleImportFixture('mls')}
+                          className="px-3 py-2 rounded-lg border border-surface-edge bg-white text-ink-soft text-sm hover:border-brand-700 hover:text-brand-700 inline-flex items-center gap-2 disabled:opacity-50">
+                          {importing === 'mls' ? 'Importing…' : 'Import sample · realty'}
+                        </button>
+                        <button
+                          disabled={importing === 'tractor_house'}
+                          onClick={() => handleImportFixture('tractor_house')}
+                          className="px-3 py-2 rounded-lg border border-surface-edge bg-white text-ink-soft text-sm hover:border-brand-700 hover:text-brand-700 inline-flex items-center gap-2 disabled:opacity-50">
+                          {importing === 'tractor_house' ? 'Importing…' : 'Import sample · ag equipment'}
+                        </button>
+                        <button
+                          onClick={() => setShowConnect(true)}
+                          className="px-3 py-2 rounded-lg bg-brand-700 text-white text-sm hover:bg-brand-800 inline-flex items-center gap-2">
+                          <Icon name="plus" size={14} /> Connect a real feed
+                        </button>
+                      </div>
+                    )}
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-left max-w-3xl mx-auto">
+                      <div className="border border-surface-edge rounded-lg p-3 bg-surface">
+                        <div className="text-xs uppercase tracking-wider font-semibold text-ink-faint">Auto dealers</div>
+                        <div className="text-sm text-ink mt-1">DealerCenter · vAuto</div>
+                      </div>
+                      <div className="border border-surface-edge rounded-lg p-3 bg-surface">
+                        <div className="text-xs uppercase tracking-wider font-semibold text-ink-faint">Real estate</div>
+                        <div className="text-sm text-ink mt-1">MLS / RETS</div>
+                      </div>
+                      <div className="border border-surface-edge rounded-lg p-3 bg-surface">
+                        <div className="text-xs uppercase tracking-wider font-semibold text-ink-faint">Ag · marine</div>
+                        <div className="text-sm text-ink mt-1">TractorHouse · BoatTrader</div>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                  <Card>
+                    <SectionHeader title="Connected feeds" subtitle="Last sync + listing count per source." />
+                    <div className="space-y-2">
+                      {invState.feeds.map(f => (
+                        <div key={f.id} className="border border-surface-edge rounded-lg px-3 py-2 flex items-center gap-3">
+                          <div className={`shrink-0 w-9 h-9 rounded-lg ${f.status === 'connected' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'} flex items-center justify-center`}>
+                            <Icon name="box" size={16} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-ink truncate">{f.feedTypeLabel} · {f.locationLabel}</div>
+                            <div className="text-xs text-ink-faint">{f.lastSyncStatus || '—'}</div>
+                          </div>
+                          <button
+                            onClick={() => handleSync(f.id)}
+                            disabled={syncing === f.id || f.status !== 'connected'}
+                            className="text-xs px-2 py-1 rounded border border-surface-edge text-ink-soft hover:text-brand-700 hover:border-brand-700 disabled:opacity-50">
+                            {syncing === f.id ? 'Syncing…' : 'Sync'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+
+                  <Card>
+                    <SectionHeader title="Search visibility (top facets)" subtitle="How consumers find your inventory in chatbot results." />
+                    {invState.facetHits.length === 0 ? (
+                      <div className="text-sm text-ink-soft">No facet hits yet. Once consumers search the chatbot we'll see what queries surface your inventory.</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {invState.facetHits.slice(0, 4).map(h => (
+                          <div key={h.id} className="border border-surface-edge rounded-lg px-3 py-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-sm text-ink truncate">"{h.facetText}"</div>
+                              <Pill color={h.rank === 1 ? 'emerald' : 'slate'}>#{h.rank}</Pill>
+                            </div>
+                            <div className="text-xs text-ink-faint mt-1">{h.hits30d} hits · last 30 days</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === 'listings' && (
+            <div className="space-y-4 fade-in">
+              <Card>
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    {['all', 'active', 'stale', 'pending', 'sold'].map(s => (
+                      <button key={s}
+                        onClick={() => setStatusFilter(s)}
+                        className={`text-xs px-2.5 py-1 rounded-full border ${statusFilter === s ? 'bg-brand-700 text-white border-brand-700' : 'bg-white text-ink-soft border-surface-edge hover:border-brand-300'}`}>
+                        {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Icon name="search" size={14} className="text-ink-faint" />
+                    <input
+                      value={search}
+                      onChange={e => setSearch(e.target.value)}
+                      placeholder="Search listings…"
+                      className="text-sm border border-surface-edge rounded-lg px-3 py-1.5 w-56" />
+                  </div>
+                </div>
+              </Card>
+              <Card padded={false}>
+                {filteredListings.length === 0 ? (
+                  <div className="p-7 text-center text-sm text-ink-soft">
+                    {invState.hasAnyListing ? 'No listings match these filters.' : 'No listings yet — connect a feed or import a sample on the Overview tab.'}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-surface border-b border-surface-edge text-ink-faint">
+                        <tr>
+                          <th className="text-left px-4 py-2 font-medium">Listing</th>
+                          <th className="text-left px-4 py-2 font-medium">Price</th>
+                          <th className="text-left px-4 py-2 font-medium">Status</th>
+                          <th className="text-left px-4 py-2 font-medium">Days listed</th>
+                          <th className="text-left px-4 py-2 font-medium">Impressions</th>
+                          <th className="text-left px-4 py-2 font-medium">Clicks</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredListings.map(li => (
+                          <tr key={li.id} className="border-b border-surface-edge last:border-0 hover:bg-surface">
+                            <td className="px-4 py-2.5">
+                              <div className="font-medium text-ink truncate max-w-md">{li.title}</div>
+                              <div className="text-xs text-ink-faint">{li.externalId}</div>
+                            </td>
+                            <td className="px-4 py-2.5 font-medium text-ink">{fmtMoneyCents(li.priceCents)}</td>
+                            <td className="px-4 py-2.5">
+                              <Pill color={li.isStale ? 'amber' : li.status === 'sold' ? 'slate' : li.status === 'pending' ? 'violet' : 'emerald'}>
+                                {li.isStale ? 'Stale' : li.status.charAt(0).toUpperCase() + li.status.slice(1)}
+                              </Pill>
+                            </td>
+                            <td className="px-4 py-2.5 text-ink-soft">{li.daysListed} d</td>
+                            <td className="px-4 py-2.5 text-ink-soft">{li.queryImpressions30d.toLocaleString()}</td>
+                            <td className="px-4 py-2.5 text-ink-soft">{li.clicks30d}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </Card>
+              {invState.totals.stale > 0 && (
+                <div className="text-xs text-amber-700 px-1">
+                  {invState.totals.stale} listing{invState.totals.stale === 1 ? '' : 's'} flagged stale (over {invState.staleThreshold} days listed with zero clicks). Consider a price refresh or new photos.
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === 'search' && (
+            <div className="fade-in">
+              <Card>
+                <SectionHeader title="Faceted-search visibility"
+                  subtitle="What consumer queries surface your listings — and how high you rank." />
+                {invState.facetHits.length === 0 ? (
+                  <div className="border-2 border-dashed border-surface-edge rounded-xl p-7 text-center">
+                    <div className="inline-flex w-12 h-12 rounded-xl bg-brand-50 text-brand-700 items-center justify-center mb-3">
+                      <Icon name="search" size={24} />
+                    </div>
+                    <div className="font-serif text-base font-semibold text-ink">No search data yet</div>
+                    <p className="text-sm text-ink-soft mt-1 max-w-xl mx-auto">
+                      Once consumers ask your publisher's chatbot about inventory in your category,
+                      you'll see the exact queries that surfaced your listings here — and what rank you held.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {invState.facetHits.map(h => (
+                      <div key={h.id} className="border border-surface-edge rounded-lg p-3 flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="text-sm text-ink truncate">"{h.facetText}"</div>
+                          <div className="text-xs text-ink-faint">{h.hits30d} chatbot hits · last 30 days</div>
+                        </div>
+                        <Pill color={h.rank === 1 ? 'emerald' : h.rank <= 3 ? 'violet' : 'slate'}>Rank #{h.rank}</Pill>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            </div>
+          )}
+
+          {tab === 'feeds' && (
+            <div className="space-y-4 fade-in">
+              <Card>
+                <SectionHeader title="Connected feeds"
+                  subtitle="One row per data source. Sync nightly by default; click sync to refresh now." />
+                {invState.feeds.length === 0 ? (
+                  <div className="text-sm text-ink-soft">No feeds connected. Use the "Connect feed" button up top to add one.</div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {invState.feeds.map(f => (
+                      <div key={f.id} className="border border-surface-edge rounded-lg p-3 flex items-center gap-3">
+                        <div className={`shrink-0 w-10 h-10 rounded-lg ${f.status === 'connected' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'} flex items-center justify-center`}>
+                          <Icon name="box" size={18} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-ink">{f.feedTypeLabel}</div>
+                          <div className="text-xs text-ink-soft">{f.locationLabel}</div>
+                          <div className="text-xs text-ink-faint mt-0.5">
+                            {f.lastSyncStatus || '—'} · {f.lastSyncAt ? new Date(f.lastSyncAt).toLocaleString() : 'never synced'}
+                          </div>
+                        </div>
+                        <Pill color={f.status === 'connected' ? 'emerald' : 'slate'}>
+                          {f.status}
+                        </Pill>
+                        <button
+                          onClick={() => handleSync(f.id)}
+                          disabled={syncing === f.id || f.status !== 'connected'}
+                          className="text-xs px-2.5 py-1 rounded-lg border border-surface-edge text-ink-soft hover:text-brand-700 hover:border-brand-700 disabled:opacity-50">
+                          {syncing === f.id ? 'Syncing…' : 'Sync'}
+                        </button>
+                        <button
+                          onClick={() => handleDisconnect(f.id)}
+                          className="text-xs px-2.5 py-1 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50">
+                          Disconnect
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            </div>
+          )}
+        </div>
+
+        {/* Connect-feed modal */}
+        <Modal
+          open={showConnect}
+          onClose={() => setShowConnect(false)}
+          title="Connect a feed"
+          footer={
+            <div className="flex items-center justify-end gap-2">
+              <button onClick={() => setShowConnect(false)} className="px-3 py-2 rounded-lg text-ink-soft hover:bg-surface text-sm">Cancel</button>
+              <button onClick={handleCreateFeed} disabled={creatingFeed || !newFeed.location_label.trim()}
+                className="px-3 py-2 rounded-lg bg-brand-700 text-white text-sm hover:bg-brand-800 disabled:opacity-50">
+                {creatingFeed ? 'Connecting…' : 'Connect'}
+              </button>
+            </div>
+          }>
+          <div className="space-y-4">
+            <div>
+              <div className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-2">Feed type</div>
+              <div className="grid grid-cols-2 gap-2">
+                {(invState.feedTypes || []).map(ft => (
+                  <button key={ft.key}
+                    onClick={() => setNewFeed({ ...newFeed, feed_type: ft.key })}
+                    className={`text-left text-sm border rounded-lg px-3 py-2 ${newFeed.feed_type === ft.key ? 'border-brand-700 bg-brand-50 text-ink' : 'border-surface-edge text-ink-soft hover:border-brand-300'}`}>
+                    {ft.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1">Location label</div>
+              <input
+                value={newFeed.location_label}
+                onChange={e => setNewFeed({ ...newFeed, location_label: e.target.value })}
+                placeholder="e.g. Westbrook main lot"
+                className="w-full text-sm border border-surface-edge rounded-lg px-3 py-2" />
+              <div className="text-xs text-ink-faint mt-1">Used in the listings table + multi-location tabs if you have more than one feed.</div>
+            </div>
+            <div className="text-xs text-ink-faint border-t border-surface-edge pt-3">
+              Real adapters for {(invState.feedTypes || []).slice(0, 3).map(f => f.label).join(', ')} are on the
+              V2 roadmap — for the demo every adapter is mocked behind the same fixture-CSV import path.
+            </div>
+          </div>
+        </Modal>
+      </div>
+    );
+  };
+
+  /* ============================================================
+     VIEW: CHATBOT PREVIEW  (Phase F.3 — Tier 3+)
+     ============================================================ */
+  const ChatbotPreviewView = ({ onNavigate }) => {
+    const { business } = useDashboard();
+    const [state, setState]     = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError]     = useState(null);
+    const [filter, setFilter]   = useState('all');  // all|positive|neutral|negative|mixed
+    const [escOnly, setEscOnly] = useState(false);
+    const [search, setSearch]   = useState('');
+    const [openId, setOpenId]   = useState(null);
+    const [transcript, setTranscript] = useState(null);
+    const [seeding, setSeeding] = useState(false);
+
+    const refresh = useCallback(async () => {
+      try {
+        const r = await fetch('/api/chatbot');
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        setState(await r.json());
+        setError(null);
+      } catch (e) {
+        console.error('[chatbot.refresh]', e);
+        setError(`Couldn't load chatbot conversations: ${e.message || e}`);
+      } finally {
+        setLoading(false);
+      }
+    }, []);
+    useEffect(() => { refresh(); }, [refresh]);
+
+    const handleSeed = async () => {
+      setSeeding(true);
+      try {
+        const r = await fetch('/api/chatbot/seed-fixtures', { method: 'POST' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        await refresh();
+      } catch (e) {
+        console.error('[chatbot.seed]', e);
+        setError(`Couldn't seed sample conversations: ${e.message || e}`);
+      } finally {
+        setSeeding(false);
+      }
+    };
+
+    const handleClear = async () => {
+      if (!window.confirm('Clear all sample conversations? Real consumer chats are not affected.')) return;
+      try {
+        const r = await fetch('/api/chatbot/fixtures', { method: 'DELETE' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        setOpenId(null);
+        setTranscript(null);
+        await refresh();
+      } catch (e) {
+        console.error('[chatbot.clearFixtures]', e);
+        setError(`Couldn't clear samples: ${e.message || e}`);
+      }
+    };
+
+    const openTranscript = async (conv) => {
+      setOpenId(conv.id);
+      setTranscript(null);
+      try {
+        const r = await fetch(`/api/chatbot/conversations/${conv.id}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        setTranscript(await r.json());
+      } catch (e) {
+        console.error('[chatbot.transcript]', e);
+        setError(`Couldn't load transcript: ${e.message || e}`);
+      }
+    };
+
+    if (loading) {
+      return (
+        <div className="px-8 py-7">
+          <TopBar breadcrumb="Chatbot" title="Chatbot Preview" subtitle="Consumer conversations with your chatbot." />
+          <div className="text-ink-soft text-sm mt-6">Loading conversations…</div>
+        </div>
+      );
+    }
+    if (!state) {
+      return (
+        <div className="px-8 py-7">
+          <TopBar breadcrumb="Chatbot" title="Chatbot Preview" subtitle="Consumer conversations with your chatbot." />
+          <Card className="mt-6">
+            <div className="text-rose-700 text-sm">{error || 'Chatbot endpoint returned no data.'}</div>
+          </Card>
+        </div>
+      );
+    }
+
+    const filtered = (state.conversations || []).filter(c => {
+      if (filter !== 'all' && c.sentiment !== filter) return false;
+      if (escOnly && !c.escalationFlag) return false;
+      if (search && !c.topicLabel.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    });
+
+    const sentimentEntries = Object.entries(state.totals.sentimentCounts || {});
+
+    return (
+      <div className="fade-in">
+        <TopBar
+          breadcrumb="Chatbot"
+          title="Chatbot Preview"
+          subtitle="The conversations your consumers are having with your publisher chatbot."
+          right={
+            <div className="flex items-center gap-2">
+              <Pill color={state.tierEligible ? 'emerald' : 'slate'}>
+                Tier {state.tier} — {state.tierEligible ? 'Chatbot eligible' : 'Tier 3 required'}
+              </Pill>
+              {state.tierEligible && (state.hasAnyConversation ? (
+                <button onClick={handleClear} className="px-3 py-2 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-sm">
+                  Clear samples
+                </button>
+              ) : (
+                <button onClick={handleSeed} disabled={seeding}
+                  className="px-3 py-2 rounded-lg bg-brand-700 text-white text-sm hover:bg-brand-800 disabled:opacity-50 inline-flex items-center gap-2">
+                  {seeding ? 'Importing…' : (<><Icon name="sparkles" size={14} /> Import sample conversations</>)}
+                </button>
+              ))}
+            </div>
+          }
+        />
+
+        {error && (
+          <div className="mx-8 mt-3 px-4 py-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-sm flex items-center justify-between">
+            <span>{error}</span>
+            <button className="text-rose-600 hover:text-rose-800" onClick={() => setError(null)}><Icon name="x" size={14} /></button>
+          </div>
+        )}
+
+        <div className="px-8 py-7 space-y-5">
+          {/* Day-1 empty state */}
+          {!state.hasAnyConversation ? (
+            <Card>
+              <div className="border-2 border-dashed border-surface-edge rounded-xl p-7 text-center">
+                <div className="inline-flex w-12 h-12 rounded-xl bg-brand-50 text-brand-700 items-center justify-center mb-3">
+                  <Icon name="convo" size={24} />
+                </div>
+                <div className="font-serif text-lg font-semibold text-ink">No consumer conversations yet</div>
+                <p className="text-sm text-ink-soft mt-1 max-w-2xl mx-auto">
+                  Once your publisher's chatbot starts talking to consumers about your business, every session
+                  shows up here — with sentiment, escalation flags, and full transcripts. You see what your
+                  consumers are actually asking and where the bot may need backup.
+                </p>
+                {state.tierEligible && (
+                  <button onClick={handleSeed} disabled={seeding}
+                    className="mt-4 px-3 py-2 rounded-lg bg-brand-700 text-white text-sm hover:bg-brand-800 disabled:opacity-50 inline-flex items-center gap-2">
+                    {seeding ? 'Importing…' : (<><Icon name="sparkles" size={14} /> Import sample conversations</>)}
+                  </button>
+                )}
+                <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-3 text-left max-w-3xl mx-auto">
+                  <div className="border border-surface-edge rounded-lg p-3 bg-surface">
+                    <div className="text-xs uppercase tracking-wider font-semibold text-emerald-700">Positive signals</div>
+                    <div className="text-sm text-ink mt-1">"That's what I needed — thank you."</div>
+                  </div>
+                  <div className="border border-surface-edge rounded-lg p-3 bg-surface">
+                    <div className="text-xs uppercase tracking-wider font-semibold text-amber-700">Escalation flags</div>
+                    <div className="text-sm text-ink mt-1">Hot leads worth a personal follow-up.</div>
+                  </div>
+                  <div className="border border-surface-edge rounded-lg p-3 bg-surface">
+                    <div className="text-xs uppercase tracking-wider font-semibold text-slate-700">Coverage gaps</div>
+                    <div className="text-sm text-ink mt-1">Questions the bot couldn't answer well.</div>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          ) : (
+            <>
+              {/* Stat row */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Card className="bg-gradient-to-br from-brand-700 to-brand-900 text-white">
+                  <div className="text-[11px] uppercase tracking-wider text-white/70 font-medium">Total conversations</div>
+                  <div className="font-serif text-3xl font-semibold mt-1">{state.totals.count}</div>
+                  <div className="text-xs text-white/70 mt-1">Avg {state.totals.avgTurns.toFixed(1)} turns · {Math.round(state.totals.avgDurationSecs)}s</div>
+                </Card>
+                <Card>
+                  <div className="text-[11px] uppercase tracking-wider text-ink-faint font-medium">Flagged for outreach</div>
+                  <div className={`font-serif text-3xl font-semibold mt-1 ${state.totals.escalationCount > 0 ? 'text-amber-700' : 'text-ink'}`}>{state.totals.escalationCount}</div>
+                  <div className="text-xs text-ink-soft mt-1">Hot leads or coverage gaps</div>
+                </Card>
+                <Card>
+                  <div className="text-[11px] uppercase tracking-wider text-ink-faint font-medium">Sentiment mix</div>
+                  <div className="mt-2 space-y-1">
+                    {sentimentEntries.map(([k, v]) => v > 0 && (
+                      <div key={k} className="flex items-center gap-2 text-xs">
+                        <span className="inline-block w-2 h-2 rounded-full" style={{ background: SENTIMENT_CHIP[k]?.dot }}></span>
+                        <span className="text-ink-soft flex-1 capitalize">{k}</span>
+                        <span className="text-ink font-medium">{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+                <Card>
+                  <div className="text-[11px] uppercase tracking-wider text-ink-faint font-medium">Top topics</div>
+                  <div className="mt-2 space-y-1">
+                    {(state.topTopics || []).slice(0, 3).map((t, i) => (
+                      <div key={i} className="text-xs text-ink-soft truncate" title={t.label}>
+                        <span className="font-medium text-ink">{t.count}×</span> {t.label}
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              </div>
+
+              {/* Filters + conversation list */}
+              <Card>
+                <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {['all', 'positive', 'neutral', 'negative', 'mixed'].map(s => (
+                      <button key={s} onClick={() => setFilter(s)}
+                        className={`text-xs px-2.5 py-1 rounded-full border ${filter === s ? 'bg-brand-700 text-white border-brand-700' : 'bg-white text-ink-soft border-surface-edge hover:border-brand-300'}`}>
+                        {s.charAt(0).toUpperCase() + s.slice(1)}
+                      </button>
+                    ))}
+                    <label className="flex items-center gap-1.5 text-xs text-ink-soft ml-2 cursor-pointer">
+                      <input type="checkbox" checked={escOnly} onChange={e => setEscOnly(e.target.checked)} />
+                      Escalations only
+                    </label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Icon name="search" size={14} className="text-ink-faint" />
+                    <input value={search} onChange={e => setSearch(e.target.value)}
+                      placeholder="Search topics…"
+                      className="text-sm border border-surface-edge rounded-lg px-3 py-1.5 w-56" />
+                  </div>
+                </div>
+                {filtered.length === 0 ? (
+                  <div className="text-sm text-ink-soft text-center py-6">No conversations match these filters.</div>
+                ) : (
+                  <div className="space-y-2">
+                    {filtered.map(c => {
+                      const chip = SENTIMENT_CHIP[c.sentiment] || SENTIMENT_CHIP.neutral;
+                      return (
+                        <button key={c.id} onClick={() => openTranscript(c)}
+                          className="w-full text-left border border-surface-edge rounded-lg p-3 hover:border-brand-300 hover:bg-surface transition-colors">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium text-ink">{c.topicLabel}</div>
+                              <div className="text-xs text-ink-faint mt-0.5">
+                                {c.consumerLabel} · {c.turnCount} turns · {Math.round(c.durationSeconds)}s
+                                {c.referrerLabel ? ` · via ${c.referrerLabel}` : ''}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {c.escalationFlag && (
+                                <Pill color="amber" icon="alert">Escalate</Pill>
+                              )}
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${chip.bg} ${chip.text}`}>
+                                {c.sentimentLabel}
+                              </span>
+                            </div>
+                          </div>
+                          {c.escalationFlag && c.escalationReason && (
+                            <div className="text-xs text-amber-800 mt-2 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                              <span className="font-medium">Why flagged:</span> {c.escalationReason}
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </Card>
+            </>
+          )}
+        </div>
+
+        {/* Transcript modal */}
+        <Modal
+          open={openId != null}
+          onClose={() => { setOpenId(null); setTranscript(null); }}
+          title={transcript?.topicLabel || 'Conversation transcript'}
+          footer={
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-xs text-ink-faint">
+                {transcript && (
+                  <>{transcript.consumerLabel} · {transcript.turnCount} turns · {Math.round(transcript.durationSeconds)}s</>
+                )}
+              </div>
+              <button onClick={() => onNavigate?.('plan')}
+                className="px-3 py-1.5 rounded-lg bg-brand-700 text-white text-sm hover:bg-brand-800 inline-flex items-center gap-2">
+                <Icon name="target" size={14} /> Train the bot on this
+              </button>
+            </div>
+          }>
+          {transcript == null ? (
+            <div className="text-sm text-ink-soft">Loading transcript…</div>
+          ) : (
+            <div className="space-y-2">
+              {(transcript.transcript || []).map((turn, i) => (
+                <div key={i} className={`flex ${turn.who === 'consumer' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${turn.who === 'consumer' ? 'bg-brand-700 text-white' : 'bg-surface text-ink border border-surface-edge'}`}>
+                    <div className="text-[10px] uppercase tracking-wider font-semibold mb-0.5 opacity-70">
+                      {turn.who === 'consumer' ? 'Consumer' : 'Chatbot'}
+                    </div>
+                    <div className="whitespace-pre-wrap">{turn.text}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Modal>
+      </div>
+    );
+  };
+
+  /* ============================================================
      VIEW: SETTINGS
      ============================================================ */
   const SettingsView = ({ onTalkToHuman }) => {
@@ -5002,6 +5878,44 @@
     const [savingSettings, setSavingSettings] = useState(false);
     const [settingsError, setSettingsError] = useState(null);
     const [settingsToast, setSettingsToast] = useState(null);
+
+    // Phase F.2 — Billing state. Loaded on demand when the Billing tab opens
+    // (avoids a useless fetch for owners who never visit it).
+    const [billingState, setBillingState] = useState(null);
+    const [billingLoading, setBillingLoading] = useState(false);
+    const [tierRequestBusy, setTierRequestBusy] = useState(null);  // tier num while submitting
+    const refreshBilling = useCallback(async () => {
+      setBillingLoading(true);
+      try {
+        const r = await fetch('/api/billing');
+        if (r.ok) setBillingState(await r.json());
+      } catch (e) {
+        console.error('[settings.billing]', e);
+      } finally {
+        setBillingLoading(false);
+      }
+    }, []);
+    useEffect(() => { if (tab === 'billing' && !billingState) refreshBilling(); }, [tab, billingState, refreshBilling]);
+    const handleTierChange = async (to_tier) => {
+      setTierRequestBusy(to_tier);
+      try {
+        const r = await fetch('/api/billing/change-tier-request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to_tier }),
+        });
+        if (!r.ok) {
+          const detail = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
+          throw new Error(detail.detail || `HTTP ${r.status}`);
+        }
+        setSettingsToast(`Tier-change request to Tier ${to_tier} recorded. We'll be in touch.`);
+        await refreshBilling();
+      } catch (e) {
+        setSettingsError(`Couldn't submit request: ${e.message || e}`);
+      } finally {
+        setTierRequestBusy(null);
+      }
+    };
 
     // Phase E.6 — ad-account connection state. Loaded from /api/ads on mount;
     // refetched after each connect/disconnect. Distinct from settings.connections
@@ -5127,12 +6041,14 @@
       { id: 'auto',  label: 'Auto-approve, notify me',hint: 'Agent posts on your behalf. You\'re notified after.' }
     ];
     const titles = {
-      account:       { title: 'Account',         subtitle: 'Your plan, billing, and what Tier 3 unlocks.' },
+      account:       { title: 'Account',         subtitle: 'Your plan, your publisher, and onboarding milestones.' },
+      billing:       { title: 'Billing & Usage', subtitle: 'Tier, current-month usage, invoice history, change tier.' },
       connections:   { title: 'Connections',     subtitle: 'Where the agent has permission to read and post.' },
       notifications: { title: 'Notifications & approvals', subtitle: 'How and how often the agent talks to you.' }
     };
     const tabs = [
       { id: 'account',       label: 'Account',         icon: 'user' },
+      { id: 'billing',       label: 'Billing',         icon: 'dollar' },
       { id: 'connections',   label: 'Connections',     icon: 'plus', count: settings.connections.length },
       { id: 'notifications', label: 'Notifications',   icon: 'bell' }
     ];
@@ -5260,6 +6176,123 @@
                   <Button icon="phone" variant="primary" onClick={onTalkToHuman}>Talk to a human</Button>
                 </div>
               </Card>
+            </div>
+          )}
+
+          {tab === 'billing' && (
+            <div className="space-y-5 fade-in">
+              {billingLoading && !billingState && (
+                <div className="text-ink-soft text-sm">Loading billing data…</div>
+              )}
+              {billingState && (
+                <>
+                  {/* Plan card + tier options */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                    <Card className="lg:col-span-1 bg-gradient-to-br from-brand-700 to-brand-900 text-white">
+                      <div className="text-xs text-white/70 uppercase tracking-wider font-medium">Current plan</div>
+                      <div className="font-serif text-2xl font-semibold mt-1">Tier {billingState.currentTier}</div>
+                      <div className="text-sm mt-0.5">{(billingState.currentTierLabel || '').replace(/^Tier \d+ . /, '')}</div>
+                      <div className="mt-4 text-3xl font-serif font-semibold">${billingState.monthlyPrice}<span className="text-sm font-normal text-white/70">/month</span></div>
+                      <div className="text-xs text-white/70 mt-3">Paid to date: ${(billingState.paidToDateCents / 100).toFixed(2)}</div>
+                      <div className="text-xs text-white/60 mt-1">Billing: {billingState.stripeEnabled ? 'Stripe-active' : 'Demo (no charges)'}</div>
+                    </Card>
+                    <Card className="lg:col-span-2">
+                      <SectionHeader title="Change tier" subtitle="Records a request; we follow up to confirm before any billing change." />
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        {billingState.tierOptions.map(opt => (
+                          <button key={opt.tier}
+                            onClick={() => !opt.isCurrent && handleTierChange(opt.tier)}
+                            disabled={opt.isCurrent || tierRequestBusy === opt.tier}
+                            className={`text-left rounded-lg border-2 p-3 transition-colors ${opt.isCurrent
+                              ? 'border-brand-700 bg-brand-50 text-ink cursor-default'
+                              : 'border-surface-edge hover:border-brand-300 text-ink-soft hover:text-ink'}`}>
+                            <div className="text-[10px] uppercase tracking-wider font-semibold text-ink-faint">Tier {opt.tier}</div>
+                            <div className="text-sm font-medium mt-0.5">{(opt.label || '').replace(/^Tier \d+ . /, '')}</div>
+                            <div className="text-xs mt-1">${opt.monthlyPrice}/mo</div>
+                            {opt.isCurrent && <div className="text-[10px] mt-1 text-brand-700 font-semibold">Current</div>}
+                            {tierRequestBusy === opt.tier && <div className="text-[10px] mt-1 text-ink-faint">Submitting…</div>}
+                          </button>
+                        ))}
+                      </div>
+                      {billingState.pendingTierChange && (
+                        <div className="mt-4 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm flex items-center justify-between">
+                          <div>
+                            Pending request: Tier {billingState.pendingTierChange.fromTier} → Tier {billingState.pendingTierChange.toTier}.
+                            We'll be in touch within one business day.
+                          </div>
+                        </div>
+                      )}
+                    </Card>
+                  </div>
+
+                  {/* Usage table */}
+                  <Card>
+                    <SectionHeader title={`Usage · ${billingState.usage.monthYear}`}
+                      subtitle="Current month counters. Resets at midnight on the first of each month." />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      {billingState.usage.metrics.map(m => (
+                        <div key={m.key} className="border border-surface-edge rounded-lg p-3">
+                          <div className="text-xs uppercase tracking-wider font-semibold text-ink-faint">{m.label}</div>
+                          <div className="font-serif text-2xl font-semibold text-ink mt-1">
+                            {m.unit === 'cents'
+                              ? fmtMoneyCents(m.value)
+                              : m.value.toLocaleString()}
+                          </div>
+                          <div className="text-[11px] text-ink-faint mt-0.5">{m.tooltip}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+
+                  {/* Invoice history */}
+                  <Card padded={false}>
+                    <div className="px-5 py-4 border-b border-surface-edge">
+                      <SectionHeader title="Invoice history"
+                        subtitle="Mocked in this demo — Stripe integration is on the V2 roadmap." />
+                    </div>
+                    {billingState.invoices.length === 0 ? (
+                      <div className="p-6 text-center text-sm text-ink-soft">
+                        No invoices yet. Your first invoice will issue at the end of this month.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-surface border-b border-surface-edge text-ink-faint">
+                            <tr>
+                              <th className="text-left px-4 py-2 font-medium">Period</th>
+                              <th className="text-left px-4 py-2 font-medium">Tier</th>
+                              <th className="text-left px-4 py-2 font-medium">Amount</th>
+                              <th className="text-left px-4 py-2 font-medium">Status</th>
+                              <th className="text-left px-4 py-2 font-medium">Issued</th>
+                              <th className="text-left px-4 py-2 font-medium"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {billingState.invoices.map(inv => (
+                              <tr key={inv.id} className="border-b border-surface-edge last:border-0 hover:bg-surface">
+                                <td className="px-4 py-2.5 font-medium text-ink">{inv.periodLabel}</td>
+                                <td className="px-4 py-2.5 text-ink-soft">Tier {inv.tierAtPeriod}</td>
+                                <td className="px-4 py-2.5 text-ink font-medium">{fmtMoneyCents(inv.amountCents)}</td>
+                                <td className="px-4 py-2.5">
+                                  <Pill color={inv.status === 'paid' ? 'emerald' : inv.status === 'due' ? 'amber' : 'rose'}>
+                                    {inv.status.charAt(0).toUpperCase() + inv.status.slice(1)}
+                                  </Pill>
+                                </td>
+                                <td className="px-4 py-2.5 text-ink-faint text-xs">{inv.issuedAt ? new Date(inv.issuedAt).toLocaleDateString() : '—'}</td>
+                                <td className="px-4 py-2.5 text-right">
+                                  <button className="text-xs px-2 py-1 rounded border border-surface-edge text-ink-soft hover:text-brand-700 hover:border-brand-700 inline-flex items-center gap-1.5">
+                                    <Icon name="download" size={12} /> PDF
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </Card>
+                </>
+              )}
             </div>
           )}
 
@@ -5674,7 +6707,9 @@
           {view === 'ads'         && <AdsView onNavigate={navigate} />}
           {view === 'reviews'     && <ReviewsView scrollToId={scrollToId} onScrollHandled={() => setScrollToId(null)} />}
           {view === 'plan'        && <MarketingPlanView />}
+          {view === 'inventory'   && <InventoryView onNavigate={navigate} />}
           {view === 'chat'        && <ChatView onNavigate={navigate} />}
+          {view === 'chatbotpreview' && <ChatbotPreviewView onNavigate={navigate} />}
           {view === 'settings'    && <SettingsView onTalkToHuman={() => setHumanOpen(true)} />}
         </main>
 

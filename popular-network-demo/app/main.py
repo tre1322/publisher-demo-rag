@@ -31,7 +31,21 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from .db import _add_col_if_missing, init_db
-from .routers import ads, approvals, bootstrap, chat, marketing_plan, performance, posts, reach, reviews, settings
+from .routers import (
+    ads,
+    approvals,
+    billing,
+    bootstrap,
+    chat,
+    chatbot,
+    inventory,
+    marketing_plan,
+    performance,
+    posts,
+    reach,
+    reviews,
+    settings,
+)
 from .seed import seed_if_empty
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -66,6 +80,9 @@ def _startup() -> None:
     # ad_connections tables need their disconnected-state seed. Same
     # idempotent pattern.
     _backfill_ad_platform_setup()
+    # Phase F: tier bump (Quadd: 3 → 4) + usage-metric rows for any business
+    # that pre-dates the F.2 billing tables. Idempotent.
+    _backfill_phase_f()
 
 
 def _backfill_reach_tiers() -> None:
@@ -109,6 +126,45 @@ def _backfill_ad_platform_setup() -> None:
             if has_budget is None:
                 _seed_ad_platform_budgets(db, business_id=biz.id)
                 log.info(f"Backfilled ad platform budgets ({month}) for business_id={biz.id}")
+        db.commit()
+
+
+def _backfill_phase_f() -> None:
+    """Phase F backfill: ensure Quadd is at tier 4 + usage_metrics rows exist.
+
+    Tier bump: pre-Phase-F DBs have Quadd at tier 3. Phase F demos the
+    Tier 4 Inventory surface, so we promote tier 3 → 4 (and price 150 → 799)
+    one-time. Pre-existing higher tiers are left alone. Lower tiers (1/2)
+    are left alone too — a real Tier 2 customer shouldn't get free-upgraded.
+
+    Usage metrics: each business needs zero-valued rows for the current
+    month so the Billing view has something to render.
+    """
+    from .db import SessionLocal
+    from .models import Business, UsageMetric
+    from .seed import _seed_billing_usage, _current_month_year
+
+    with SessionLocal() as db:
+        month = _current_month_year()
+        for biz in db.query(Business).all():
+            # Tier bump (Quadd-specific — gated on slug to be paranoid).
+            if biz.slug == "quadd_ai" and biz.tier == 3 and biz.monthly_price == 150:
+                biz.tier = 4
+                biz.tier_label = "Tier 4 — Inventory"
+                biz.monthly_price = 799
+                log.info(f"Backfilled tier 3 → 4 for business_id={biz.id} ({biz.slug})")
+            # Usage rows for this month.
+            has_usage = (
+                db.query(UsageMetric)
+                .filter(
+                    UsageMetric.business_id == biz.id,
+                    UsageMetric.month_year == month,
+                )
+                .first()
+            )
+            if has_usage is None:
+                _seed_billing_usage(db, business_id=biz.id, tier=biz.tier)
+                log.info(f"Backfilled usage_metrics ({month}) for business_id={biz.id}")
         db.commit()
 
 
@@ -175,6 +231,9 @@ app.include_router(marketing_plan.router, prefix="/api", tags=["marketing-plan"]
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(reach.router, prefix="/api", tags=["reach"])
 app.include_router(ads.router, prefix="/api", tags=["ads"])
+app.include_router(inventory.router, prefix="/api", tags=["inventory"])
+app.include_router(billing.router, prefix="/api", tags=["billing"])
+app.include_router(chatbot.router, prefix="/api", tags=["chatbot"])
 
 
 @app.get("/", include_in_schema=False)

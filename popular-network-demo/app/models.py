@@ -390,3 +390,200 @@ class AdConnection(Base):
     oauth_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # MOCKED — real OAuth is V2 work
     status: Mapped[str] = mapped_column(String(20), default="disconnected")  # connected|disconnected|error
     last_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Phase F.1 — Tier 4 Inventory Verticals (auto / ag / realty / RV/boat / lumber)
+# ---------------------------------------------------------------------------
+# Per docs/amplora_business_plan.md §3.3:
+#   Tier 4 Base ($799/mo): up to 50 listings, one feed integration.
+#   Tier 4 Plus ($1,299/mo): up to 250 listings, multi-feed, multi-location.
+#   Tier 4 Enterprise ($1,999+/mo): unlimited, custom integrations.
+#
+# Quadd.ai is B2B SaaS so it has no real inventory — the demo bumps Quadd to
+# Tier 4 and shows the empty-state-as-marketing surface (per Phase D pattern).
+# Real Tier 4 customers would be auto dealers, realtors, ag-equipment yards.
+
+
+# Canonical feed types. `generic_csv` is the universal fallback for verticals
+# we don't have a native adapter for yet.
+_INVENTORY_FEED_TYPES = (
+    "dealercenter",   # auto — DealerCenter DMS
+    "vauto",          # auto — vAuto inventory
+    "tractor_house",  # ag  — TractorHouse marketplace export
+    "mls",            # realty — MLS RETS / RESO Web API
+    "boat_trader",    # marine — BoatTrader feed
+    "generic_csv",    # fallback — upload any structured CSV
+)
+
+
+class InventoryFeed(Base):
+    """A connected inventory data source for a Tier 4 business.
+
+    One row per (business_id, feed_type, optional location_label) — a multi-
+    location dealer might have two vAuto feeds, one per lot. The credential
+    blob is opaque (per-adapter shape); for the demo every adapter is mocked
+    behind a CSV import path so `config_json` carries fixture metadata.
+    """
+
+    __tablename__ = "inventory_feeds"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"))
+    feed_type: Mapped[str] = mapped_column(String(24))  # see _INVENTORY_FEED_TYPES
+    location_label: Mapped[str] = mapped_column(String(120))
+    config_json: Mapped[Any] = mapped_column(JSON, nullable=True)  # adapter-specific config (URL, account_id, schedule)
+    status: Mapped[str] = mapped_column(String(16), default="connected")  # connected|disconnected|error|paused
+    last_sync_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_sync_status: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)  # e.g. "47 listings · 0 errors"
+    listing_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class InventoryListing(Base):
+    """A single sellable item in a Tier 4 business's inventory.
+
+    The shape is intentionally vertical-agnostic — `attributes_json` carries
+    whatever per-vertical fields (year/make/model for auto, bed/bath for
+    realty, hours-on-engine for ag equipment) without forcing a schema.
+    `is_stale` denormalizes the (days_listed > 30 AND clicks_30d == 0) rule
+    so the UI doesn't have to recompute on every list call.
+    """
+
+    __tablename__ = "inventory_listings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    feed_id: Mapped[int] = mapped_column(ForeignKey("inventory_feeds.id"))
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"))
+    external_id: Mapped[str] = mapped_column(String(80))  # ID from the source system
+    title: Mapped[str] = mapped_column(String(280))
+    price_cents: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(16), default="active")  # active|sold|pending|stale|removed
+    days_listed: Mapped[int] = mapped_column(Integer, default=0)
+    query_impressions_30d: Mapped[int] = mapped_column(Integer, default=0)
+    clicks_30d: Mapped[int] = mapped_column(Integer, default=0)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    attributes_json: Mapped[Any] = mapped_column(JSON, nullable=True)
+    is_stale: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class InventoryFacetHit(Base):
+    """Faceted-search visibility — what chatbot queries surfaced this business's inventory.
+
+    One row per (business_id, facet_text, day). The Inventory view's
+    "search visibility" card reads the top-N rows by hits to show "your
+    listings rank #1 for '4WD trucks under $20k near Westbrook'."
+    """
+
+    __tablename__ = "inventory_facet_hits"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"))
+    facet_text: Mapped[str] = mapped_column(String(200))  # e.g. "4WD trucks under $20k near Westbrook"
+    rank: Mapped[int] = mapped_column(Integer, default=1)  # 1 = #1 result
+    hits_30d: Mapped[int] = mapped_column(Integer, default=0)
+    sample_listing_id: Mapped[Optional[int]] = mapped_column(ForeignKey("inventory_listings.id"), nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Phase F.2 — Billing / Usage panel
+# ---------------------------------------------------------------------------
+# Settings → Billing sub-tab. Stripe is not wired into this demo (matches the
+# Amplafai prod stance BILLING_ENABLED=false). Invoices are mock; "Change tier"
+# CTA records intent only — doesn't actually charge.
+
+
+class UsageMetric(Base):
+    """Per-business, per-month, per-metric usage counter.
+
+    Rolled up once per month for the Billing view. Metrics shown in v1:
+      - posts_published
+      - chatbot_conversations
+      - ads_run
+      - agent_token_spend_cents (modeled as cost-of-AI billed back)
+    """
+
+    __tablename__ = "usage_metrics"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"))
+    month_year: Mapped[str] = mapped_column(String(7))  # YYYY-MM
+    metric_key: Mapped[str] = mapped_column(String(40))
+    value: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class BillingInvoice(Base):
+    """A single monthly invoice. Mock-only — Stripe integration deferred.
+
+    The invoice row exists so the Billing view has a history table to render
+    and a 'Download PDF' button to no-op against. When Stripe lands, this
+    table becomes a mirror of stripe.Invoice and `external_invoice_id` fills.
+    """
+
+    __tablename__ = "billing_invoices"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"))
+    period_label: Mapped[str] = mapped_column(String(40))  # e.g. "May 2026"
+    period_start: Mapped[str] = mapped_column(String(10))  # YYYY-MM-DD
+    period_end: Mapped[str] = mapped_column(String(10))    # YYYY-MM-DD
+    amount_cents: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16), default="paid")  # paid|due|past_due|refunded
+    tier_at_period: Mapped[int] = mapped_column(Integer)
+    line_items_json: Mapped[Any] = mapped_column(JSON, nullable=True)  # list[{label, amount_cents}]
+    external_invoice_id: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)  # filled when Stripe lands
+    issued_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class TierChangeRequest(Base):
+    """Owner-initiated tier-change intent. Records the request only — no charge."""
+
+    __tablename__ = "tier_change_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"))
+    from_tier: Mapped[int] = mapped_column(Integer)
+    to_tier: Mapped[int] = mapped_column(Integer)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending|approved|completed|cancelled
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    handled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Phase F.3 — Tier 3+ Chatbot Preview
+# ---------------------------------------------------------------------------
+# Owner-facing transcript viewer for the consumer-facing chatbot (the OTHER
+# AI, not the AI Agent in Chat). One row per consumer session. The dashboard's
+# ChatbotPreviewView lists these with sentiment + escalation flags.
+
+
+class ChatbotConversation(Base):
+    """A single consumer ↔ chatbot session.
+
+    `transcript_json` is the source of truth — list of {who, text, at} turns.
+    `sentiment` is computed at session end (positive|neutral|negative|mixed).
+    `escalation_flag` marks sessions where the chatbot detected an unhandled
+    question that should reach the owner — shown as a chip in the list.
+    `topic_label` is a short headline ("Hours on Memorial Day?", "Quote for
+    18-month-old truck") so the list reads without expanding every row.
+    """
+
+    __tablename__ = "chatbot_conversations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"))
+    external_id: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    consumer_label: Mapped[str] = mapped_column(String(80))  # e.g. "anonymous · iPhone Safari"
+    topic_label: Mapped[str] = mapped_column(String(200))
+    transcript_json: Mapped[Any] = mapped_column(JSON)  # list[{who: 'consumer'|'bot', text, at}]
+    sentiment: Mapped[str] = mapped_column(String(16), default="neutral")  # positive|neutral|negative|mixed
+    escalation_flag: Mapped[bool] = mapped_column(Boolean, default=False)
+    escalation_reason: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    turn_count: Mapped[int] = mapped_column(Integer, default=0)
+    duration_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    referrer_label: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)  # e.g. "Cottonwood County Citizen → article"

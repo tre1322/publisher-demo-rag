@@ -15,13 +15,15 @@ Earlier Westbrook seed is preserved in git history if we want to switch back.
 from __future__ import annotations
 
 from .db import SessionLocal
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from .models import (
     AdConnection,
     AdPlatformBudget,
+    BillingInvoice,
     Business,
     ChatTurn,
+    ChatbotConversation,
     Connection,
     DashboardNotices,
     MarketingPlan,
@@ -32,6 +34,8 @@ from .models import (
     Review,
     ReviewAggregate,
     SettingsRow,
+    TierChangeRequest,
+    UsageMetric,
 )
 
 
@@ -51,9 +55,14 @@ def seed_if_empty() -> bool:
             location="New Ulm, MN",
             publisher="Cottonwood County Citizen",
             phone="(507) 822-1253",
-            tier=3,
-            tier_label="Tier 3 — Concierge",
-            monthly_price=150,
+            # Phase F: bumped from 3→4 so the dashboard demos the Tier 4
+            # Inventory surface. Quadd is B2B SaaS with no real inventory —
+            # the Inventory view will render the empty-state-as-marketing
+            # explainer (per Phase D's pattern). Tier 4 Base price per
+            # business plan §3.3.
+            tier=4,
+            tier_label="Tier 4 — Inventory",
+            monthly_price=799,
             joined_days_ago=0,
             joined_date="Today",
             voice_interview="complete",
@@ -288,6 +297,19 @@ def seed_if_empty() -> bool:
         _seed_ad_platform_budgets(db, business_id=1)
         _seed_ad_connections(db, business_id=1)
 
+        # Phase F.2 — billing usage + invoice history. Day-1 means current
+        # month usage is all zeros (no posts published yet, no chatbot
+        # convos served yet, etc.); invoice history is also empty since
+        # Quadd just enrolled today. Quadd's first invoice issues at end
+        # of this month — the empty history is correct.
+        _seed_billing_usage(db, business_id=1, tier=biz.tier)
+
+        # Phase F.3 — chatbot preview. Day-1 = no conversations served yet,
+        # so the dashboard renders the empty-state explainer ("connect your
+        # chatbot to your site and start seeing conversations here"). The
+        # dashboard's "Import sample conversations" button lets a sales rep
+        # populate fixture rows for the walkthrough.
+
         db.commit()
         return True
     finally:
@@ -345,6 +367,24 @@ def _seed_ad_connections(db, business_id: int) -> None:
             external_account_id=None,
             oauth_token=None,
             status="disconnected",
+        ))
+
+
+def _seed_billing_usage(db, business_id: int, tier: int) -> None:
+    """Initialize the four usage-metric rows at zero for the current month.
+
+    Day-1: no posts published yet, no chatbot conversations served yet, etc.
+    The Billing view's empty-state copy explains this honestly. As real
+    activity happens (a post publishes, a chat session ends), other routers
+    will increment these counters. For the demo we just seed zeros.
+    """
+    month = _current_month_year()
+    for key in ("posts_published", "chatbot_conversations", "ads_run", "agent_token_cents"):
+        db.add(UsageMetric(
+            business_id=business_id,
+            month_year=month,
+            metric_key=key,
+            value=0,
         ))
 
 

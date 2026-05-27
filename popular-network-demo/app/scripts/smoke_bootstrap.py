@@ -55,11 +55,43 @@ def _run_assertions(client) -> None:
         "business", "stats", "attention", "weekRecap",
         "posts", "approvals", "performance", "reviews",
         "marketingPlan", "chat", "settings",
+        # Phase D/E/F additions:
+        "reach", "ads",
+        "inventory", "billing", "chatbot",
     }
     missing = expected_keys - set(data.keys())
     if missing:
         _fail(f"missing top-level keys: {sorted(missing)}")
     _ok("top-level keys present")
+
+    # Phase F: Quadd is bumped to Tier 4 ($799) — confirm the bump took.
+    if biz_stub := data["business"]:
+        if biz_stub.get("tier") != 4:
+            _fail(f"Phase F: business.tier should be 4 (Quadd bumped), got {biz_stub.get('tier')}")
+        if biz_stub.get("monthlyPrice") != 799:
+            _fail(f"Phase F: business.monthlyPrice should be 799, got {biz_stub.get('monthlyPrice')}")
+    # Phase F.1 inventory slim slice
+    inv = data["inventory"]
+    for k in ("tierEligible", "feedCount", "listingCount", "staleCount", "hasAnyFeed"):
+        if k not in inv:
+            _fail(f"bootstrap.inventory.{k} missing")
+    if not inv["tierEligible"] or inv["feedCount"] != 0 or inv["hasAnyFeed"]:
+        _fail(f"Day-1 inventory should be eligible (tier 4) + empty: {inv}")
+    _ok(f"inventory slim slice → tierEligible={inv['tierEligible']} feeds={inv['feedCount']} listings={inv['listingCount']}")
+    # Phase F.2 billing slim slice
+    bil = data["billing"]
+    for k in ("tier", "monthlyPrice", "invoiceCount", "currentUsage", "stripeEnabled"):
+        if k not in bil:
+            _fail(f"bootstrap.billing.{k} missing")
+    if bil["stripeEnabled"] is not False:
+        _fail(f"billing.stripeEnabled should be False for the demo: {bil}")
+    _ok(f"billing slim slice → tier={bil['tier']} monthlyPrice={bil['monthlyPrice']} invoices={bil['invoiceCount']}")
+    # Phase F.3 chatbot slim slice
+    cb = data["chatbot"]
+    for k in ("tierEligible", "conversationCount", "escalationCount"):
+        if k not in cb:
+            _fail(f"bootstrap.chatbot.{k} missing")
+    _ok(f"chatbot slim slice → eligible={cb['tierEligible']} convos={cb['conversationCount']} escalations={cb['escalationCount']}")
 
     biz = data["business"]
     for k in ("name", "owner", "ownerInitials", "publisher", "tier", "tierLabel"):

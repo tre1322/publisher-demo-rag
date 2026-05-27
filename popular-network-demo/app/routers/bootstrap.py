@@ -22,10 +22,14 @@ from ..models import (
     AdImpressionsByTerritory,
     AdPlatformBudget,
     Approval,
+    BillingInvoice,
     Business,
     ChatTurn,
+    ChatbotConversation,
     Connection,
     DashboardNotices,
+    InventoryFeed,
+    InventoryListing,
     LocalFirstLog,
     MarketingPlan,
     PerformanceSummary,
@@ -34,6 +38,7 @@ from ..models import (
     Review,
     ReviewAggregate,
     SettingsRow,
+    UsageMetric,
 )
 
 router = APIRouter()
@@ -293,6 +298,35 @@ def get_bootstrap(business_id: int = 1, db: Session = Depends(get_db)) -> dict[s
         .count()
     )
 
+    # Phase F.1: inventory slim slice (counts only — full data via /api/inventory).
+    inv_feed_count    = db.query(InventoryFeed).filter(InventoryFeed.business_id == business_id).count()
+    inv_listing_count = db.query(InventoryListing).filter(InventoryListing.business_id == business_id).count()
+    inv_stale_count   = (
+        db.query(InventoryListing)
+        .filter(InventoryListing.business_id == business_id, InventoryListing.is_stale.is_(True))
+        .count()
+    )
+
+    # Phase F.2: billing slim slice (current month usage totals + tier).
+    billing_invoice_count = db.query(BillingInvoice).filter(BillingInvoice.business_id == business_id).count()
+    usage_rows = (
+        db.query(UsageMetric)
+        .filter(UsageMetric.business_id == business_id, UsageMetric.month_year == _ads_month)
+        .all()
+    )
+    usage_by_key = {r.metric_key: r.value for r in usage_rows}
+
+    # Phase F.3: chatbot slim slice (count + escalation count).
+    chatbot_total_count    = db.query(ChatbotConversation).filter(ChatbotConversation.business_id == business_id).count()
+    chatbot_escalation_ct  = (
+        db.query(ChatbotConversation)
+        .filter(
+            ChatbotConversation.business_id == business_id,
+            ChatbotConversation.escalation_flag.is_(True),
+        )
+        .count()
+    )
+
     payload: dict[str, Any] = {
         "business": _business_payload(biz),
         "stats": _stats_payload(notices, agg),
@@ -334,6 +368,29 @@ def get_bootstrap(business_id: int = 1, db: Session = Depends(get_db)) -> dict[s
         # Phase E — paid-ad spend management aggregate slice. Full per-row
         # data lives at GET /api/ads (called by AdsView on mount).
         "ads": _ads_payload(ad_budgets, ad_connections_rows, ad_active_campaigns, ad_pending_campaigns, _ads_month),
+        # Phase F.1 — inventory slim slice. Full data via /api/inventory.
+        "inventory": {
+            "tierEligible":   biz.tier >= 4,
+            "feedCount":      inv_feed_count,
+            "listingCount":   inv_listing_count,
+            "staleCount":     inv_stale_count,
+            "hasAnyFeed":     inv_feed_count > 0,
+        },
+        # Phase F.2 — billing slim slice.
+        "billing": {
+            "tier":              biz.tier,
+            "tierLabel":         biz.tier_label,
+            "monthlyPrice":      biz.monthly_price,
+            "invoiceCount":      billing_invoice_count,
+            "currentUsage":      usage_by_key,
+            "stripeEnabled":     False,
+        },
+        # Phase F.3 — chatbot slim slice.
+        "chatbot": {
+            "tierEligible":      biz.tier >= 3,
+            "conversationCount": chatbot_total_count,
+            "escalationCount":   chatbot_escalation_ct,
+        },
     }
     return payload
 
