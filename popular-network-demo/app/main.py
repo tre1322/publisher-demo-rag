@@ -31,7 +31,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from .db import _add_col_if_missing, init_db
-from .routers import approvals, bootstrap, chat, marketing_plan, performance, posts, reach, reviews, settings
+from .routers import ads, approvals, bootstrap, chat, marketing_plan, performance, posts, reach, reviews, settings
 from .seed import seed_if_empty
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -62,6 +62,10 @@ def _startup() -> None:
     # tier ladder seeded. Idempotent: only inserts when the business has zero
     # rows. Same call as in seed.py's fresh-DB path.
     _backfill_reach_tiers()
+    # Phase E.1: businesses that pre-date the ad_platform_budgets +
+    # ad_connections tables need their disconnected-state seed. Same
+    # idempotent pattern.
+    _backfill_ad_platform_setup()
 
 
 def _backfill_reach_tiers() -> None:
@@ -76,6 +80,35 @@ def _backfill_reach_tiers() -> None:
             if has_any is None:
                 _seed_reach_tiers(db, business_id=biz.id)
                 log.info(f"Backfilled reach tier ladder for business_id={biz.id} ({biz.slug})")
+        db.commit()
+
+
+def _backfill_ad_platform_setup() -> None:
+    """Insert Phase E disconnected ad_connections + zero-cap ad_platform_budgets
+    rows for any business that doesn't have them. Idempotent — checks per
+    business + per current month."""
+    from .db import SessionLocal
+    from .models import AdConnection, AdPlatformBudget, Business
+    from .seed import _current_month_year, _seed_ad_connections, _seed_ad_platform_budgets
+
+    with SessionLocal() as db:
+        month = _current_month_year()
+        for biz in db.query(Business).all():
+            has_conn = db.query(AdConnection).filter(AdConnection.business_id == biz.id).first()
+            if has_conn is None:
+                _seed_ad_connections(db, business_id=biz.id)
+                log.info(f"Backfilled ad connections for business_id={biz.id} ({biz.slug})")
+            has_budget = (
+                db.query(AdPlatformBudget)
+                .filter(
+                    AdPlatformBudget.business_id == biz.id,
+                    AdPlatformBudget.month_year == month,
+                )
+                .first()
+            )
+            if has_budget is None:
+                _seed_ad_platform_budgets(db, business_id=biz.id)
+                log.info(f"Backfilled ad platform budgets ({month}) for business_id={biz.id}")
         db.commit()
 
 
@@ -141,6 +174,7 @@ app.include_router(settings.router, prefix="/api", tags=["settings"])
 app.include_router(marketing_plan.router, prefix="/api", tags=["marketing-plan"])
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(reach.router, prefix="/api", tags=["reach"])
+app.include_router(ads.router, prefix="/api", tags=["ads"])
 
 
 @app.get("/", include_in_schema=False)

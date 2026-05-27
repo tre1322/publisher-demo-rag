@@ -22,7 +22,18 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from ..models import Business, MarketingPlan, PerformanceSummary, Post, Review
+from datetime import datetime
+
+from ..models import (
+    AdCampaign,
+    AdConnection,
+    AdPlatformBudget,
+    Business,
+    MarketingPlan,
+    PerformanceSummary,
+    Post,
+    Review,
+)
 
 # Repo-relative dir where synthesized voice-brief JSON files live, one per
 # business slug. Separate from data/voice-brief/ which holds gitignored raw
@@ -68,6 +79,7 @@ def build_system_prompt(db: Session, business_id: int) -> str:
     sections.append(_recent_posts_section(recent_posts))
     sections.append(_performance_insights_section(perf))
     sections.append(_pinned_review_section(pinned_review))
+    sections.append(_ads_budget_section(db, business_id, biz))
 
     # --- 4. Behavior + formatting -------------------------------------------
     sections.append(_behavior_rules())
@@ -252,5 +264,91 @@ def _behavior_rules() -> str:
         "- When the owner asks for a draft response to a specific review, use "
         "**draft_review_response** with that review's id.\n"
         "- When the owner explicitly mentions budget, spend, or boosting a post, use "
-        "**propose_boost** — don't just describe what a boost would cost."
+        "**propose_boost** for a lightweight estimate. Use **schedule_boost** to actually "
+        "create the campaign in the Ads & Spend tab — fire it after the owner agrees to a "
+        "proposal or asks you to 'boost X for $Y/day.'\n"
+        "- Use **allocate_platform_budget** when the owner says something like 'put $200 "
+        "on Meta' or 'cap Google at $50.' Use **pause_campaign** when they ask to stop a "
+        "specific campaign.\n"
+        "- The dashboard enforces tier behavior automatically — you don't need to check "
+        "the owner's tier. Just fire the tool that fits the intent."
     )
+
+
+_AD_PLATFORM_LABELS = {
+    "fb_ig":      "Meta (FB+IG)",
+    "google_ads": "Google Ads",
+    "tiktok":     "TikTok Ads",
+    "linkedin":   "LinkedIn Ads",
+}
+
+
+def _ads_budget_section(db: Session, business_id: int, biz: Business | None) -> str:
+    """Phase E.4 — inject current per-platform spend pacing into the system prompt.
+
+    Lets the agent answer "how much budget do I have left on Meta?" without
+    a tool call. Also gives it grounded numbers when proposing boosts.
+    """
+    month = datetime.utcnow().strftime("%Y-%m")
+    budgets = (
+        db.query(AdPlatformBudget)
+        .filter(AdPlatformBudget.business_id == business_id, AdPlatformBudget.month_year == month)
+        .all()
+    )
+    connections = (
+        db.query(AdConnection)
+        .filter(AdConnection.business_id == business_id)
+        .all()
+    )
+    connections_by_platform = {c.platform: c for c in connections}
+    active_campaigns = (
+        db.query(AdCampaign)
+        .filter(
+            AdCampaign.business_id == business_id,
+            AdCampaign.status.in_(("active", "scheduled", "pending_approval")),
+        )
+        .all()
+    )
+
+    tier = (biz.tier or 0) if biz else 0
+    tier_note = (
+        "Tier 3 (Concierge) — your spend tools mutate state directly within the owner's caps."
+        if tier >= 3
+        else f"Tier {tier} — your spend tools queue proposals for the owner's approval (no direct mutation)."
+    )
+
+    if not any(b.monthly_cap_cents > 0 for b in budgets) and not active_campaigns:
+        return (
+            "## Ads & Spend\n\n"
+            "No monthly caps set yet, no active campaigns. The owner can connect ad "
+            f"accounts and set caps in the Ads & Spend tab. {tier_note}"
+        )
+
+    lines = [f"## Ads & Spend (this month: {month})", "", tier_note, ""]
+    for b in budgets:
+        label = _AD_PLATFORM_LABELS.get(b.platform, b.platform)
+        conn = connections_by_platform.get(b.platform)
+        conn_status = (conn.status if conn else "disconnected")
+        cap_d = b.monthly_cap_cents / 100
+        spend_d = b.spend_cents / 100
+        remaining_d = max(0, cap_d - spend_d)
+        if b.monthly_cap_cents > 0:
+            lines.append(
+                f"- **{label}** ({conn_status}): ${spend_d:,.0f} of ${cap_d:,.0f} cap "
+                f"(${remaining_d:,.0f} remaining)"
+            )
+        else:
+            lines.append(f"- **{label}** ({conn_status}): no cap set")
+
+    if active_campaigns:
+        lines.append("")
+        lines.append(f"**Active / scheduled campaigns:** {len(active_campaigns)}")
+        for c in active_campaigns[:4]:
+            label = _AD_PLATFORM_LABELS.get(c.platform, c.platform)
+            lines.append(
+                f"- #{c.id} \"{c.name}\" on {label} — "
+                f"${c.daily_budget_cents/100:.0f}/day × {c.duration_days}d "
+                f"(${c.actual_spend_cents/100:.0f} spent so far, status={c.status})"
+            )
+
+    return "\n".join(lines)

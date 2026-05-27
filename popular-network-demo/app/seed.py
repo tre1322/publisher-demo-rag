@@ -15,7 +15,11 @@ Earlier Westbrook seed is preserved in git history if we want to switch back.
 from __future__ import annotations
 
 from .db import SessionLocal
+from datetime import datetime
+
 from .models import (
+    AdConnection,
+    AdPlatformBudget,
     Business,
     ChatTurn,
     Connection,
@@ -278,6 +282,12 @@ def seed_if_empty() -> bool:
         # the Maximum tier picks the midpoint of the +150–200% range (175%).
         _seed_reach_tiers(db, business_id=1)
 
+        # Phase E — paid-ad spend management. Quadd is Day-1: no caps set,
+        # no platforms connected. The dashboard's empty state will explain
+        # the value prop until the owner sets a cap or connects an account.
+        _seed_ad_platform_budgets(db, business_id=1)
+        _seed_ad_connections(db, business_id=1)
+
         db.commit()
         return True
     finally:
@@ -294,6 +304,48 @@ _SW_PEACH_TERRITORIES = {
     "maximum":  ["new_ulm", "windom", "marshall", "pipestone", "westbrook", "mountain_lake",
                  "fairmont", "tracy", "redwood_falls", "worthington", "luverne", "jackson"],
 }
+
+
+# Display labels for each ad platform. Used by the AdsView budget allocator
+# and by the AdConnection seed helper. Order matters — this is the order the
+# budget allocator card will list them in.
+_AD_PLATFORMS = [
+    ("fb_ig",      "Meta (Facebook + Instagram)"),
+    ("google_ads", "Google Ads"),
+    ("tiktok",     "TikTok Ads"),
+    ("linkedin",   "LinkedIn Ads"),
+]
+
+
+def _current_month_year() -> str:
+    return datetime.utcnow().strftime("%Y-%m")
+
+
+def _seed_ad_platform_budgets(db, business_id: int) -> None:
+    """One zero-cap row per platform for the current month. Owner sets caps later."""
+    month = _current_month_year()
+    for key, _label in _AD_PLATFORMS:
+        db.add(AdPlatformBudget(
+            business_id=business_id,
+            platform=key,
+            month_year=month,
+            monthly_cap_cents=0,
+            spend_cents=0,
+            status="active",
+        ))
+
+
+def _seed_ad_connections(db, business_id: int) -> None:
+    """One disconnected row per platform. Connect flow lives in Settings (E.6)."""
+    for key, label in _AD_PLATFORMS:
+        db.add(AdConnection(
+            business_id=business_id,
+            platform=key,
+            account_label=label,
+            external_account_id=None,
+            oauth_token=None,
+            status="disconnected",
+        ))
 
 
 def _seed_reach_tiers(db, business_id: int) -> None:

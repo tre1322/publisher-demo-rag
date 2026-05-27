@@ -247,13 +247,17 @@ def _run_text_only_stream(client, SessionLocal, ChatTurn) -> None:
 
     # System + tools were passed; tool_choice=auto on a non-trigger message
     sent = _FAKE.calls[0]
-    if "tools" not in sent or len(sent["tools"]) != 4:
-        _fail(f"tools should be passed (4 of them) on every stream call")
+    # E.4 added 3 ad-spend tools to the original 4 (draft_post, propose_boost,
+    # draft_review_response, regenerate_insights). Total = 7. The exact count
+    # matters less than "all schema tools are passed" — assert ≥ 7 so future
+    # tool additions don't break this.
+    if "tools" not in sent or len(sent["tools"]) < 7:
+        _fail(f"tools should be passed (≥7 of them) on every stream call, got {len(sent.get('tools', []))}")
     if sent.get("tool_choice") != {"type": "auto"}:
         _fail(f"non-trigger should be tool_choice=auto, got {sent.get('tool_choice')!r}")
     if sent["system"][0].get("cache_control", {}).get("type") != "ephemeral":
         _fail("system block missing cache_control: ephemeral")
-    _ok("call kwargs: tools=[4], tool_choice=auto, cache_control=ephemeral")
+    _ok(f"call kwargs: tools=[{len(sent['tools'])}], tool_choice=auto, cache_control=ephemeral")
 
     # Both turns persisted
     with SessionLocal() as s:

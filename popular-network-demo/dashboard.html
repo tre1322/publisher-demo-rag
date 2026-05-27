@@ -122,11 +122,11 @@
 
   <script type="text/babel" data-presets="react">
   /* eslint-disable */
-  const { useState, useEffect, useRef, useMemo, Fragment, useContext, createContext } = React;
+  const { useState, useEffect, useRef, useMemo, useCallback, Fragment, useContext, createContext } = React;
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-27 · v34 — Phase D.3+D.4: Network reach tab on Performance — Cross-Territory Revenue + Local-First Algorithm transparency cards w/ Day-1 empty states';
+  const BUILD_VERSION = '2026-05-27 · v39 — Phase E.6: Settings ad accounts (mock OAuth Connect/Disconnect for Meta/Google/TikTok/LinkedIn) + Tier 3 autonomous-spend toggle in Permissions';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -718,6 +718,7 @@
     { id: 'calendar',    label: 'Calendar',      icon: 'calendar' },
     { id: 'approvals',   label: 'Approvals',     icon: 'inbox' },
     { id: 'performance', label: 'Performance',   icon: 'chart' },
+    { id: 'ads',         label: 'Ads & Spend',   icon: 'dollar' },
     { id: 'reviews',     label: 'Reviews',       icon: 'star' },
     { id: 'plan',        label: 'Marketing Plan',icon: 'target' },
     { id: 'chat',        label: 'AI Agent',      icon: 'msg' },
@@ -832,6 +833,17 @@
     const [reachEstimateError, setReachEstimateError] = useState(null);
 
     const reachVisible = chosen.includes('fb');
+
+    // Phase E.3 — Boost-on-launch state. Distinct from Phase D's Reach
+    // Configurator: that's chatbot amplification on the Amplora network
+    // (money to publishers); this is direct paid spend on FB/Google/TikTok/
+    // LinkedIn (money to those platforms). Coexist on Compose, distinct
+    // accents (violet vs amber) + Phase 1.5 vs Phase 2 framing.
+    const [boostEnabled, setBoostEnabled]   = useState(false);
+    const [boostPlatform, setBoostPlatform] = useState('fb_ig');
+    const [boostDaily, setBoostDaily]       = useState('20');
+    const [boostDays, setBoostDays]         = useState('7');
+    const boostVisible = chosen.length > 0;  // any paid surface counts
 
     useEffect(() => {
       if (!reachVisible) { setReachEstimate(null); return; }
@@ -1014,12 +1026,62 @@
         }
       }
 
+      // Phase E.3 — if Boost on launch is enabled AND status='pending'
+      // (send-for-review), also create an agent_proposed AdCampaign so the
+      // boost approval lands in the queue next to the post approvals.
+      // Skip on 'draft' (no point booking spend on a stash-only post) and
+      // on failure (don't create a boost for a post that didn't ship).
+      let boostSucceeded = false;
+      if (status === 'pending' && boostEnabled && succeeded.length > 0 && failed.length === 0) {
+        const dailyCents = Math.max(100, Math.round(parseFloat(boostDaily || '0') * 100));
+        const days = Math.max(1, Math.min(90, parseInt(boostDays || '0', 10) || 0));
+        try {
+          const resp = await fetch('/api/ads/campaigns', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              platform: boostPlatform,
+              name: `Boost: ${topic.trim() || 'untitled post'}`,
+              daily_budget_cents: dailyCents,
+              duration_days: days,
+              post_id: succeeded[0]?.post?.internalId || null,
+              target_audience: notes.trim() || null,
+              origin: 'agent_proposed',
+            }),
+          });
+          if (resp.ok) {
+            const c = await resp.json();
+            boostSucceeded = true;
+            // Slot the boost approval into context
+            mutate(prev => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                approvals: [...(prev.approvals || []), {
+                  id: `boost-${c.id}`,
+                  internalId: null,  // we don't have the Approval.id, but it'll appear after refresh
+                  platform: c.platform,
+                  title: `Boost: ${c.name}`,
+                  draft: `$${(c.dailyBudgetCents/100).toFixed(0)}/day × ${c.durationDays} days ($${(c.plannedTotalCents/100).toFixed(0)} total) on ${c.platform}.`,
+                  note: 'Proposed by your AI Agent — review in Approvals.',
+                  kind: 'boost',
+                }],
+              };
+            });
+          }
+        } catch (e) {
+          console.error('[compose.boost] failed', e);
+          // Non-fatal — the posts shipped; just no boost. Surface in toast.
+        }
+      }
+
       setSaving(null);
 
       if (failed.length === 0) {
         const verb = status === 'draft' ? 'Saved' : 'Sent';
         const where = status === 'draft' ? 'Drafts' : 'Approval queue';
-        setSaveToast(`${verb} ${succeeded.length} post${succeeded.length === 1 ? '' : 's'} to ${where}.`);
+        const boostNote = boostSucceeded ? ' Boost proposal queued too.' : '';
+        setSaveToast(`${verb} ${succeeded.length} post${succeeded.length === 1 ? '' : 's'} to ${where}.${boostNote}`);
         // Auto-navigate after the toast has had time to be read (1.5s).
         // Owner sees the confirmation, then arrives on the destination.
         setTimeout(() => {
@@ -1271,6 +1333,83 @@
                 {!reachEstimate && !reachEstimateError && !reachEstimating && (
                   <div className="mt-3 text-[11px] text-ink-faint italic">
                     Pick a tier to see impression estimate.
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {/* Phase E.3 — Boost on launch (paid spend). Visible whenever any
+                channel is chosen. Distinct amber accent (vs violet Reach
+                Configurator above) + 'Phase 2' framing to disambiguate. */}
+            {boostVisible && (
+              <Card>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+                      <Icon name="dollar" size={16} />
+                    </div>
+                    <div>
+                      <div className="font-semibold text-ink text-sm">Boost on launch</div>
+                      <div className="text-[11px] text-ink-faint">Phase 2 · Pay Meta / Google / TikTok / LinkedIn directly</div>
+                    </div>
+                  </div>
+                  <button onClick={() => setBoostEnabled(b => !b)}
+                    className={`relative w-10 h-5 rounded-full transition-colors ${boostEnabled ? 'bg-amber-500' : 'bg-surface-edge'}`}>
+                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${boostEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+                {!boostEnabled && (
+                  <p className="text-[11px] text-ink-faint italic">
+                    Toggle on to also pay the platform for paid distribution alongside the organic post.
+                  </p>
+                )}
+                {boostEnabled && (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-[10px] uppercase tracking-wider font-semibold text-ink-faint mb-1 block">Platform</label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {AD_PLATFORMS.map(p => {
+                          const on = boostPlatform === p.key;
+                          return (
+                            <button key={p.key} onClick={() => setBoostPlatform(p.key)}
+                              className={`px-2 py-1.5 rounded-lg text-xs font-medium border-2 transition-all flex items-center gap-1.5 ${
+                                on ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-surface-edge text-ink-soft hover:border-ink-faint/40'
+                              }`}>
+                              <Icon name={p.icon} size={12} /> {p.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] uppercase tracking-wider font-semibold text-ink-faint mb-1 block">Daily budget</label>
+                        <div className="relative">
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-faint text-sm">$</span>
+                          <input type="number" min="1" step="5"
+                            value={boostDaily}
+                            onChange={e => setBoostDaily(e.target.value)}
+                            className="w-full pl-6 pr-2 py-1.5 rounded-lg border border-surface-edge text-sm focus:outline-none focus:border-amber-500" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase tracking-wider font-semibold text-ink-faint mb-1 block">Run for</label>
+                        <div className="relative">
+                          <input type="number" min="1" max="90"
+                            value={boostDays}
+                            onChange={e => setBoostDays(e.target.value)}
+                            className="w-full pl-2.5 pr-12 py-1.5 rounded-lg border border-surface-edge text-sm focus:outline-none focus:border-amber-500" />
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint text-xs">days</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-amber-50 border border-amber-200">
+                      <div className="text-[11px] text-amber-800 leading-relaxed">
+                        <strong>Planned: ${((parseFloat(boostDaily || '0') * parseInt(boostDays || '0', 10)) || 0).toLocaleString()}</strong>
+                        {' '}on {AD_PLATFORM_BY_KEY[boostPlatform]?.label || boostPlatform} over {parseInt(boostDays || '0', 10) || 0} days.
+                        When you Send for review, this creates a boost proposal alongside the post drafts.
+                      </div>
+                    </div>
                   </div>
                 )}
               </Card>
@@ -1673,7 +1812,7 @@
      VIEW: HOME / OVERVIEW
      ============================================================ */
   const HomeView = ({ onNavigate }) => {
-    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings } = useDashboard();
+    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings, ads } = useDashboard();
     return (
       <div className="fade-in">
         <TopBar
@@ -1706,8 +1845,37 @@
             <StatTile label="Engagement" value={stats.engagement.value} positive delta="MoM" helper={stats.engagement.helper} />
             <StatTile label="New reviews" value={stats.reviews.value} helper={stats.reviews.helper}
               accent={<Stars n={Math.round(stats.reviews.rating)} />} />
-            <StatTile label="Ad spend used" value={`$${stats.spend.used}`} helper={`of $${stats.spend.budget}`}
-              accent={<ProgressBar value={stats.spend.used} max={stats.spend.budget} />} />
+            {/* Phase E.5 — Ad spend tile sources from /api/bootstrap's ads
+                slice (aggregate per-platform), clickable to jump to Ads view,
+                with per-platform connection pills under the helper. */}
+            <button onClick={() => onNavigate?.('ads')}
+              className="text-left bg-white rounded-xl border border-surface-edge p-4 hover:border-brand-300 hover:shadow-card transition-all">
+              <div className="text-xs uppercase tracking-wider text-ink-faint font-medium mb-1">Ad spend this month</div>
+              <div className="text-2xl font-semibold text-ink tabular-nums">
+                ${((ads?.totalSpendCents || 0) / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                {(ads?.totalCapCents || 0) > 0 && (
+                  <span className="text-sm text-ink-faint font-normal"> / ${((ads.totalCapCents || 0) / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                )}
+              </div>
+              <div className="text-xs text-ink-faint mt-1">
+                {(ads?.activeCount || 0) > 0
+                  ? `${ads.activeCount} active campaign${ads.activeCount === 1 ? '' : 's'}`
+                  : (ads?.hasAnyCap ? 'caps set, no campaigns yet' : 'set monthly caps to plan')}
+              </div>
+              {ads?.connectionStatus && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {['fb_ig', 'google_ads', 'tiktok', 'linkedin'].map(p => {
+                    const connected = ads.connectionStatus[p] === 'connected';
+                    const labels = { fb_ig: 'Meta', google_ads: 'Google', tiktok: 'TikTok', linkedin: 'LinkedIn' };
+                    return (
+                      <span key={p} className={`text-[10px] px-1.5 py-0.5 rounded ${connected ? 'bg-emerald-50 text-emerald-700' : 'bg-surface text-ink-faint'}`}>
+                        {labels[p]}{connected ? ' ✓' : ''}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </button>
             <StatTile label="Chatbot conversations" value={stats.chatbot.value} helper="Tier 3 preview" />
           </div>
 
@@ -2223,7 +2391,9 @@
               <div className="p-5 border-b border-surface-edge flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <PlatformChip platform={item.platform} />
-                  {item.kind === 'review' ? <Pill color="red" icon="alert">Review reply</Pill> : <Pill color="amber">Pending</Pill>}
+                  {item.kind === 'review' && <Pill color="red" icon="alert">Review reply</Pill>}
+                  {item.kind === 'boost'  && <Pill color="violet" icon="dollar">Boost proposal</Pill>}
+                  {(!item.kind || item.kind === 'post') && <Pill color="amber">Pending</Pill>}
                 </div>
                 {busy && <Pill color="slate" icon="refresh">Saving…</Pill>}
               </div>
@@ -2242,16 +2412,27 @@
                     <p className="text-sm text-ink italic">"{item.original}"</p>
                   </div>
                 )}
-                {!item.original && (
+                {!item.original && item.kind !== 'boost' && (
                   <div className="bg-surface rounded-lg border border-surface-edge h-28 flex items-center justify-center text-ink-faint">
                     <Icon name="image" size={28} strokeWidth={1.5} />
                     <span className="ml-2 text-xs">Image placeholder — owner-provided</span>
                   </div>
                 )}
-                <div>
-                  <div className="text-xs uppercase tracking-wider text-ink-faint font-medium mb-1.5">{item.kind === 'review' ? 'Drafted reply' : 'Draft'}</div>
-                  <p className="text-sm text-ink leading-relaxed bg-white rounded-lg p-3 border border-surface-edge whitespace-pre-line">{item.draft}</p>
-                </div>
+                {item.kind === 'boost' && (
+                  <div className="bg-violet-50 border border-violet-100 rounded-lg p-3">
+                    <div className="text-xs uppercase tracking-wider text-violet-700 font-semibold mb-1 flex items-center gap-1">
+                      <Icon name="dollar" size={11} strokeWidth={2.4} />
+                      Paid spend — your AI agent is proposing this campaign
+                    </div>
+                    <p className="text-sm text-ink leading-relaxed">{item.draft}</p>
+                  </div>
+                )}
+                {item.kind !== 'boost' && (
+                  <div>
+                    <div className="text-xs uppercase tracking-wider text-ink-faint font-medium mb-1.5">{item.kind === 'review' ? 'Drafted reply' : 'Draft'}</div>
+                    <p className="text-sm text-ink leading-relaxed bg-white rounded-lg p-3 border border-surface-edge whitespace-pre-line">{item.draft}</p>
+                  </div>
+                )}
                 <div className="flex gap-2 items-start text-xs">
                   <div className="shrink-0 mt-0.5"><Icon name="sparkles" size={13} className="text-brand-500" /></div>
                   <p className="text-ink-soft italic leading-relaxed flex-1">{item.note}</p>
@@ -2729,6 +2910,790 @@
           )}
         </div>
       </div>
+    );
+  };
+
+  /* ============================================================
+     VIEW: ADS & SPEND — Phase E.2
+     ============================================================ */
+
+  // Display metadata for ad platforms. Distinct from Compose's social-post
+  // PLATFORMS const because ads-side groups FB+IG into one Meta entity.
+  const AD_PLATFORMS = [
+    { key: 'fb_ig',      label: 'Meta',     fullLabel: 'Meta (FB + IG)',           icon: 'fb',       accent: 'sky',    cpm: 8.00,  ctrPct: 1.2 },
+    { key: 'google_ads', label: 'Google',   fullLabel: 'Google Ads',                icon: 'google',   accent: 'emerald',cpm: 15.00, ctrPct: 3.5 },
+    { key: 'tiktok',     label: 'TikTok',   fullLabel: 'TikTok Ads',                icon: 'sparkles', accent: 'rose',   cpm: 6.00,  ctrPct: 1.8 },
+    { key: 'linkedin',   label: 'LinkedIn', fullLabel: 'LinkedIn Ads',              icon: 'user',     accent: 'indigo', cpm: 35.00, ctrPct: 0.9 },
+  ];
+  const AD_PLATFORM_BY_KEY = Object.fromEntries(AD_PLATFORMS.map(p => [p.key, p]));
+
+  const formatUSD = (cents, options = {}) => {
+    const { showCents = false } = options;
+    return '$' + (cents / 100).toLocaleString(undefined, {
+      minimumFractionDigits: showCents ? 2 : 0,
+      maximumFractionDigits: showCents ? 2 : 0,
+    });
+  };
+
+  const AdsView = ({ onNavigate }) => {
+    const { business } = useDashboard();
+    const [adsState, setAdsState] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [tab, setTab] = useState('overview');
+    const [ticking, setTicking] = useState(false);
+    const [savingPlatform, setSavingPlatform] = useState(null);
+    const [draftCaps, setDraftCaps] = useState({});  // platform → string while typing
+    const [newCampaign, setNewCampaign] = useState(null);  // null or {platform, name, daily, days, audience}
+    const [creatingCampaign, setCreatingCampaign] = useState(false);
+    const [savingDecision, setSavingDecision] = useState(null);  // campaign id while updating
+
+    const refresh = useCallback(async () => {
+      try {
+        const r = await fetch('/api/ads');
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        setAdsState(data);
+        setError(null);
+      } catch (e) {
+        console.error('[ads.refresh]', e);
+        setError(`Couldn't load ads data: ${e.message || e}`);
+      } finally {
+        setLoading(false);
+      }
+    }, []);
+
+    useEffect(() => { refresh(); }, [refresh]);
+
+    const handleTick = async () => {
+      if (ticking) return;
+      setTicking(true);
+      try {
+        const r = await fetch('/api/ads/tick?hours=24', { method: 'POST' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        await refresh();
+      } catch (e) {
+        console.error('[ads.tick]', e);
+        setError(`Simulator failed: ${e.message || e}`);
+      } finally {
+        setTicking(false);
+      }
+    };
+
+    const createCampaign = async () => {
+      if (!newCampaign || creatingCampaign) return;
+      const dailyCents = Math.max(100, Math.round(parseFloat(newCampaign.daily || '0') * 100));
+      const days = Math.max(1, Math.min(90, parseInt(newCampaign.days || '0', 10) || 0));
+      if (!newCampaign.name?.trim() || !newCampaign.platform || dailyCents < 100 || days < 1) {
+        setError('Campaign needs a name, platform, daily budget ≥ $1, and at least 1 day.');
+        return;
+      }
+      setCreatingCampaign(true);
+      try {
+        const r = await fetch('/api/ads/campaigns', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            platform: newCampaign.platform,
+            name: newCampaign.name.trim(),
+            daily_budget_cents: dailyCents,
+            duration_days: days,
+            target_audience: newCampaign.audience?.trim() || null,
+            origin: 'manual_owner',
+          }),
+        });
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
+          throw new Error(typeof j.detail === 'string' ? j.detail : `HTTP ${r.status}`);
+        }
+        setNewCampaign(null);
+        await refresh();
+      } catch (e) {
+        console.error('[ads.createCampaign]', e);
+        setError(`Couldn't create campaign: ${e.message || e}`);
+      } finally {
+        setCreatingCampaign(false);
+      }
+    };
+
+    const updateCampaign = async (campaignId, body) => {
+      setSavingDecision(campaignId);
+      try {
+        const r = await fetch(`/api/ads/campaigns/${campaignId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
+          throw new Error(typeof j.detail === 'string' ? j.detail : `HTTP ${r.status}`);
+        }
+        await refresh();
+      } catch (e) {
+        console.error('[ads.updateCampaign]', e);
+        setError(`Couldn't update campaign: ${e.message || e}`);
+      } finally {
+        setSavingDecision(null);
+      }
+    };
+
+    const saveCap = async (platform, dollarsStr) => {
+      const cents = Math.max(0, Math.round(parseFloat(dollarsStr || '0') * 100) || 0);
+      setSavingPlatform(platform);
+      try {
+        const r = await fetch(`/api/ads/budgets/${platform}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ monthly_cap_cents: cents }),
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        await refresh();
+        setDraftCaps(d => { const { [platform]: _, ...rest } = d; return rest; });
+      } catch (e) {
+        console.error('[ads.saveCap]', e);
+        setError(`Couldn't save cap: ${e.message || e}`);
+      } finally {
+        setSavingPlatform(null);
+      }
+    };
+
+    if (loading && !adsState) {
+      return (
+        <div className="fade-in">
+          <TopBar breadcrumb="Workspace" title="Ads & Spend" subtitle="Loading…" />
+          <div className="px-8 py-16 text-center text-ink-faint text-sm">Loading ad data…</div>
+        </div>
+      );
+    }
+
+    const a = adsState || { budgets: [], campaigns: [], connections: [], totalCapCents: 0, totalSpendCents: 0, activeCount: 0, pendingCount: 0, totalImpressions: 0, totalClicks: 0, avgCtr: 0, hasAnyCap: false, hasAnyCampaign: false, hasAnyConnection: false };
+
+    const titles = {
+      overview:    { title: 'Ads & Spend',        subtitle: 'Set monthly caps per platform, watch active campaigns, and tune budgets.' },
+      campaigns:   { title: 'Campaigns',          subtitle: 'Every active, scheduled, paused, and completed campaign across all platforms.' },
+      performance: { title: 'Performance by platform', subtitle: 'CTR · spend · ROAS across Meta, Google, TikTok, LinkedIn.' },
+      history:     { title: 'Campaign history',   subtitle: 'Completed and cancelled campaigns. Auditable record of every dollar.' },
+    };
+    const adTabs = [
+      { id: 'overview',    label: 'Overview',    icon: 'chart' },
+      { id: 'campaigns',   label: 'Campaigns',   icon: 'inbox', count: a.activeCount + a.pendingCount },
+      { id: 'performance', label: 'Performance', icon: 'trending' },
+      { id: 'history',     label: 'History',     icon: 'clock' },
+    ];
+
+    const activeCampaigns  = a.campaigns.filter(c => c.status === 'active' || c.status === 'scheduled');
+    const pendingCampaigns = a.campaigns.filter(c => c.status === 'pending_approval');
+    const pausedCampaigns  = a.campaigns.filter(c => c.status === 'paused');
+
+    const connectionFor = (platform) => a.connections.find(c => c.platform === platform);
+    const budgetFor     = (platform) => a.budgets.find(b => b.platform === platform);
+
+    return (
+      <div className="fade-in">
+        <TopBar
+          breadcrumb="Workspace"
+          title={titles[tab].title}
+          subtitle={titles[tab].subtitle}
+          right={
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" size="sm" icon="refresh"
+                onClick={handleTick}
+                disabled={ticking || !a.hasAnyCampaign}>
+                {ticking ? 'Simulating…' : 'Simulate today'}
+              </Button>
+              <Button variant="primary" size="sm" icon="plus"
+                onClick={() => setNewCampaign({ platform: 'fb_ig', name: '', daily: '20', days: '7', audience: '' })}>
+                New campaign
+              </Button>
+            </div>
+          }
+        />
+        <div className="px-8 pt-2"><TabBar tabs={adTabs} value={tab} onChange={setTab} /></div>
+
+        {error && (
+          <div className="mx-8 mt-5 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-start gap-2">
+            <Icon name="alert" size={16} className="mt-0.5 shrink-0" />
+            <div className="flex-1">{error}</div>
+            <button className="text-bad/60 hover:text-bad" onClick={() => setError(null)}>
+              <Icon name="x" size={14} />
+            </button>
+          </div>
+        )}
+
+        <div className="px-8 py-7">
+          {/* Top stat row — visible on all tabs */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <StatTile label="Total spend (this month)"
+              value={a.hasAnyCampaign ? formatUSD(a.totalSpendCents) : '$0'}
+              helper={a.hasAnyCap ? `of ${formatUSD(a.totalCapCents)} capped` : 'No caps set yet'}
+              positive={true} />
+            <StatTile label="Active campaigns"
+              value={String(a.activeCount)}
+              helper={a.pendingCount > 0 ? `+${a.pendingCount} pending approval` : (a.hasAnyCampaign ? 'all caught up' : 'none yet')}
+              positive={a.activeCount > 0} />
+            <StatTile label="Total impressions"
+              value={a.totalImpressions > 0 ? a.totalImpressions.toLocaleString() : '—'}
+              helper={a.totalClicks > 0 ? `${a.totalClicks.toLocaleString()} clicks` : 'no clicks yet'}
+              positive={true} />
+            <StatTile label="Avg CTR"
+              value={a.avgCtr > 0 ? `${(a.avgCtr * 100).toFixed(2)}%` : '—'}
+              helper={a.totalImpressions > 0 ? 'across all live campaigns' : 'no live data yet'}
+              positive={a.avgCtr > 0.01} />
+          </div>
+
+          {tab === 'overview' && (
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-5 fade-in">
+              {/* LEFT: Budget allocator + active campaigns */}
+              <div className="space-y-5">
+                <Card>
+                  <SectionHeader title="Monthly budget caps" subtitle="One cap per platform — independent. Caps reset on the 1st of every month." />
+                  <div className="space-y-3">
+                    {AD_PLATFORMS.map(p => {
+                      const conn = connectionFor(p.key);
+                      const budget = budgetFor(p.key);
+                      const capCents = budget?.monthlyCapCents || 0;
+                      const spendCents = budget?.spendCents || 0;
+                      const pctUsed = capCents > 0 ? Math.min(100, (spendCents / capCents) * 100) : 0;
+                      const draftValue = draftCaps[p.key] ?? (capCents > 0 ? (capCents / 100).toString() : '');
+                      const isConnected = conn?.status === 'connected';
+                      return (
+                        <div key={p.key} className="rounded-lg border border-surface-edge p-3">
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className={`w-8 h-8 rounded-lg bg-${p.accent}-50 text-${p.accent}-600 flex items-center justify-center shrink-0`}>
+                              <Icon name={p.icon} size={15} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-semibold text-ink">{p.fullLabel}</div>
+                              <div className="text-[11px] text-ink-faint">
+                                ${p.cpm.toFixed(2)} CPM · {p.ctrPct}% typical CTR
+                              </div>
+                            </div>
+                            {!isConnected && (
+                              <Pill color="slate">Not connected</Pill>
+                            )}
+                            {isConnected && (
+                              <Pill color="emerald" icon="check">Connected</Pill>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="relative flex-1">
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-faint text-sm">$</span>
+                              <input type="number" min="0" step="25"
+                                placeholder="0"
+                                value={draftValue}
+                                onChange={e => setDraftCaps(d => ({ ...d, [p.key]: e.target.value }))}
+                                className="w-full pl-6 pr-16 py-1.5 rounded-lg border border-surface-edge text-sm focus:outline-none focus:border-brand-500" />
+                              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint text-xs">/mo cap</span>
+                            </div>
+                            <Button variant="secondary" size="sm"
+                              disabled={savingPlatform === p.key || draftCaps[p.key] === undefined}
+                              onClick={() => saveCap(p.key, draftCaps[p.key])}>
+                              {savingPlatform === p.key ? 'Saving…' : 'Save'}
+                            </Button>
+                          </div>
+                          {capCents > 0 && (
+                            <div className="mt-2">
+                              <div className="flex items-center justify-between text-[11px] text-ink-faint mb-1">
+                                <span>{formatUSD(spendCents)} spent</span>
+                                <span>{pctUsed.toFixed(0)}%</span>
+                                <span>{formatUSD(capCents - spendCents)} left</span>
+                              </div>
+                              <div className="h-1.5 bg-surface rounded overflow-hidden">
+                                <div className={`h-full rounded transition-all bg-${p.accent}-500`}
+                                  style={{ width: `${pctUsed}%` }} />
+                              </div>
+                            </div>
+                          )}
+                          {capCents === 0 && !isConnected && (
+                            <div className="mt-2 text-[11px] text-ink-faint italic">
+                              Set a cap to start planning. Connect your {p.label} ad account in Settings to schedule live campaigns.
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Card>
+
+                <Card>
+                  <SectionHeader title="Active + scheduled campaigns" subtitle={`${activeCampaigns.length} live · ${pendingCampaigns.length} pending approval · ${pausedCampaigns.length} paused`} />
+                  {!a.hasAnyCampaign && (
+                    <div className="border-2 border-dashed border-brand-200 rounded-xl px-4 py-8 text-center bg-brand-50/30">
+                      <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-brand-100 text-brand-600 mb-3">
+                        <Icon name="sparkles" size={22} strokeWidth={1.8} />
+                      </div>
+                      <h4 className="font-semibold text-ink text-sm mb-1">No campaigns yet</h4>
+                      <p className="text-xs text-ink-soft max-w-sm mx-auto leading-relaxed">
+                        Set a monthly cap on at least one platform (left), then either create a campaign directly from this tab or boost a post on launch from <button className="text-brand-600 hover:underline" onClick={() => onNavigate('compose')}>Compose</button>.
+                      </p>
+                      {business.tier >= 3 && (
+                        <p className="text-[11px] text-violet-700 mt-3 italic">
+                          On Tier 3, your AI Agent can autonomously schedule campaigns within your caps — just ask.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {a.hasAnyCampaign && activeCampaigns.length === 0 && pendingCampaigns.length === 0 && (
+                    <div className="py-6 text-center text-ink-faint text-sm">
+                      No active or pending campaigns. {pausedCampaigns.length > 0 && <>Check the History tab for paused ones.</>}
+                    </div>
+                  )}
+                  {(activeCampaigns.length > 0 || pendingCampaigns.length > 0) && (
+                    <div className="overflow-x-auto -mx-4 sm:mx-0">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-[10px] uppercase tracking-wider text-ink-faint font-semibold border-b border-surface-edge">
+                            <th className="py-2 px-2">Campaign</th>
+                            <th className="py-2 px-2">Platform</th>
+                            <th className="py-2 px-2 text-right">Budget</th>
+                            <th className="py-2 px-2 text-right">Spent</th>
+                            <th className="py-2 px-2 text-right">Impr.</th>
+                            <th className="py-2 px-2 text-right">CTR</th>
+                            <th className="py-2 px-2">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[...activeCampaigns, ...pendingCampaigns].map(c => (
+                            <CampaignRow key={c.id} c={c} />
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </Card>
+              </div>
+
+              {/* RIGHT: Platform connections summary + agent note */}
+              <div className="space-y-5">
+                <Card>
+                  <SectionHeader title="Platform connections" subtitle="OAuth your ad accounts to schedule live campaigns." />
+                  <ul className="divide-y divide-surface-edge">
+                    {AD_PLATFORMS.map(p => {
+                      const conn = connectionFor(p.key);
+                      const isConnected = conn?.status === 'connected';
+                      return (
+                        <li key={p.key} className="py-2.5 flex items-center gap-3">
+                          <div className={`w-7 h-7 rounded-lg bg-${p.accent}-50 text-${p.accent}-600 flex items-center justify-center shrink-0`}>
+                            <Icon name={p.icon} size={13} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-ink truncate">{p.label}</div>
+                            <div className="text-[11px] text-ink-faint truncate">
+                              {isConnected ? (conn.externalAccountId || 'Connected') : 'Not connected'}
+                            </div>
+                          </div>
+                          {isConnected ? (
+                            <Pill color="emerald">On</Pill>
+                          ) : (
+                            <button className="text-xs text-brand-600 hover:underline" onClick={() => onNavigate('settings')}>
+                              Connect →
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </Card>
+
+                <Card>
+                  <SectionHeader title={business.tier >= 3 ? "Autonomous mode" : "Agent recommendations"}
+                    subtitle={business.tier >= 3 ? "Your AI agent allocates within caps." : "Upgrade to Tier 3 to enable autonomous boosts."} />
+                  <p className="text-sm text-ink-soft leading-relaxed">
+                    {business.tier >= 3
+                      ? "On your Tier 3 plan, Quadd's AI Agent can autonomously allocate spend within the caps you set. Each campaign it schedules shows up in the Campaigns tab tagged as auto-scheduled."
+                      : "On Tier 2, the agent can propose boosts but you'll always be the one to click 'Approve' before any money moves."}
+                  </p>
+                  <button onClick={() => onNavigate('chat')}
+                    className="mt-3 w-full px-3 py-2 rounded-lg bg-brand-50 text-brand-700 text-sm font-medium hover:bg-brand-100 transition-all">
+                    Open AI Agent →
+                  </button>
+                </Card>
+              </div>
+            </div>
+          )}
+
+          {tab === 'campaigns' && (
+            <Card>
+              <SectionHeader title="All campaigns" subtitle="Use the Status filter pills to drill in." />
+              {!a.hasAnyCampaign ? (
+                <div className="py-10 text-center text-ink-faint text-sm">
+                  No campaigns yet. Create one from <button className="text-brand-600 hover:underline" onClick={() => onNavigate('compose')}>Compose</button>, or set a budget cap above and ask your AI Agent.
+                </div>
+              ) : (
+                <div className="overflow-x-auto -mx-4 sm:mx-0">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-[10px] uppercase tracking-wider text-ink-faint font-semibold border-b border-surface-edge">
+                        <th className="py-2 px-2">Campaign</th>
+                        <th className="py-2 px-2">Platform</th>
+                        <th className="py-2 px-2 text-right">Budget</th>
+                        <th className="py-2 px-2 text-right">Spent</th>
+                        <th className="py-2 px-2 text-right">Impr.</th>
+                        <th className="py-2 px-2 text-right">CTR</th>
+                        <th className="py-2 px-2">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {a.campaigns.map(c => <CampaignRow key={c.id} c={c} />)}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          )}
+
+          {tab === 'performance' && (
+            <AdsPerformanceTab adsState={a} />
+          )}
+
+          {tab === 'history' && (
+            <Card>
+              <SectionHeader title="Completed + cancelled campaigns" subtitle="Auditable record of every dollar." />
+              {[...a.campaigns.filter(c => ['completed','cancelled','paused'].includes(c.status))].length === 0 ? (
+                <div className="py-10 text-center text-ink-faint text-sm">No archived campaigns yet.</div>
+              ) : (
+                <div className="overflow-x-auto -mx-4 sm:mx-0">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-[10px] uppercase tracking-wider text-ink-faint font-semibold border-b border-surface-edge">
+                        <th className="py-2 px-2">Campaign</th>
+                        <th className="py-2 px-2">Platform</th>
+                        <th className="py-2 px-2 text-right">Final spend</th>
+                        <th className="py-2 px-2 text-right">Impr.</th>
+                        <th className="py-2 px-2 text-right">CTR</th>
+                        <th className="py-2 px-2">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {a.campaigns.filter(c => ['completed','cancelled','paused'].includes(c.status)).map(c => <CampaignRow key={c.id} c={c} compact />)}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          )}
+        </div>
+
+        {/* New campaign modal — owner-initiated creation. Submits as
+            manual_owner (lands scheduled). The Compose 'Boost on launch'
+            card uses a different path that goes via Approvals. */}
+        <Modal
+          open={!!newCampaign}
+          onClose={() => setNewCampaign(null)}
+          title="New campaign"
+          footer={
+            newCampaign && (
+              <>
+                <Button variant="ghost" onClick={() => setNewCampaign(null)} disabled={creatingCampaign}>Cancel</Button>
+                <Button icon="send" variant="primary"
+                  onClick={createCampaign}
+                  disabled={creatingCampaign || !newCampaign.name?.trim()}>
+                  {creatingCampaign ? 'Scheduling…' : 'Schedule campaign'}
+                </Button>
+              </>
+            )
+          }>
+          {newCampaign && (
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">Platform</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {AD_PLATFORMS.map(p => {
+                    const on = newCampaign.platform === p.key;
+                    return (
+                      <button key={p.key}
+                        onClick={() => setNewCampaign(nc => ({ ...nc, platform: p.key }))}
+                        className={`px-3 py-2 rounded-lg border-2 text-left transition-all flex items-center gap-2 ${
+                          on ? `border-brand-500 bg-brand-50` : 'border-surface-edge hover:border-ink-faint/40'
+                        }`}>
+                        <div className={`w-7 h-7 rounded-lg bg-${p.accent}-50 text-${p.accent}-600 flex items-center justify-center shrink-0`}>
+                          <Icon name={p.icon} size={13} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-ink truncate">{p.label}</div>
+                          <div className="text-[10px] text-ink-faint">${p.cpm.toFixed(2)} CPM</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">Campaign name</label>
+                <input value={newCampaign.name}
+                  onChange={e => setNewCampaign(nc => ({ ...nc, name: e.target.value }))}
+                  placeholder="e.g. Quadd free-trial — Week 1 push"
+                  className="w-full px-3 py-2 rounded-lg border border-surface-edge text-[15px] focus:outline-none focus:border-brand-500" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">Daily budget</label>
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-faint text-sm">$</span>
+                    <input type="number" min="1" step="5"
+                      value={newCampaign.daily}
+                      onChange={e => setNewCampaign(nc => ({ ...nc, daily: e.target.value }))}
+                      className="w-full pl-6 pr-12 py-2 rounded-lg border border-surface-edge text-[15px] focus:outline-none focus:border-brand-500" />
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint text-xs">/day</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">Duration</label>
+                  <div className="relative">
+                    <input type="number" min="1" max="90"
+                      value={newCampaign.days}
+                      onChange={e => setNewCampaign(nc => ({ ...nc, days: e.target.value }))}
+                      className="w-full pl-3 pr-12 py-2 rounded-lg border border-surface-edge text-[15px] focus:outline-none focus:border-brand-500" />
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint text-xs">days</span>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">Audience hint <span className="text-ink-faint normal-case font-normal">(optional)</span></label>
+                <textarea rows="2"
+                  value={newCampaign.audience || ''}
+                  onChange={e => setNewCampaign(nc => ({ ...nc, audience: e.target.value }))}
+                  placeholder="e.g. Newspaper publishers + editors, 50-mile radius around New Ulm"
+                  className="w-full px-3 py-2 rounded-lg border border-surface-edge text-[14px] focus:outline-none focus:border-brand-500 resize-none" />
+              </div>
+              <div className="text-[11px] text-ink-soft bg-surface rounded-lg p-3 leading-relaxed">
+                Planned spend: <strong>${((parseFloat(newCampaign.daily || '0') * parseInt(newCampaign.days || '0', 10)) || 0).toLocaleString()}</strong>
+                {' '}over {parseInt(newCampaign.days || '0', 10) || 0} days. The campaign will start immediately as
+                <strong> scheduled</strong> and become <strong>active</strong> on the next 'Simulate today' tick.
+              </div>
+            </div>
+          )}
+        </Modal>
+      </div>
+    );
+  };
+
+  // Phase E.5 — per-platform performance breakdown. Aggregates campaign
+  // performance by platform, renders side-by-side bar charts for spend,
+  // impressions, CTR. Empty state shows the value prop with $0 chips.
+  const AdsPerformanceTab = ({ adsState }) => {
+    const a = adsState;
+    // Aggregate per-platform: spend, impressions, clicks, CTR, ROAS-ish.
+    const perPlatform = AD_PLATFORMS.map(p => {
+      const campaigns = a.campaigns.filter(c => c.platform === p.key);
+      const spend = campaigns.reduce((s, c) => s + c.actualSpendCents, 0);
+      const impressions = campaigns.reduce((s, c) => s + ((c.performance || {}).impressions || 0), 0);
+      const clicks = campaigns.reduce((s, c) => s + ((c.performance || {}).clicks || 0), 0);
+      const ctr = impressions > 0 ? clicks / impressions : 0;
+      const budgetRow = a.budgets.find(b => b.platform === p.key);
+      const cap = budgetRow?.monthlyCapCents || 0;
+      return { ...p, spend, impressions, clicks, ctr, cap, count: campaigns.length };
+    });
+    const maxSpend = Math.max(1, ...perPlatform.map(p => p.spend));
+    const maxImp   = Math.max(1, ...perPlatform.map(p => p.impressions));
+    const maxCtr   = Math.max(0.001, ...perPlatform.map(p => p.ctr));
+    const anyData  = perPlatform.some(p => p.spend > 0 || p.impressions > 0);
+
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 fade-in">
+        {/* Spend by platform — horizontal bar chart */}
+        <Card>
+          <SectionHeader title="Spend by platform" subtitle="This month's actual outflow per ad platform." />
+          {!anyData ? (
+            <div className="border-2 border-dashed border-amber-200 rounded-xl px-4 py-8 text-center bg-amber-50/30">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-amber-100 text-amber-600 mb-3">
+                <Icon name="dollar" size={22} strokeWidth={1.8} />
+              </div>
+              <h4 className="font-semibold text-ink text-sm mb-1">No spend yet</h4>
+              <p className="text-xs text-ink-soft max-w-sm mx-auto leading-relaxed">
+                Schedule a campaign and click 'Simulate today' to see per-platform spend roll up here.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {perPlatform.map(p => (
+                <div key={p.key}>
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <div className="flex items-center gap-1.5">
+                      <div className={`w-5 h-5 rounded bg-${p.accent}-50 text-${p.accent}-600 flex items-center justify-center`}>
+                        <Icon name={p.icon} size={11} />
+                      </div>
+                      <span className="font-medium text-ink">{p.label}</span>
+                    </div>
+                    <span className="tabular-nums text-ink-soft">{formatUSD(p.spend)} <span className="text-ink-faint">/ {formatUSD(p.cap)} cap</span></span>
+                  </div>
+                  <div className="h-5 bg-surface rounded overflow-hidden flex">
+                    <div className={`h-full bg-${p.accent}-500 transition-all`}
+                      style={{ width: `${(p.spend / maxSpend) * 100}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* CTR by platform */}
+        <Card>
+          <SectionHeader title="CTR by platform" subtitle="Higher CTR = ad copy + targeting is working." />
+          {!anyData ? (
+            <div className="border-2 border-dashed border-amber-200 rounded-xl px-4 py-8 text-center bg-amber-50/30">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-amber-100 text-amber-600 mb-3">
+                <Icon name="trending" size={22} strokeWidth={1.8} />
+              </div>
+              <h4 className="font-semibold text-ink text-sm mb-1">No clicks yet</h4>
+              <p className="text-xs text-ink-soft max-w-sm mx-auto leading-relaxed">
+                Typical CTR by platform: Meta {AD_PLATFORM_BY_KEY.fb_ig.ctrPct}%, Google {AD_PLATFORM_BY_KEY.google_ads.ctrPct}%, TikTok {AD_PLATFORM_BY_KEY.tiktok.ctrPct}%, LinkedIn {AD_PLATFORM_BY_KEY.linkedin.ctrPct}%. Run campaigns to see how yours compare.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {perPlatform.map(p => {
+                const ctrPctNow = p.ctr * 100;
+                const benchmark = p.ctrPct;
+                const ratio = benchmark > 0 ? ctrPctNow / benchmark : 0;
+                return (
+                  <div key={p.key}>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <div className="flex items-center gap-1.5">
+                        <div className={`w-5 h-5 rounded bg-${p.accent}-50 text-${p.accent}-600 flex items-center justify-center`}>
+                          <Icon name={p.icon} size={11} />
+                        </div>
+                        <span className="font-medium text-ink">{p.label}</span>
+                      </div>
+                      <span className="tabular-nums text-ink-soft">
+                        {p.impressions > 0 ? `${ctrPctNow.toFixed(2)}%` : '—'}
+                        <span className="text-ink-faint"> / {benchmark}% bench</span>
+                      </span>
+                    </div>
+                    <div className="h-5 bg-surface rounded overflow-hidden relative">
+                      <div className={`h-full bg-${p.accent}-500 transition-all`}
+                        style={{ width: `${Math.min(150, (p.ctr / maxCtr) * 100)}%` }} />
+                      {/* Benchmark line */}
+                      <div className="absolute top-0 bottom-0 w-px bg-ink-faint/40"
+                        style={{ left: `${Math.min(100, (benchmark / 100 / maxCtr) * 100)}%` }} />
+                    </div>
+                    {p.impressions > 0 && ratio > 0 && (
+                      <div className="text-[10px] text-ink-faint mt-0.5">
+                        {ratio >= 1.15 ? <span className="text-emerald-700">+{((ratio - 1) * 100).toFixed(0)}% above benchmark</span>
+                          : ratio >= 0.85 ? <span>at benchmark</span>
+                          : <span className="text-amber-700">{((ratio - 1) * 100).toFixed(0)}% below benchmark — review targeting</span>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+
+        {/* Impressions by platform */}
+        <Card>
+          <SectionHeader title="Impressions delivered" subtitle="Total ad surface delivered per platform this month." />
+          {!anyData ? (
+            <div className="border-2 border-dashed border-amber-200 rounded-xl px-4 py-8 text-center bg-amber-50/30">
+              <p className="text-xs text-ink-soft max-w-sm mx-auto leading-relaxed">
+                Impressions populate once campaigns run. LinkedIn delivers the fewest impressions per dollar (B2B premium); TikTok delivers the most (broad audience).
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {perPlatform.map(p => (
+                <div key={p.key}>
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <div className="flex items-center gap-1.5">
+                      <div className={`w-5 h-5 rounded bg-${p.accent}-50 text-${p.accent}-600 flex items-center justify-center`}>
+                        <Icon name={p.icon} size={11} />
+                      </div>
+                      <span className="font-medium text-ink">{p.label}</span>
+                    </div>
+                    <span className="tabular-nums text-ink-soft">{p.impressions.toLocaleString()} <span className="text-ink-faint">· {p.clicks.toLocaleString()} clicks</span></span>
+                  </div>
+                  <div className="h-5 bg-surface rounded overflow-hidden">
+                    <div className={`h-full bg-${p.accent}-500 transition-all`}
+                      style={{ width: `${(p.impressions / maxImp) * 100}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* Effective CPM (or cost per click if higher) — composite efficiency view */}
+        <Card>
+          <SectionHeader title="Cost efficiency" subtitle="Actual CPM and cost per click, side by side." />
+          <div className="overflow-x-auto -mx-4 sm:mx-0">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[10px] uppercase tracking-wider text-ink-faint font-semibold border-b border-surface-edge">
+                  <th className="py-2 px-2">Platform</th>
+                  <th className="py-2 px-2 text-right">Campaigns</th>
+                  <th className="py-2 px-2 text-right">Spend</th>
+                  <th className="py-2 px-2 text-right">Impr.</th>
+                  <th className="py-2 px-2 text-right">CPM</th>
+                  <th className="py-2 px-2 text-right">CPC</th>
+                </tr>
+              </thead>
+              <tbody>
+                {perPlatform.map(p => {
+                  const cpmActual = p.impressions > 0 ? (p.spend / p.impressions) * 1000 / 100 : null;
+                  const cpcActual = p.clicks > 0 ? (p.spend / p.clicks) / 100 : null;
+                  return (
+                    <tr key={p.key} className="border-b border-surface-edge/60">
+                      <td className="py-2.5 px-2">
+                        <div className="flex items-center gap-1.5">
+                          <div className={`w-5 h-5 rounded bg-${p.accent}-50 text-${p.accent}-600 flex items-center justify-center`}>
+                            <Icon name={p.icon} size={10} />
+                          </div>
+                          <span className="text-xs">{p.label}</span>
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-2 text-right tabular-nums text-ink-soft">{p.count}</td>
+                      <td className="py-2.5 px-2 text-right tabular-nums">{p.spend > 0 ? formatUSD(p.spend) : '—'}</td>
+                      <td className="py-2.5 px-2 text-right tabular-nums text-ink-soft">{p.impressions.toLocaleString()}</td>
+                      <td className="py-2.5 px-2 text-right tabular-nums">
+                        {cpmActual != null ? `$${cpmActual.toFixed(2)}` : '—'}
+                      </td>
+                      <td className="py-2.5 px-2 text-right tabular-nums">
+                        {cpcActual != null ? `$${cpcActual.toFixed(2)}` : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+    );
+  };
+
+  // Single campaign row component, reused across Overview/Campaigns/History tables.
+  const CampaignRow = ({ c, compact }) => {
+    const p = AD_PLATFORM_BY_KEY[c.platform];
+    const perf = c.performance || {};
+    const statusColor = ({
+      active: 'emerald', scheduled: 'sky', pending_approval: 'amber',
+      paused: 'slate', completed: 'violet', cancelled: 'slate', draft: 'slate',
+    }[c.status]) || 'slate';
+    return (
+      <tr className="border-b border-surface-edge/60 hover:bg-surface/40">
+        <td className="py-2.5 px-2">
+          <div className="font-medium text-ink text-sm leading-tight">{c.name}</div>
+          {!compact && (
+            <div className="text-[11px] text-ink-faint">
+              ${(c.dailyBudgetCents / 100).toFixed(0)}/day × {c.durationDays} days
+              {c.origin === 'agent_autonomous' && <> · <span className="text-violet-600">auto-scheduled</span></>}
+              {c.origin === 'agent_proposed' && <> · <span className="text-amber-600">agent proposed</span></>}
+            </div>
+          )}
+        </td>
+        <td className="py-2.5 px-2">
+          <div className="flex items-center gap-1.5">
+            {p && <div className={`w-5 h-5 rounded bg-${p.accent}-50 text-${p.accent}-600 flex items-center justify-center`}><Icon name={p.icon} size={10} /></div>}
+            <span className="text-xs text-ink-soft">{p?.label || c.platform}</span>
+          </div>
+        </td>
+        <td className="py-2.5 px-2 text-right tabular-nums text-ink-soft">{formatUSD(c.plannedTotalCents)}</td>
+        <td className="py-2.5 px-2 text-right tabular-nums text-ink">{formatUSD(c.actualSpendCents)}</td>
+        <td className="py-2.5 px-2 text-right tabular-nums text-ink-soft">{(perf.impressions || 0).toLocaleString()}</td>
+        <td className="py-2.5 px-2 text-right tabular-nums text-ink-soft">{perf.ctr ? `${(perf.ctr * 100).toFixed(2)}%` : '—'}</td>
+        <td className="py-2.5 px-2"><Pill color={statusColor}>{c.status.replace('_', ' ')}</Pill></td>
+      </tr>
     );
   };
 
@@ -3868,6 +4833,12 @@
         return <ReviewResponseCard attachment={attachment} onNavigate={onNavigate} />;
       case 'insights-refreshed':
         return <InsightsRefreshedCard attachment={attachment} onNavigate={onNavigate} />;
+      case 'allocate-budget-card':
+        return <AllocateBudgetCard attachment={attachment} onNavigate={onNavigate} />;
+      case 'schedule-boost-card':
+        return <ScheduleBoostCard attachment={attachment} onNavigate={onNavigate} />;
+      case 'pause-campaign-card':
+        return <PauseCampaignCard attachment={attachment} onNavigate={onNavigate} />;
       case 'tool-error':
         return <ToolErrorCard attachment={attachment} />;
       default:
@@ -3878,6 +4849,69 @@
         );
     }
   };
+
+  // Phase E.4 — tier-gated card variants. tierMode='autonomous' (Tier 3,
+  // green badge) vs 'proposal' (Tier 2, amber badge). Pattern mirrors
+  // existing BoostCard/DraftPostCard.
+
+  const TierBadge = ({ mode }) => mode === 'autonomous'
+    ? <Pill color="emerald" icon="check">Auto-scheduled</Pill>
+    : <Pill color="amber">Awaiting your approval</Pill>;
+
+  const AllocateBudgetCard = ({ attachment, onNavigate }) => (
+    <div className="bg-white text-ink rounded-lg border border-amber-200 p-3">
+      <div className="text-[11px] uppercase tracking-wider font-semibold text-amber-700 mb-2 flex items-center gap-1.5">
+        <Icon name="dollar" size={11} /> Budget allocation
+      </div>
+      <div className="text-sm font-semibold text-ink mb-1">
+        {attachment.monthlyDollars}/month on {attachment.platform}
+      </div>
+      <div className="text-[11px] text-ink-soft italic mb-2">{attachment.reasoning}</div>
+      <div className="flex items-center justify-between pt-2 border-t border-surface-edge">
+        <TierBadge mode={attachment.tierMode} />
+        <button onClick={() => onNavigate?.('ads')}
+          className="text-[11px] text-brand-600 hover:underline font-medium">Open Ads & Spend →</button>
+      </div>
+    </div>
+  );
+
+  const ScheduleBoostCard = ({ attachment, onNavigate }) => (
+    <div className="bg-white text-ink rounded-lg border border-amber-200 p-3">
+      <div className="text-[11px] uppercase tracking-wider font-semibold text-amber-700 mb-2 flex items-center gap-1.5">
+        <Icon name="send" size={11} /> Paid boost · {attachment.platform}
+      </div>
+      <div className="text-sm font-semibold text-ink mb-1 truncate">{attachment.postTitle}</div>
+      <dl className="text-[11px] text-ink-soft grid grid-cols-2 gap-x-3 gap-y-1 mb-2">
+        <dt className="text-ink-faint">Daily</dt><dd className="font-medium">{attachment.dailyDollars}</dd>
+        <dt className="text-ink-faint">Total</dt><dd className="font-medium">{attachment.totalDollars} ({attachment.days} days)</dd>
+        <dt className="text-ink-faint col-span-2">Audience: <span className="text-ink-soft normal-case font-normal italic">{attachment.audience}</span></dt>
+      </dl>
+      <div className="flex items-center justify-between pt-2 border-t border-surface-edge">
+        <TierBadge mode={attachment.tierMode} />
+        <button onClick={() => onNavigate?.(attachment.tierMode === 'proposal' ? 'approvals' : 'ads')}
+          className="text-[11px] text-brand-600 hover:underline font-medium">
+          {attachment.tierMode === 'proposal' ? 'Open Approvals →' : 'Open Ads & Spend →'}
+        </button>
+      </div>
+    </div>
+  );
+
+  const PauseCampaignCard = ({ attachment, onNavigate }) => (
+    <div className="bg-white text-ink rounded-lg border border-slate-300 p-3">
+      <div className="text-[11px] uppercase tracking-wider font-semibold text-slate-600 mb-2 flex items-center gap-1.5">
+        <Icon name="x" size={11} /> Pause campaign
+      </div>
+      <div className="text-sm font-semibold text-ink mb-1">{attachment.campaignName}</div>
+      <div className="text-[11px] text-ink-soft italic mb-2">{attachment.reason}</div>
+      <div className="flex items-center justify-between pt-2 border-t border-surface-edge">
+        <TierBadge mode={attachment.tierMode} />
+        <button onClick={() => onNavigate?.(attachment.tierMode === 'proposal' ? 'approvals' : 'ads')}
+          className="text-[11px] text-brand-600 hover:underline font-medium">
+          {attachment.tierMode === 'proposal' ? 'Open Approvals →' : 'Open Ads & Spend →'}
+        </button>
+      </div>
+    </div>
+  );
 
   const PLATFORM_LABEL = {
     facebook: 'Facebook', instagram: 'Instagram', google: 'Google Business',
@@ -3968,6 +5002,72 @@
     const [savingSettings, setSavingSettings] = useState(false);
     const [settingsError, setSettingsError] = useState(null);
     const [settingsToast, setSettingsToast] = useState(null);
+
+    // Phase E.6 — ad-account connection state. Loaded from /api/ads on mount;
+    // refetched after each connect/disconnect. Distinct from settings.connections
+    // (social presence) because ad-account auth is a different OAuth scope.
+    const [adConnections, setAdConnections] = useState(null);
+    const [adConnBusy, setAdConnBusy] = useState(null);  // platform key while OAuthing
+    const refreshAdConnections = useCallback(async () => {
+      try {
+        const r = await fetch('/api/ads');
+        if (r.ok) {
+          const data = await r.json();
+          setAdConnections(data.connections);
+        }
+      } catch (e) {
+        console.error('[settings.adConnections]', e);
+      }
+    }, []);
+    useEffect(() => { refreshAdConnections(); }, [refreshAdConnections]);
+
+    const handleAdConnect = async (platform) => {
+      setAdConnBusy(platform);
+      try {
+        // Mock OAuth — back-end POST returns immediately. Real OAuth would
+        // redirect to platform's auth screen then back. UI 1.2s delay
+        // approximates the OAuth round-trip feel.
+        await new Promise(r => setTimeout(r, 1200));
+        const r = await fetch('/api/ads/connections', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ platform }),
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        await refreshAdConnections();
+      } catch (e) {
+        console.error('[settings.adConnect]', e);
+        setSettingsError(`Couldn't connect: ${e.message || e}`);
+      } finally {
+        setAdConnBusy(null);
+      }
+    };
+
+    const handleAdDisconnect = async (connectionId) => {
+      setAdConnBusy(connectionId);
+      try {
+        const r = await fetch(`/api/ads/connections/${connectionId}`, { method: 'DELETE' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        await refreshAdConnections();
+      } catch (e) {
+        console.error('[settings.adDisconnect]', e);
+        setSettingsError(`Couldn't disconnect: ${e.message || e}`);
+      } finally {
+        setAdConnBusy(null);
+      }
+    };
+
+    // Tier 3 spend-behavior toggle. Stored in localStorage for the demo;
+    // production would persist via settings router.
+    const [autoSpendEnabled, setAutoSpendEnabled] = useState(() => {
+      try { return localStorage.getItem('amplora.autoSpend') !== 'false'; } catch { return true; }
+    });
+    const toggleAutoSpend = () => {
+      const next = !autoSpendEnabled;
+      setAutoSpendEnabled(next);
+      try { localStorage.setItem('amplora.autoSpend', next ? 'true' : 'false'); } catch {}
+      setSettingsToast(`Tier 3 autonomous spend ${next ? 'enabled' : 'disabled'}.`);
+    };
 
     // Dirty tracking: any difference between local state and server-of-record
     // (current bootstrap.settings) means there's something to save.
@@ -4166,7 +5266,7 @@
           {tab === 'connections' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 fade-in">
               <Card>
-                <SectionHeader title="Connected accounts" subtitle="The agent posts and reads only where you've connected." />
+                <SectionHeader title="Social accounts" subtitle="Where the agent posts and reads on your behalf." />
                 <ul className="space-y-3">
                   {settings.connections.map((c, i) => {
                     const p = PLATFORMS[c.platform];
@@ -4184,9 +5284,57 @@
                     );
                   })}
                 </ul>
-                <div className="mt-4 pt-4 border-t border-surface-edge flex items-center justify-between text-xs text-ink-soft">
-                  <span>Need to connect another platform?</span>
-                  <Button size="sm" variant="ghost" icon="plus">Add account</Button>
+
+                {/* Phase E.6 — Ad accounts sub-section. Distinct from social
+                    accounts because ad OAuth is a separate scope and money
+                    flows differently (to platforms, not to publishers). */}
+                <div className="mt-6 pt-5 border-t border-surface-edge">
+                  <SectionHeader title="Ad accounts" subtitle="Connect Meta / Google / TikTok / LinkedIn Ads to schedule paid campaigns." />
+                  {!adConnections ? (
+                    <div className="text-xs text-ink-faint italic">Loading…</div>
+                  ) : (
+                    <ul className="space-y-2">
+                      {[
+                        { key: 'fb_ig',      label: 'Meta Ads (FB+IG)',           icon: 'fb',     accent: 'sky' },
+                        { key: 'google_ads', label: 'Google Ads',                 icon: 'google', accent: 'emerald' },
+                        { key: 'tiktok',     label: 'TikTok Ads',                 icon: 'sparkles', accent: 'rose' },
+                        { key: 'linkedin',   label: 'LinkedIn Campaign Manager',  icon: 'user',   accent: 'indigo' },
+                      ].map(p => {
+                        const conn = adConnections.find(c => c.platform === p.key);
+                        const connected = conn?.status === 'connected';
+                        const busy = adConnBusy === p.key || (conn?.id && adConnBusy === conn.id);
+                        return (
+                          <li key={p.key} className="flex items-center gap-3 p-2.5 rounded-lg border border-surface-edge bg-white">
+                            <div className={`w-8 h-8 rounded-lg bg-${p.accent}-50 text-${p.accent}-600 flex items-center justify-center shrink-0`}>
+                              <Icon name={p.icon} size={14} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium text-ink truncate">{p.label}</div>
+                              <div className="text-[11px] text-ink-faint truncate">
+                                {connected
+                                  ? `${conn.externalAccountId || ''} · ${conn.accountLabel || 'connected'}`
+                                  : 'Not yet connected'}
+                              </div>
+                            </div>
+                            {connected ? (
+                              <Button size="sm" variant="ghost" disabled={busy}
+                                onClick={() => handleAdDisconnect(conn.id)}>
+                                {busy ? 'Disconnecting…' : 'Disconnect'}
+                              </Button>
+                            ) : (
+                              <Button size="sm" variant="secondary" disabled={busy}
+                                onClick={() => handleAdConnect(p.key)}>
+                                {busy ? 'Connecting…' : 'Connect'}
+                              </Button>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                  <div className="mt-3 text-[11px] text-ink-faint leading-relaxed">
+                    Connections are mocked for the demo — real OAuth into Meta Ads Manager / Google Ads / TikTok Business / LinkedIn Campaign Manager is on the V2 roadmap.
+                  </div>
                 </div>
               </Card>
               <Card>
@@ -4195,9 +5343,36 @@
                   <li className="flex items-start gap-3"><span className="text-ok shrink-0 mt-0.5"><Icon name="check" size={14} strokeWidth={2.4} /></span><span><span className="font-medium text-ink">Read</span> insights, comments, mentions, and reviews.</span></li>
                   <li className="flex items-start gap-3"><span className="text-ok shrink-0 mt-0.5"><Icon name="check" size={14} strokeWidth={2.4} /></span><span><span className="font-medium text-ink">Draft</span> posts, replies, and image suggestions for your approval.</span></li>
                   <li className="flex items-start gap-3"><span className="text-ok shrink-0 mt-0.5"><Icon name="check" size={14} strokeWidth={2.4} /></span><span><span className="font-medium text-ink">Publish</span> only what you've approved (cadence below).</span></li>
-                  <li className="flex items-start gap-3"><span className="text-ink-faint shrink-0 mt-0.5"><Icon name="x" size={14} strokeWidth={2.4} /></span><span><span className="font-medium text-ink-soft">Spend</span> on ads — Tier 2 surfaces recommendations only. Tier 3 unlocks autonomous boosts within your set budget.</span></li>
+                  <li className="flex items-start gap-3">
+                    <span className={`shrink-0 mt-0.5 ${business.tier >= 3 ? 'text-ok' : 'text-ink-faint'}`}>
+                      <Icon name={business.tier >= 3 ? 'check' : 'x'} size={14} strokeWidth={2.4} />
+                    </span>
+                    <span>
+                      <span className={`font-medium ${business.tier >= 3 ? 'text-ink' : 'text-ink-soft'}`}>Spend</span> on ads —
+                      {business.tier >= 3
+                        ? ' Tier 3 autonomous boosts within your monthly caps.'
+                        : ' Tier 2 surfaces proposals only; upgrade to Tier 3 for autonomous.'}
+                    </span>
+                  </li>
                   <li className="flex items-start gap-3"><span className="text-ink-faint shrink-0 mt-0.5"><Icon name="x" size={14} strokeWidth={2.4} /></span><span><span className="font-medium text-ink-soft">Send</span> messages on your behalf — chatbot escalations only at Tier 3.</span></li>
                 </ul>
+
+                {business.tier >= 3 && (
+                  <div className="mt-4 pt-4 border-t border-surface-edge">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1 pr-3">
+                        <div className="text-sm font-medium text-ink">Autonomous ad spend</div>
+                        <div className="text-[11px] text-ink-faint mt-0.5 leading-relaxed">
+                          When on, your AI Agent can allocate budget and schedule boosts within the monthly caps you set. When off, it falls back to proposal-only.
+                        </div>
+                      </div>
+                      <button onClick={toggleAutoSpend}
+                        className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${autoSpendEnabled ? 'bg-emerald-500' : 'bg-surface-edge'}`}>
+                        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${autoSpendEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </Card>
             </div>
           )}
@@ -4496,6 +5671,7 @@
           {view === 'calendar'    && <CalendarView onNavigate={navigate} />}
           {view === 'approvals'   && <ApprovalsView scrollToId={scrollToId} onScrollHandled={() => setScrollToId(null)} />}
           {view === 'performance' && <PerformanceView />}
+          {view === 'ads'         && <AdsView onNavigate={navigate} />}
           {view === 'reviews'     && <ReviewsView scrollToId={scrollToId} onScrollHandled={() => setScrollToId(null)} />}
           {view === 'plan'        && <MarketingPlanView />}
           {view === 'chat'        && <ChatView onNavigate={navigate} />}

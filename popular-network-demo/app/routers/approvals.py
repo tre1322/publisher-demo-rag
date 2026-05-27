@@ -36,7 +36,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import Approval, Post, Review
+from ..models import AdCampaign, Approval, Post, Review
 
 router = APIRouter()
 
@@ -91,6 +91,13 @@ def decide(approval_id: int, body: DecideRequest, db: Session = Depends(get_db))
 
     if body.decision == "reject":
         a.decision = "rejected"
+        # For boost-kind, cancel the linked AdCampaign so we don't leave
+        # a zombie pending_approval row.
+        if a.kind == "boost":
+            campaign = _find_campaign_for_boost_approval(db, a)
+            if campaign is not None and campaign.status == "pending_approval":
+                campaign.status = "cancelled"
+                campaign.ended_at = now
         db.commit()
         return {"ok": True, "approval": _approval_to_payload(a)}
 
@@ -131,20 +138,58 @@ def decide(approval_id: int, body: DecideRequest, db: Session = Depends(get_db))
             },
         }
 
-    # kind == "review"
-    review = _find_review_for_approval(db, a)
-    if review is not None:
-        review.owner_response = final_draft
-        review.response_status = "approved"
-        review.response_sent_at = now
-        a.review_id = review.id
+    if a.kind == "review":
+        review = _find_review_for_approval(db, a)
+        if review is not None:
+            review.owner_response = final_draft
+            review.response_status = "approved"
+            review.response_sent_at = now
+            a.review_id = review.id
+        db.commit()
+        return {
+            "ok": True,
+            "approval": _approval_to_payload(a),
+            "review": {
+                "id": review.external_id or f"r{review.id}" if review else None,
+                "responseStatus": review.response_status if review else None,
+                "ownerResponse": review.owner_response if review else None,
+            } if review else None,
+        }
+
+    # kind == "boost" — advance the linked AdCampaign to scheduled
+    # (the campaign was already created with status='pending_approval' by
+    # /api/ads/campaigns when origin=agent_proposed).
+    campaign = _find_campaign_for_boost_approval(db, a)
+    if campaign is not None and campaign.status == "pending_approval":
+        campaign.status = "scheduled"
+        campaign.approved_by = "owner"
+        campaign.scheduled_for = now
+        if not campaign.external_campaign_id:
+            from .ads import _mock_external_id
+            campaign.external_campaign_id = _mock_external_id(campaign.platform)
     db.commit()
     return {
         "ok": True,
         "approval": _approval_to_payload(a),
-        "review": {
-            "id": review.external_id or f"r{review.id}" if review else None,
-            "responseStatus": review.response_status if review else None,
-            "ownerResponse": review.owner_response if review else None,
-        } if review else None,
+        "campaign": {
+            "id":                 campaign.id if campaign else None,
+            "status":             campaign.status if campaign else None,
+            "externalCampaignId": campaign.external_campaign_id if campaign else None,
+        } if campaign else None,
     }
+
+
+def _find_campaign_for_boost_approval(db: Session, a: Approval) -> AdCampaign | None:
+    """Find the AdCampaign matching a boost-kind approval.
+
+    Boost approvals are created by POST /api/ads/campaigns w/
+    origin=agent_proposed; the Approval's external_id is set to
+    'boost-{campaign_id}'. Parse that suffix back out to find the row.
+    """
+    if a.kind != "boost" or not a.external_id or not a.external_id.startswith("boost-"):
+        return None
+    try:
+        campaign_id = int(a.external_id.split("-", 1)[1])
+    except (ValueError, IndexError):
+        return None
+    return db.get(AdCampaign, campaign_id)

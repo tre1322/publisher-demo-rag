@@ -288,3 +288,105 @@ class LocalFirstLog(Base):
     queries_total: Mapped[int] = mapped_column(Integer, default=0)
     queries_local_first: Mapped[int] = mapped_column(Integer, default=0)
     queries_out_of_territory_paid: Mapped[int] = mapped_column(Integer, default=0)
+
+
+# ---------------------------------------------------------------------------
+# Phase E — Multi-platform paid ad spend management
+# ---------------------------------------------------------------------------
+# Per docs/amplora_business_plan.md §3.4 V2 roadmap (autonomous ad spend mgmt).
+# Pulled forward from V2 so the demo can show tier-3 ownership in practice.
+#
+# Distinct from Phase D's reach amplification: D = chatbot reach on Amplora's
+# network (money to Amplora/publishers). E = direct paid spend on external
+# platforms (money to Meta / Google / TikTok / LinkedIn). They coexist on
+# Compose but the IA keeps them visually distinct (violet vs amber accents).
+#
+# Operational model: mocked execution. ad_campaigns rows get fake
+# external_campaign_id; the /api/ads/tick endpoint advances spend +
+# impressions on active campaigns. Real OAuth + platform APIs deferred.
+#
+# Tier gating: Business.tier 2 → tools queue proposals (Approval row).
+# Business.tier 3 → tools mutate state autonomously within owner-set caps.
+
+
+# Canonical platform keys for ad spend (distinct from Compose's social-post
+# platforms `fb` / `ig` / `gbp` / `web`). `fb_ig` is one entity because
+# Meta Ads Manager handles both FB + IG with one budget. `google_ads` is
+# distinct from `gbp` (which is the Business Profile listing presence).
+_AD_PLATFORM_KEYS = ("fb_ig", "google_ads", "tiktok", "linkedin")
+
+
+class AdPlatformBudget(Base):
+    """Per-business, per-platform monthly cap and rolling spend.
+
+    One row per (business_id, platform, month_year). Spend ticks up as the
+    /api/ads/tick endpoint advances active campaigns. Cap enforced when the
+    agent's schedule_boost tool runs at Tier 3.
+    """
+
+    __tablename__ = "ad_platform_budgets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"))
+    platform: Mapped[str] = mapped_column(String(16))  # fb_ig | google_ads | tiktok | linkedin
+    month_year: Mapped[str] = mapped_column(String(7))  # YYYY-MM
+    monthly_cap_cents: Mapped[int] = mapped_column(Integer, default=0)
+    spend_cents: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(16), default="active")  # active|paused
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AdCampaign(Base):
+    """A single paid-ad campaign on an external platform.
+
+    May or may not link to a Post (boost-on-launch ties campaign to post;
+    standalone campaigns are post_id=None and use a free-text topic in name).
+    Status progression: draft → pending_approval (Tier 2) → scheduled →
+    active → completed (or paused / cancelled at any point).
+    """
+
+    __tablename__ = "ad_campaigns"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"))
+    post_id: Mapped[Optional[int]] = mapped_column(ForeignKey("posts.id"), nullable=True)
+    platform: Mapped[str] = mapped_column(String(16))  # fb_ig | google_ads | tiktok | linkedin
+    name: Mapped[str] = mapped_column(String(160))
+    daily_budget_cents: Mapped[int] = mapped_column(Integer)
+    duration_days: Mapped[int] = mapped_column(Integer)
+    planned_total_cents: Mapped[int] = mapped_column(Integer)
+    actual_spend_cents: Mapped[int] = mapped_column(Integer, default=0)
+    target_audience_json: Mapped[Any] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="draft")
+    origin: Mapped[str] = mapped_column(String(20), default="manual_owner")  # manual_owner|agent_proposed|agent_autonomous
+    approved_by: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # owner|agent|null
+    external_campaign_id: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    performance_json: Mapped[Any] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    scheduled_for: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_ticked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class AdConnection(Base):
+    """Ad-platform account connection (distinct from social presence Connection).
+
+    Connection (existing) = social presence: FB page, IG account, GBP listing.
+    AdConnection (new)    = ad account auth: Meta Ads Manager, Google Ads,
+                            TikTok Ads, LinkedIn Campaign Manager.
+
+    OAuth deferred — `oauth_token` and `external_account_id` are mocked for
+    the demo. status=connected lets schedule_boost actually create campaigns
+    for that platform; status=disconnected blocks it with a clear error.
+    """
+
+    __tablename__ = "ad_connections"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"))
+    platform: Mapped[str] = mapped_column(String(16))  # fb_ig | google_ads | tiktok | linkedin
+    account_label: Mapped[str] = mapped_column(String(160))
+    external_account_id: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    oauth_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # MOCKED — real OAuth is V2 work
+    status: Mapped[str] = mapped_column(String(20), default="disconnected")  # connected|disconnected|error
+    last_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

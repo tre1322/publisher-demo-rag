@@ -17,7 +17,10 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import (
+    AdCampaign,
+    AdConnection,
     AdImpressionsByTerritory,
+    AdPlatformBudget,
     Approval,
     Business,
     ChatTurn,
@@ -261,6 +264,35 @@ def get_bootstrap(business_id: int = 1, db: Session = Depends(get_db)) -> dict[s
         .all()
     )
 
+    # Phase E: slim aggregate slice for Home tile + other contexts. The
+    # AdsView itself fetches /api/ads for the full per-row payload — no
+    # point bloating bootstrap with every campaign + budget row.
+    from datetime import datetime as _dt
+    _ads_month = _dt.utcnow().strftime("%Y-%m")
+    ad_budgets = (
+        db.query(AdPlatformBudget)
+        .filter(AdPlatformBudget.business_id == business_id, AdPlatformBudget.month_year == _ads_month)
+        .all()
+    )
+    ad_connections_rows = (
+        db.query(AdConnection)
+        .filter(AdConnection.business_id == business_id)
+        .all()
+    )
+    ad_active_campaigns = (
+        db.query(AdCampaign)
+        .filter(
+            AdCampaign.business_id == business_id,
+            AdCampaign.status.in_(("active", "scheduled")),
+        )
+        .count()
+    )
+    ad_pending_campaigns = (
+        db.query(AdCampaign)
+        .filter(AdCampaign.business_id == business_id, AdCampaign.status == "pending_approval")
+        .count()
+    )
+
     payload: dict[str, Any] = {
         "business": _business_payload(biz),
         "stats": _stats_payload(notices, agg),
@@ -299,6 +331,9 @@ def get_bootstrap(business_id: int = 1, db: Session = Depends(get_db)) -> dict[s
         "voiceBrief": _load_voice_brief(biz.slug),
         # Phase D — Display Ad Amplification surfaces.
         "reach": _reach_payload(reach_tiers, impressions_rows, local_first_rows),
+        # Phase E — paid-ad spend management aggregate slice. Full per-row
+        # data lives at GET /api/ads (called by AdsView on mount).
+        "ads": _ads_payload(ad_budgets, ad_connections_rows, ad_active_campaigns, ad_pending_campaigns, _ads_month),
     }
     return payload
 
@@ -306,6 +341,34 @@ def get_bootstrap(business_id: int = 1, db: Session = Depends(get_db)) -> dict[s
 # 65 / 25 / 10 split when an ad sold by Publisher A surfaces in Publisher B's
 # chatbot territory. Source: amplora_business_plan.md §7.2.
 _REVENUE_SPLIT = {"selling": 0.65, "receiving": 0.25, "platform": 0.10}
+
+
+def _ads_payload(
+    budgets: list[AdPlatformBudget],
+    connections: list[AdConnection],
+    active_count: int,
+    pending_count: int,
+    month_year: str,
+) -> dict[str, Any]:
+    """Slim aggregate slice for Home tile + other contexts.
+
+    The AdsView itself calls /api/ads for the full per-row payload. This
+    slice exists so Home / Compose / Performance can ask "are we paid-ads
+    enabled at all?" without an extra fetch.
+    """
+    total_cap     = sum(b.monthly_cap_cents for b in budgets)
+    total_spend   = sum(b.spend_cents for b in budgets)
+    has_any_conn  = any(c.status == "connected" for c in connections)
+    return {
+        "monthYear":         month_year,
+        "totalCapCents":     total_cap,
+        "totalSpendCents":   total_spend,
+        "activeCount":       active_count,
+        "pendingCount":      pending_count,
+        "connectionStatus":  {c.platform: c.status for c in connections},
+        "hasAnyCap":         total_cap > 0,
+        "hasAnyConnection":  has_any_conn,
+    }
 
 
 def _reach_payload(
