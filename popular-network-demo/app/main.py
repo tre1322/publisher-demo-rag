@@ -38,6 +38,7 @@ from .routers import (
     bootstrap,
     chat,
     chatbot,
+    compose,
     inventory,
     marketing_plan,
     performance,
@@ -312,6 +313,7 @@ app.include_router(ads.router, prefix="/api", tags=["ads"])
 app.include_router(inventory.router, prefix="/api", tags=["inventory"])
 app.include_router(billing.router, prefix="/api", tags=["billing"])
 app.include_router(chatbot.router, prefix="/api", tags=["chatbot"])
+app.include_router(compose.router, prefix="/api", tags=["compose"])
 
 
 @app.get("/", include_in_schema=False)

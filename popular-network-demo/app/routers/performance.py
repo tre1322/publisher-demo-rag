@@ -91,22 +91,22 @@ def get_performance(
 # Canned insights for regen demo. Each call picks 4 random entries from this
 # palette. Real production would synthesize from the last 30 days of metrics.
 _INSIGHTS_POOL = [
-    {"kind": "win",  "title": "Friday 8–10am posts outperformed the week's average by 41%",
-     "body": "Saturday brake-check post hit 1.8k reach. Saturday-morning windows continue to dominate engagement for your audience — keep posting there."},
-    {"kind": "win",  "title": "Behind-the-scenes reels are still your strongest IG format",
-     "body": "Mike-narrated reels averaged 2.3× the engagement of static posts. Worth shooting one per month minimum."},
-    {"kind": "win",  "title": "GBP holiday-hours posts pulled 4× tap-to-call rate",
-     "body": "Memorial Day weekend hours post hit 87 calls in 3 days. Repeat the pattern for July 4th + Labor Day."},
-    {"kind": "lose", "title": "Wednesday afternoon FB posts under-performed",
-     "body": "Mid-week engagement was 38% below your average. Shift the slow-day reminder posts to Tuesday or Thursday morning instead."},
-    {"kind": "lose", "title": "Caption-only IG posts plateaued at ~120 reach",
-     "body": "Three caption-only posts this period hit identical low ceilings. Pair every IG post with an owner photo or a quick reel going forward."},
-    {"kind": "win",  "title": "Your reviews are still your strongest organic asset",
-     "body": "Mike P.'s 'honest mechanic' review reposted as a quote-card pulled 2.4k reach. Repurpose the next 5-star verbatim."},
-    {"kind": "lose", "title": "Paid CTR dipped on the Memorial Day boost",
-     "body": "CTR dropped from 3.4% to 2.1% on the Memorial Day boost — the audience window was probably too broad. Tighten to 15-mile radius next time."},
-    {"kind": "win",  "title": "Phone-forward CTAs continue to beat 'Learn More'",
-     "body": "Posts ending with (507) 555-0143 converted 1.6× higher than posts with a link CTA. Lead with the phone number on safety/repair posts."},
+    {"kind": "win",  "title": "LinkedIn extractor-demo posts outperformed thought-leadership by 3.2×",
+     "body": "Posts featuring an actual screenshot of the Universal Document Extractor in action pulled 3.2× the engagement of generic 'AI in publishing' commentary. Show the tool working — don't talk around it."},
+    {"kind": "win",  "title": "The 38-page court-document origin story converts at 47%",
+     "body": "Webinar registrants who saw the founder's origin-story slide (the ChatGPT-can't-do-this moment) converted to free-trial signup at 47%. Lead every demo with the origin story."},
+    {"kind": "win",  "title": "'Saves 2–3 hours a week' beat 'AI for publishers' headline 2.8× on CTR",
+     "body": "Industry-newsletter sponsorships with the concrete hours-saved headline drove 2.8× the click-through of the abstract AI framing. Trade in vague AI claims for the time-savings number every time."},
+    {"kind": "lose", "title": "Tuesday afternoon LinkedIn posts under-performed",
+     "body": "Mid-week afternoon publisher-feed activity was 36% below average. Shift the publishing window to Monday morning or Thursday morning when newsroom decision-makers are at their desks."},
+    {"kind": "lose", "title": "AP Style Proofer-led cold emails had 40% lower demo-book rate",
+     "body": "Cold outreach leading with the proofer converted to booked demos at 0.9% — extractor-led emails hit 1.5%. Keep the extractor as the lead hook; sell the proofer in the bundle once they're on the call."},
+    {"kind": "win",  "title": "Citizen Publishing writer testimonial pulled 2.1k LinkedIn impressions",
+     "body": "The 'saving two to three hours each week, no question' quote-card was the strongest organic asset this period. Get the 21-paper customer on record next — that proof point would carry."},
+    {"kind": "lose", "title": "Short-form video tests on LinkedIn fell flat",
+     "body": "15-second clip variants averaged 220 impressions vs 1.4k for longer value-prop posts. Publisher decision-makers want the value spelled out — TikTok-style pacing doesn't translate to this audience."},
+    {"kind": "win",  "title": "Free-trial signups peaked the week INMA content went out",
+     "body": "Co-marketing with industry events (INMA conference week) drove the strongest trial pipeline of the period. Sync the next campaign push with the LMA/E&P calendar."},
 ]
 
 

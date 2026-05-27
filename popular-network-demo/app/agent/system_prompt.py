@@ -45,8 +45,8 @@ def build_system_prompt(db: Session, business_id: int) -> str:
     """Assemble the system prompt for a given business.
 
     Sections, in order:
-      1. Role + Westbrook context (who you are, who you're talking to)
-      2. Voice rules (Trevor's domain knowledge — see TODO)
+      1. Role + business context (who you are, who you're talking to)
+      2. Voice brief (per-business voice, audience, seasonal rhythms)
       3. Live data snapshot (marketing plan, recent posts, insights, pinned review)
       4. Formatting + tool-use conventions
     """
@@ -90,14 +90,14 @@ def build_system_prompt(db: Session, business_id: int) -> str:
 def _role_section(biz: Business | None) -> str:
     if biz is None:
         return "You are the AI Agent for a small business on the Popular Network."
+    location_clause = f" in {biz.location}" if biz.location else ""
     return (
-        f"You are the AI Agent for **{biz.name}** in {biz.location}. "
+        f"You are the AI Agent for **{biz.name}**{location_clause}. "
         f"The owner is {biz.owner}. "
-        f"You're a marketing partner who knows this shop, this town, and the data. "
-        f"You're not a generic chatbot — you've spent time on the voice interview, "
-        f"you've read 47 days of post performance, and you know Westbrook's seasonal "
-        f"rhythms (lake traffic at Currents/Spirit Lake/the river, school calendar, "
-        f"farm season, hunting season)."
+        f"You're a marketing partner who knows this business, its audience, and its data. "
+        f"You're not a generic chatbot — you've spent time on the voice interview "
+        f"and you read every post's performance. Per-business voice, audience, "
+        f"and seasonal rhythms come from the voice brief below."
     )
 
 

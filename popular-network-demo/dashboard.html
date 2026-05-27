@@ -126,7 +126,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-27 · v43 — Phase G polish: detect_escalation now stacks churn > human request > high-value lead > coverage gap > bot-gave-up (was placeholder). New bootstrap.chatbot.hasAnyKey drives a Home "Connect your publisher chatbot" nag for Tier 3+ owners with no key. extract_topic_label truncates at word boundaries (no more mid-word cuts).';
+  const BUILD_VERSION = '2026-05-27 · v44 — Compose "Re-draft from brief" wired to new POST /api/compose/redraft (one-shot Claude call with forced compose_drafts tool_use). Disabled-visible during request, error banner on failure, success toast. Backend: app/routers/compose.py + system_prompt scrubbed of hardcoded Westbrook seasonal context (was leaking into every Quadd chat turn). Performance _INSIGHTS_POOL fully migrated to Quadd-themed insights (LinkedIn extractor demos, INMA co-marketing, 38-page court doc origin).';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -902,6 +902,11 @@
     const [boostDays, setBoostDays]         = useState('7');
     const boostVisible = chosen.length > 0;  // any paid surface counts
 
+    // Re-draft from brief — single LLM call that fills setDrafts() with fresh
+    // per-platform copy honoring the voice brief. Endpoint: /api/compose/redraft.
+    const [reDrafting, setReDrafting] = useState(false);
+    const [reDraftError, setReDraftError] = useState(null);
+
     useEffect(() => {
       if (!reachVisible) { setReachEstimate(null); return; }
       // Light debounce so rapid-fire typing in the base-rate input doesn't
@@ -989,6 +994,47 @@
       { id: 'promo',     label: 'Promotional' },
       { id: 'urgent',    label: 'Urgent' }
     ];
+
+    // Re-draft from brief — fires one /api/compose/redraft call, replaces the
+    // per-platform draft fields in setDrafts. Honors topic/notes/tone/imageMode/
+    // chosen + the voice brief loaded server-side via build_system_prompt.
+    const handleReDraft = async () => {
+      if (reDrafting || chosen.length === 0) return;
+      if (!topic.trim()) {
+        setReDraftError('Add a brief topic first.');
+        return;
+      }
+      setReDrafting(true);
+      setReDraftError(null);
+      try {
+        const resp = await fetch('/api/compose/redraft', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topic: topic.trim(),
+            notes: notes.trim(),
+            tone,
+            image_mode: imageMode,
+            platforms: chosen,
+          }),
+        });
+        if (!resp.ok) {
+          const txt = await resp.text();
+          throw new Error(`HTTP ${resp.status}: ${txt.slice(0, 200)}`);
+        }
+        const data = await resp.json();
+        // Spread per-platform drafts into existing state — keep platforms that
+        // weren't re-drafted untouched (defensive; the server already filters).
+        setDrafts(prev => ({ ...prev, ...(data.drafts || {}) }));
+        const n = Object.keys(data.drafts || {}).length;
+        setSaveToast(`Re-drafted ${n} platform${n === 1 ? '' : 's'} from your brief.`);
+      } catch (e) {
+        console.error('[compose.redraft] failed', e);
+        setReDraftError(String(e.message || e));
+      } finally {
+        setReDrafting(false);
+      }
+    };
 
     // Each platform packs its own per-channel fields into the (title, draft)
     // pair the Post model exposes. The Brief Topic is the canonical Post.title
@@ -1494,7 +1540,21 @@
               </div>
             </Card>
 
-            <Button icon="refresh" variant="primary" className="w-full">Re-draft from brief</Button>
+            <div>
+              <Button
+                icon="refresh"
+                variant="primary"
+                className="w-full"
+                disabled={reDrafting || chosen.length === 0}
+                onClick={handleReDraft}>
+                {reDrafting ? 'Re-drafting…' : 'Re-draft from brief'}
+              </Button>
+              {reDraftError && (
+                <div className="mt-2 text-xs text-rose-600 px-2 py-1.5 rounded-lg bg-rose-50 border border-rose-200">
+                  {reDraftError}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* CENTER: editor */}
@@ -1692,7 +1752,7 @@
   /* Platform-accurate preview cards ------------- */
 
   // Derive a clean domain from the business name. "Quadd.ai" → "quadd.ai";
-  // "Westbrook Auto" → "westbrookauto.com". Falls back to a generic stub.
+  // "Acme Auto Tire" → "acmeautotire.com". Falls back to a generic stub.
   const deriveDomain = (biz) => {
     const name = (biz?.name || '').trim();
     if (!name) return 'yourbusiness.com';
@@ -5648,7 +5708,7 @@
               <input
                 value={newFeed.location_label}
                 onChange={e => setNewFeed({ ...newFeed, location_label: e.target.value })}
-                placeholder="e.g. Westbrook main lot"
+                placeholder="e.g. Main lot"
                 className="w-full text-sm border border-surface-edge rounded-lg px-3 py-2" />
               <div className="text-xs text-ink-faint mt-1">Used in the listings table + multi-location tabs if you have more than one feed.</div>
             </div>

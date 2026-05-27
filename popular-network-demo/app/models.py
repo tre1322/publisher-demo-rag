@@ -473,14 +473,14 @@ class InventoryFacetHit(Base):
 
     One row per (business_id, facet_text, day). The Inventory view's
     "search visibility" card reads the top-N rows by hits to show "your
-    listings rank #1 for '4WD trucks under $20k near Westbrook'."
+    listings rank #1 for '4WD trucks under $20k near {your town}'."
     """
 
     __tablename__ = "inventory_facet_hits"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"))
-    facet_text: Mapped[str] = mapped_column(String(200))  # e.g. "4WD trucks under $20k near Westbrook"
+    facet_text: Mapped[str] = mapped_column(String(200))  # e.g. "4WD trucks under $20k near {town}"
     rank: Mapped[int] = mapped_column(Integer, default=1)  # 1 = #1 result
     hits_30d: Mapped[int] = mapped_column(Integer, default=0)
     sample_listing_id: Mapped[Optional[int]] = mapped_column(ForeignKey("inventory_listings.id"), nullable=True)

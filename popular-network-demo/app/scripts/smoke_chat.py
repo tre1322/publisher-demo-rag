@@ -217,10 +217,10 @@ def _run_text_only_stream(client, SessionLocal, ChatTurn) -> None:
     """Plain text response, no tools — should emit deltas then a done event."""
     _FAKE.queue.clear()
     _FAKE.calls.clear()
-    _FAKE.queue_text("Memorial Day in Westbrook is lake-driven — **pre-trip safety** is the wedge.")
+    _FAKE.queue_text("For the INMA conference push, lead with the **universal extractor** — that's the proven hook.")
 
     with patch("app.routers.chat.Anthropic", _FakeAnthropic, create=False):
-        events = _consume_sse(client, "What about Father's Day weekend?")
+        events = _consume_sse(client, "What angle should we run for the INMA conference week?")
 
     event_names = [e["event"] for e in events]
     if "delta" not in event_names:
@@ -233,7 +233,7 @@ def _run_text_only_stream(client, SessionLocal, ChatTurn) -> None:
 
     # Concatenated deltas match the mocked text
     full_text = "".join(e["data"].get("text", "") for e in events if e["event"] == "delta")
-    if "pre-trip safety" not in full_text:
+    if "universal extractor" not in full_text:
         _fail(f"concatenated deltas don't carry mocked content: {full_text!r}")
     _ok("concatenated deltas reconstruct the full agent text")
 
