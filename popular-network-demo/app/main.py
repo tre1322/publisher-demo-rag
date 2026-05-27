@@ -139,9 +139,13 @@ def _backfill_phase_f() -> None:
 
     Usage metrics: each business needs zero-valued rows for the current
     month so the Billing view has something to render.
+
+    Dashboard notices fixup: existing notices rows from before the tier
+    bump still say "concierge tier" / "$150/mo concierge tier". Repaint
+    those for Tier 4 businesses so Home reads correctly.
     """
     from .db import SessionLocal
-    from .models import Business, UsageMetric
+    from .models import Business, DashboardNotices, UsageMetric
     from .seed import _seed_billing_usage, _current_month_year
 
     with SessionLocal() as db:
@@ -165,6 +169,59 @@ def _backfill_phase_f() -> None:
             if has_usage is None:
                 _seed_billing_usage(db, business_id=biz.id, tier=biz.tier)
                 log.info(f"Backfilled usage_metrics ({month}) for business_id={biz.id}")
+
+            # Dashboard notices fixup — only for Tier 4 customers whose
+            # notices still say "concierge". Tier 3 customers should keep
+            # their concierge wording.
+            if biz.tier >= 4:
+                notices = db.get(DashboardNotices, biz.id)
+                if notices is not None:
+                    changed = False
+                    # week_recap: replace "concierge tier" → "inventory tier"
+                    if notices.week_recap_json:
+                        new_recap = []
+                        for item in notices.week_recap_json:
+                            text = item.get("text", "")
+                            if "concierge tier" in text:
+                                new_recap.append({**item, "text": text.replace("concierge tier", "inventory tier")})
+                                changed = True
+                            else:
+                                new_recap.append(item)
+                        if changed:
+                            notices.week_recap_json = new_recap
+                    # stats_overrides.spend: $150/mo concierge → $799/mo inventory
+                    if notices.stats_overrides_json:
+                        sp = notices.stats_overrides_json.get("spend")
+                        if sp and "concierge" in (sp.get("helper") or ""):
+                            new_overrides = {**notices.stats_overrides_json}
+                            new_overrides["spend"] = {
+                                **sp,
+                                "budget": biz.monthly_price,
+                                "helper": f"${biz.monthly_price}/mo inventory tier",
+                            }
+                            notices.stats_overrides_json = new_overrides
+                            changed = True
+                    # attention_json: inject the "Connect your first inventory
+                    # feed" item if missing. Insert before the existing spend/
+                    # review entries so it sits at the top of the second row.
+                    if notices.attention_json is not None:
+                        has_inv = any(a.get("kind") == "inventory" for a in notices.attention_json)
+                        if not has_inv:
+                            inv_item = {
+                                "kind": "inventory",
+                                "title": "Connect your first inventory feed",
+                                "detail": "Tier 4 unlocks live inventory sync — DealerCenter / vAuto / MLS / TractorHouse. Listings show up in your publisher's chatbot search within an hour.",
+                                "cta": "Open Inventory", "icon": "box", "tone": "teal",
+                                "target": "inventory",
+                            }
+                            # Insert at position 2 (after pending + voice brief)
+                            # so the highest-priority items stay first.
+                            new_attention = list(notices.attention_json)
+                            new_attention.insert(2, inv_item)
+                            notices.attention_json = new_attention
+                            changed = True
+                    if changed:
+                        log.info(f"Backfilled dashboard_notices tier copy for business_id={biz.id}")
         db.commit()
 
 

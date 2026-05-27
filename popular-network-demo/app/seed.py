@@ -256,6 +256,10 @@ def seed_if_empty() -> bool:
                  "detail": "23 minutes of interview synthesized into AMPLIFY/MAINTAIN/MUTE buckets. The AI Agent is using it to draft every post.",
                  "cta": "View brief", "icon": "sparkles", "tone": "teal",
                  "target": "plan"},
+                {"kind": "inventory", "title": "Connect your first inventory feed",
+                 "detail": "Tier 4 unlocks live inventory sync — DealerCenter / vAuto / MLS / TractorHouse. Listings show up in your publisher's chatbot search within an hour.",
+                 "cta": "Open Inventory", "icon": "box", "tone": "teal",
+                 "target": "inventory"},
                 {"kind": "spend", "title": "First post not published yet",
                  "detail": "Approve the founder-credibility FB post to start the feedback loop. Once it's live we'll start measuring reach.",
                  "cta": "Go to Approvals", "icon": "trending", "tone": "teal",
@@ -266,7 +270,7 @@ def seed_if_empty() -> bool:
                  "target": "plan"},
             ],
             week_recap_json=[
-                {"when": "Today, 9:33am", "text": "Quadd.ai enrolled — concierge tier, Cottonwood County Citizen publisher"},
+                {"when": "Today, 9:33am", "text": "Quadd.ai enrolled — inventory tier, Cottonwood County Citizen publisher"},
                 {"when": "Today, 9:37am", "text": "Voice interview started over LiveKit — 23 minutes captured"},
                 {"when": "Today, 10:01am", "text": "Voice brief synthesized — AMPLIFY/MAINTAIN/MUTE buckets populated from your actual words"},
                 {"when": "Today, 10:15am", "text": "Two posts drafted from the brief — one queued for your approval"},
@@ -276,7 +280,7 @@ def seed_if_empty() -> bool:
                 "posts":      {"value": 0,  "prev": 0, "delta": "—", "helper": "first post pending approval"},
                 "engagement": {"value": "—", "helper": "no published posts yet", "positive": False},
                 "reviews":    {"value": 0, "rating": 0.0, "helper": "no public reviews yet"},
-                "spend":      {"used": 0, "budget": 150, "helper": "$150/mo concierge tier"},
+                "spend":      {"used": 0, "budget": 799, "helper": "$799/mo inventory tier"},
                 "chatbot":    {"value": 0, "helper": "not yet configured"},
             },
         ))

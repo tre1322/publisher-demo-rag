@@ -233,7 +233,7 @@
     posts:      { value: 0,  prev: 0, delta: '—', helper: 'first post pending approval' },
     engagement: { value: '—', helper: 'no published posts yet', positive: false },
     reviews:    { value: 0,  rating: 0.0, helper: 'no public reviews yet' },
-    spend:      { used: 0, budget: 150, helper: '$150/mo concierge tier' },
+    spend:      { used: 0, budget: 799, helper: '$799/mo inventory tier' },
     chatbot:    { value: 0, helper: 'not yet configured' }
   };
 
@@ -244,6 +244,9 @@
     { kind: 'gap',      title: 'Your voice brief is ready',
       detail: '23 minutes of interview synthesized into AMPLIFY/MAINTAIN/MUTE buckets. The AI Agent is using it to draft every post.',
       cta: 'View brief', icon: 'sparkles', tone: 'teal', target: 'plan' },
+    { kind: 'inventory', title: 'Connect your first inventory feed',
+      detail: 'Tier 4 unlocks live inventory sync — DealerCenter / vAuto / MLS / TractorHouse. Listings show up in your publisher\'s chatbot search within an hour.',
+      cta: 'Open Inventory', icon: 'box', tone: 'teal', target: 'inventory' },
     { kind: 'spend',    title: 'First post not published yet',
       detail: 'Approve the founder-credibility FB post to start the feedback loop. Once it\'s live we\'ll start measuring reach.',
       cta: 'Go to Approvals', icon: 'trending', tone: 'teal', target: 'approvals', targetId: 'a1' },
@@ -253,7 +256,7 @@
   ];
 
   const weekRecap = [
-    { when: 'Today, 9:33am',  text: 'Quadd.ai enrolled — concierge tier, Cottonwood County Citizen publisher' },
+    { when: 'Today, 9:33am',  text: 'Quadd.ai enrolled — inventory tier, Cottonwood County Citizen publisher' },
     { when: 'Today, 9:37am',  text: 'Voice interview started over LiveKit — 23 minutes captured' },
     { when: 'Today, 10:01am', text: 'Voice brief synthesized — AMPLIFY/MAINTAIN/MUTE buckets populated from your actual words' },
     { when: 'Today, 10:15am', text: 'Three posts drafted from the brief — one queued for your approval' },
@@ -1905,7 +1908,7 @@
                 </div>
               )}
             </button>
-            <StatTile label="Chatbot conversations" value={stats.chatbot.value} helper="Tier 3 preview" />
+            <StatTile label="Chatbot conversations" value={stats.chatbot.value} helper={stats.chatbot.helper || 'Tier 3+ preview'} />
           </div>
 
           {/* Hero: Needs your attention — full width */}
@@ -1913,9 +1916,13 @@
             <div className="px-6 pt-6 pb-2 flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-ink">Needs your attention</h2>
-                <p className="text-sm text-ink-soft mt-0.5">Four things the agent flagged for your eyes today.</p>
+                <p className="text-sm text-ink-soft mt-0.5">
+                  {attention.length === 1
+                    ? 'One thing the agent flagged for your eyes today.'
+                    : `${attention.length} things the agent flagged for your eyes today.`}
+                </p>
               </div>
-              <Pill color="amber">4 items</Pill>
+              <Pill color="amber">{attention.length} {attention.length === 1 ? 'item' : 'items'}</Pill>
             </div>
             <div className="divide-y divide-surface-edge px-2 pb-2">
               {attention.map((a, i) => {
@@ -5564,6 +5571,7 @@
      ============================================================ */
   const ChatbotPreviewView = ({ onNavigate }) => {
     const { business } = useDashboard();
+    const mutate = useDashboardMutate();
     const [state, setState]     = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError]     = useState(null);
@@ -5574,11 +5582,27 @@
     const [transcript, setTranscript] = useState(null);
     const [seeding, setSeeding] = useState(false);
 
+    // Sync the dashboard-context chatbot slim slice from a freshly-fetched
+    // /api/chatbot response. Keeps the sidebar badge + Home tile honest
+    // without a separate /api/bootstrap roundtrip.
+    const syncBootstrapSlice = useCallback((data) => {
+      mutate(prev => prev ? ({
+        ...prev,
+        chatbot: {
+          tierEligible:      data.tierEligible,
+          conversationCount: data.totals?.count || 0,
+          escalationCount:   data.totals?.escalationCount || 0,
+        },
+      }) : prev);
+    }, [mutate]);
+
     const refresh = useCallback(async () => {
       try {
         const r = await fetch('/api/chatbot');
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        setState(await r.json());
+        const data = await r.json();
+        setState(data);
+        syncBootstrapSlice(data);
         setError(null);
       } catch (e) {
         console.error('[chatbot.refresh]', e);
@@ -5586,7 +5610,7 @@
       } finally {
         setLoading(false);
       }
-    }, []);
+    }, [syncBootstrapSlice]);
     useEffect(() => { refresh(); }, [refresh]);
 
     const handleSeed = async () => {
@@ -6076,7 +6100,7 @@
                     <div className="text-xs text-white/70 mt-3">Joined {business.joinedDate} · annual contract</div>
                   </div>
                   <div className="mt-4 pt-4 border-t border-surface-edge text-sm space-y-2">
-                    <div className="flex items-center justify-between"><span className="text-ink-soft">Setup fee</span><span className="font-medium text-ink">{business.tier >= 3 ? '$0 (concierge tier)' : '$299 · credits back day 90'}</span></div>
+                    <div className="flex items-center justify-between"><span className="text-ink-soft">Setup fee</span><span className="font-medium text-ink">{business.tier >= 4 ? '$0 (inventory tier)' : business.tier >= 3 ? '$0 (concierge tier)' : '$299 · credits back day 90'}</span></div>
                     <div className="flex items-center justify-between"><span className="text-ink-soft">Renews</span><span className="font-medium text-ink">{business.joinedDaysAgo === 0 ? '1 year from today' : 'annual cycle'}</span></div>
                     <div className="flex items-center justify-between"><span className="text-ink-soft">Publisher</span><span className="font-medium text-ink">{business.publisher}</span></div>
                   </div>
