@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Option E — Community Dashboard (Desktop) — Cottonwood County Citizen</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #f0f2f5; color: #1a1a1a; display: flex; min-height: 100vh; }
+  a { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  h1, h2, h3, h4 { font-family: Georgia, 'Times New Roman', serif; }
+
+  /* --- Left Column: Channels --- */
+  .channels {
+    width: 200px; min-width: 200px; background: #f8f9fa; border-right: 1px solid #e2e5e9;
+    display: flex; flex-direction: column; height: 100vh; position: sticky; top: 0;
+  }
+  .channels-logo { padding: 20px 14px 14px; border-bottom: 1px solid #e2e5e9; }
+  .channels-logo h1 { font-size: 15px; color: #2d5f2d; line-height: 1.25; }
+  .channels-logo .badge {
+    display: inline-block; margin-top: 6px; font-family: system-ui, sans-serif;
+    font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    background: #2d5f2d; color: #fff; padding: 2px 7px; border-radius: 4px;
+  }
+  .ch-list { flex: 1; padding: 8px 0; overflow-y: auto; }
+  .ch-item {
+    display: flex; align-items: center; gap: 8px; padding: 9px 14px;
+    font-size: 13px; font-weight: 500; cursor: pointer; border-left: 3px solid transparent;
+    transition: background .15s, border-color .15s;
+  }
+  .ch-item:hover { background: #e8f0fe; }
+  .ch-item.active { background: #dbeafe; border-left-color: #2563eb; font-weight: 600; }
+  .ch-item .emoji { font-size: 16px; width: 22px; text-align: center; }
+
+  /* --- Center Column: Feed --- */
+  .feed { flex: 1; padding: 24px 32px 48px; max-width: 720px; min-width: 0; }
+  .feed-header {
+    display: flex; align-items: baseline; gap: 10px; margin-bottom: 20px;
+  }
+  .feed-header h2 { font-size: 24px; }
+  .feed-header .count { font-size: 14px; color: #6b7280; }
+
+  .story-card {
+    background: #fff; border-radius: 12px; padding: 20px 24px; margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08); transition: transform .2s, box-shadow .2s;
+  }
+  .story-card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.1); }
+  .story-card .tag {
+    display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .04em; padding: 2px 10px; border-radius: 999px; margin-bottom: 10px;
+  }
+  .tag.news { background: #dcfce7; color: #166534; }
+  .tag.sports { background: #fee2e2; color: #991b1b; }
+  .story-card h3 { font-size: 19px; line-height: 1.35; margin-bottom: 6px; }
+  .story-card .meta { font-size: 13px; color: #6b7280; margin-bottom: 8px; }
+  .story-card .excerpt { font-size: 14px; color: #374151; line-height: 1.55; margin-bottom: 10px; }
+  .story-card .read-more { font-size: 14px; font-weight: 600; color: #2563eb; }
+  .story-card .read-more:hover { text-decoration: underline; }
+
+  /* --- Right Column: Chat --- */
+  .chat-panel {
+    width: 350px; min-width: 350px; background: #fff; border-left: 1px solid #e2e5e9;
+    display: flex; flex-direction: column; height: 100vh; position: sticky; top: 0;
+  }
+  .chat-header {
+    padding: 16px 20px; border-bottom: 1px solid #e2e5e9;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .chat-header h3 { font-family: system-ui, sans-serif; font-size: 15px; font-weight: 600; }
+  .chat-header .minimize {
+    width: 28px; height: 28px; border: none; background: #f3f4f6; border-radius: 6px;
+    cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center;
+    transition: background .15s;
+  }
+  .chat-header .minimize:hover { background: #e5e7eb; }
+
+  .chat-messages { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { max-width: 85%; padding: 12px 16px; border-radius: 16px; font-size: 14px; line-height: 1.5; }
+  .msg.user { align-self: flex-end; background: #2563eb; color: #fff; border-bottom-right-radius: 4px; }
+  .msg.bot { align-self: flex-start; background: #f3f4f6; color: #1a1a1a; border-bottom-left-radius: 4px; }
+  .msg.bot a { color: #2563eb; font-weight: 500; }
+  .msg.bot .source { font-size: 12px; color: #6b7280; margin-top: 8px; display: block; }
+
+  .suggested-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 20px 12px; }
+  .suggested-chip {
+    padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 500;
+    background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; cursor: pointer;
+    transition: background .15s;
+  }
+  .suggested-chip:hover { background: #dbeafe; }
+
+  .chat-input-area {
+    padding: 12px 16px; border-top: 1px solid #e2e5e9; display: flex; gap: 8px;
+  }
+  .chat-input {
+    flex: 1; padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 10px;
+    font-size: 14px; outline: none; transition: border-color .15s;
+  }
+  .chat-input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+  .send-btn {
+    padding: 10px 18px; border: none; border-radius: 10px; background: #2563eb; color: #fff;
+    font-size: 14px; font-weight: 600; cursor: pointer; transition: background .15s;
+  }
+  .send-btn:hover { background: #1d4ed8; }
+</style>
+</head>
+<body>
+
+<!-- Left: Channels -->
+<aside class="channels">
+  <div class="channels-logo">
+    <h1>Cottonwood County Citizen</h1>
+    <span class="badge">Grand Network</span>
+  </div>
+  <nav class="ch-list">
+    <div class="ch-item active"><span class="emoji">📰</span> News</div>
+    <div class="ch-item"><span class="emoji">🏈</span> Sports</div>
+    <div class="ch-item"><span class="emoji">📋</span> Obituaries</div>
+    <div class="ch-item"><span class="emoji">💼</span> Jobs</div>
+    <div class="ch-item"><span class="emoji">🏪</span> Businesses</div>
+    <div class="ch-item"><span class="emoji">📅</span> Events</div>
+    <div class="ch-item"><span class="emoji">🏠</span> Real Estate</div>
+  </nav>
+</aside>
+
+<!-- Center: Feed -->
+<main class="feed">
+  <div class="feed-header">
+    <h2>News</h2>
+    <span class="count">8 stories this week</span>
+  </div>
+
+  <article class="story-card">
+    <span class="tag news">Front Page</span>
+    <h3>Windom Riverfest trims week, keeps traditions</h3>
+    <p class="meta">By Jeremy Behnke &middot; March 30, 2026</p>
+    <p class="excerpt">The annual Riverfest celebration will be condensed this year, but organizers say all the community favorites — from the parade to the street dance — will remain on the schedule as Windom gears up for another summer of festivities.</p>
+    <a href="#" class="read-more">Read more &rarr;</a>
+  </article>
+
+  <article class="story-card">
+    <span class="tag news">Front Page</span>
+    <h3>County board mulls future of buildings</h3>
+    <p class="meta">By Joel Alvstad &middot; March 29, 2026</p>
+    <p class="excerpt">Cottonwood County commissioners are weighing options for aging county-owned properties, including potential renovation or demolition of several structures that have served the community for decades.</p>
+    <a href="#" class="read-more">Read more &rarr;</a>
+  </article>
+
+  <article class="story-card">
+    <span class="tag news">Front Page</span>
+    <h3>Schneider, Horkey team up for new project</h3>
+    <p class="meta">By Stacy Remme &middot; March 28, 2026</p>
+    <p class="excerpt">A new collaborative venture between two well-known local entrepreneurs is set to bring fresh energy to the Windom business landscape with plans for a mixed-use development.</p>
+    <a href="#" class="read-more">Read more &rarr;</a>
+  </article>
+
+  <article class="story-card">
+    <span class="tag news">Front Page</span>
+    <h3>Chamber hires new director</h3>
+    <p class="meta">Staff Report &middot; March 27, 2026</p>
+    <p class="excerpt">The Windom Area Chamber of Commerce has announced the hiring of a new executive director to lead economic development efforts in the region.</p>
+    <a href="#" class="read-more">Read more &rarr;</a>
+  </article>
+
+  <article class="story-card">
+    <span class="tag sports">Sports</span>
+    <h3>Eagles set for season opener</h3>
+    <p class="meta">March 31, 2026</p>
+    <p class="excerpt">The Eagles are poised and ready as spring sports kick off this week with high expectations following a strong offseason of preparation and recruitment.</p>
+    <a href="#" class="read-more">Read more &rarr;</a>
+  </article>
+
+  <article class="story-card">
+    <span class="tag sports">Sports</span>
+    <h3>Wolverines sweep past Spartans</h3>
+    <p class="meta">March 30, 2026</p>
+    <p class="excerpt">A dominant performance on both sides of the ball carried the Wolverines to a convincing sweep in their conference matchup Saturday afternoon.</p>
+    <a href="#" class="read-more">Read more &rarr;</a>
+  </article>
+
+  <article class="story-card">
+    <span class="tag sports">Sports</span>
+    <h3>Indians roll past Falcons</h3>
+    <p class="meta">March 29, 2026</p>
+    <p class="excerpt">Strong early-game momentum gave the Indians all they needed as they cruised to a decisive victory over the visiting Falcons.</p>
+    <a href="#" class="read-more">Read more &rarr;</a>
+  </article>
+
+  <article class="story-card">
+    <span class="tag sports">Sports</span>
+    <h3>Cobras have two state medalists</h3>
+    <p class="meta">March 28, 2026</p>
+    <p class="excerpt">Two Cobra athletes brought home hardware from the state tournament, capping an impressive season for the program with medals in two weight classes.</p>
+    <a href="#" class="read-more">Read more &rarr;</a>
+  </article>
+</main>
+
+<!-- Right: Chat Panel -->
+<aside class="chat-panel">
+  <div class="chat-header">
+    <h3>🤖 AI Assistant</h3>
+    <button class="minimize" title="Minimize">—</button>
+  </div>
+  <div class="chat-messages">
+    <div class="msg bot">Hi! I'm the Cottonwood County Citizen AI assistant. Ask me about local news, sports, businesses, jobs, or events.</div>
+    <div class="msg user">What's new in Riverfest?</div>
+    <div class="msg bot">
+      This year's Riverfest in Windom is being trimmed from a week-long event to a shorter celebration, according to a recent report by Jeremy Behnke. However, organizers have confirmed that all the beloved traditions — including the parade and street dance — will remain on the schedule.
+      <a href="#">Read the full story &rarr;</a>
+      <span class="source">Source: Cottonwood County Citizen, March 30, 2026</span>
+    </div>
+    <div class="msg user">Who's hiring in the area?</div>
+    <div class="msg bot">
+      Several local employers are currently hiring:<br><br>
+      <strong>Good Samaritan Windom</strong> — Registered Nurse<br>
+      <strong>HitchDoc</strong> — Multiple Positions (Jackson, MN)<br>
+      <strong>Hy-Vee</strong> — Food Service Manager<br>
+      <strong>Windom Area Schools</strong> — Executive Director<br><br>
+      Would you like more details on any of these positions?
+      <span class="source">Source: Jobs & Help Wanted listings</span>
+    </div>
+  </div>
+  <div class="suggested-chips">
+    <span class="suggested-chip">Top stories</span>
+    <span class="suggested-chip">Who's hiring?</span>
+    <span class="suggested-chip">Sports scores</span>
+  </div>
+  <div class="chat-input-area">
+    <input class="chat-input" type="text" placeholder="Ask about local news...">
+    <button class="send-btn">Send</button>
+  </div>
+</aside>
+
+</body>
+</html>

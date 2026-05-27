@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=375, initial-scale=1.0">
+<title>Option A: Split Screen (Mobile) - Cottonwood County Citizen</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #f3f4f6; color: #1a1a1a; max-width: 375px; margin: 0 auto; }
+
+  /* Header */
+  .header { background: #2d5f2d; color: white; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; }
+  .header h1 { font-family: Georgia, serif; font-size: 16px; font-weight: 700; }
+  .badge { background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); padding: 3px 8px; border-radius: 4px; font-size: 9px; font-weight: 600; letter-spacing: 1px; }
+  .hamburger { width: 24px; height: 24px; display: flex; flex-direction: column; justify-content: center; gap: 4px; cursor: pointer; }
+  .hamburger span { display: block; height: 2px; background: white; border-radius: 1px; }
+
+  /* Chat section (collapsible) */
+  .chat-section { background: white; border-bottom: 1px solid #e5e7eb; }
+  .chat-toggle { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; cursor: pointer; background: #f9fafb; border-bottom: 1px solid #e5e7eb; }
+  .chat-toggle h2 { font-family: Georgia, serif; font-size: 15px; }
+  .chat-toggle .arrow { font-size: 12px; color: #6b7280; transition: transform 0.2s; }
+  .chat-toggle.open .arrow { transform: rotate(180deg); }
+  .chat-toggle .status { display: flex; align-items: center; gap: 6px; }
+  .chat-toggle .dot { width: 8px; height: 8px; background: #22c55e; border-radius: 50%; }
+
+  .chat-body { display: flex; flex-direction: column; max-height: 400px; }
+  .chat-body.collapsed { display: none; }
+
+  .chat-messages { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; max-height: 260px; }
+
+  .msg { max-width: 88%; display: flex; flex-direction: column; gap: 3px; }
+  .msg.bot { align-self: flex-start; }
+  .msg.user { align-self: flex-end; }
+  .msg .bubble { padding: 10px 14px; border-radius: 16px; font-size: 13px; line-height: 1.5; }
+  .msg.bot .bubble { background: #f3f4f6; color: #1a1a1a; border-bottom-left-radius: 4px; }
+  .msg.user .bubble { background: #2563eb; color: white; border-bottom-right-radius: 4px; }
+  .msg .bubble a { color: #2563eb; text-decoration: underline; }
+  .msg .label { font-size: 10px; color: #9ca3af; font-weight: 500; }
+  .msg.user .label { text-align: right; }
+
+  .chips { display: flex; gap: 6px; padding: 8px 16px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .chip { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; padding: 6px 12px; border-radius: 16px; font-size: 12px; white-space: nowrap; flex-shrink: 0; }
+
+  .chat-input { padding: 12px 16px; border-top: 1px solid #e5e7eb; display: flex; gap: 8px; }
+  .chat-input input { flex: 1; padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 20px; font-size: 14px; outline: none; }
+  .chat-input button { background: #2d5f2d; color: white; border: none; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+  /* News sections */
+  .news-content { padding: 16px; }
+  .section { margin-bottom: 24px; }
+  .section-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #dc2626; margin-bottom: 12px; padding-bottom: 4px; border-bottom: 2px solid #dc2626; display: inline-block; }
+
+  .story-card { background: white; border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .story-card h3 { font-family: Georgia, serif; font-size: 15px; line-height: 1.35; margin-bottom: 5px; }
+  .story-card p { font-size: 13px; color: #6b7280; line-height: 1.45; }
+  .story-meta { font-size: 11px; color: #9ca3af; margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>Cottonwood County Citizen</h1>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <span class="badge">GRAND NETWORK</span>
+    <div class="hamburger"><span></span><span></span><span></span></div>
+  </div>
+</div>
+
+<!-- Chat Section (collapsible) -->
+<div class="chat-section">
+  <div class="chat-toggle open" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('collapsed');">
+    <div class="status">
+      <span class="dot"></span>
+      <h2>Ask the Citizen</h2>
+    </div>
+    <span class="arrow">&#9660;</span>
+  </div>
+  <div class="chat-body">
+    <div class="chat-messages">
+      <div class="msg user">
+        <span class="label">You</span>
+        <div class="bubble">What's new in Riverfest?</div>
+      </div>
+      <div class="msg bot">
+        <span class="label">Citizen AI</span>
+        <div class="bubble">
+          The Windom Riverfest committee announced changes for 2026. The festival will shift to a long weekend format (Thursday-Sunday), but all beloved traditions remain &mdash; parade, live music, and fireworks.
+          <br><br>
+          <a href="#">Read full story &rarr;</a>
+        </div>
+      </div>
+    </div>
+    <div class="chips">
+      <span class="chip">Latest headlines</span>
+      <span class="chip">Eagles scores</span>
+      <span class="chip">County board</span>
+      <span class="chip">Events</span>
+    </div>
+    <div class="chat-input">
+      <input type="text" placeholder="Ask about local news...">
+      <button>
+        <svg width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- News Content -->
+<div class="news-content">
+  <div class="section">
+    <div class="section-label">Front Page</div>
+    <div class="story-card">
+      <h3>Windom Riverfest trims week, keeps traditions</h3>
+      <p>Organizers say the beloved summer festival will shift to a long weekend format while preserving the parade, live music, and fireworks.</p>
+      <div class="story-meta">Front Page &bull; April 2, 2026</div>
+    </div>
+    <div class="story-card">
+      <h3>County board mulls future of buildings</h3>
+      <p>Commissioners weigh options for aging county-owned properties, including potential renovation or demolition.</p>
+      <div class="story-meta">Front Page &bull; April 1, 2026</div>
+    </div>
+    <div class="story-card">
+      <h3>Schneider, Horkey team up for new project</h3>
+      <p>Two local entrepreneurs announce a joint venture aimed at revitalizing a vacant downtown storefront.</p>
+      <div class="story-meta">Front Page &bull; March 31, 2026</div>
+    </div>
+    <div class="story-card">
+      <h3>Chamber hires new director</h3>
+      <p>The Windom Area Chamber of Commerce welcomes its new executive director.</p>
+      <div class="story-meta">Front Page &bull; March 30, 2026</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Sports</div>
+    <div class="story-card">
+      <h3>Eagles set for season opener</h3>
+      <p>Windom football gears up for a competitive fall schedule with a roster full of returning starters.</p>
+      <div class="story-meta">Sports &bull; April 2, 2026</div>
+    </div>
+    <div class="story-card">
+      <h3>Wolverines sweep past Spartans</h3>
+      <p>Mt. Lake Area-Comfrey volleyball claims a decisive three-set victory in conference play.</p>
+      <div class="story-meta">Sports &bull; April 1, 2026</div>
+    </div>
+    <div class="story-card">
+      <h3>Cross-country team eyes section title</h3>
+      <p>Strong early-season performances have local runners believing a section championship is within reach.</p>
+      <div class="story-meta">Sports &bull; March 31, 2026</div>
+    </div>
+    <div class="story-card">
+      <h3>Youth baseball signups open for summer</h3>
+      <p>Registration is now open for Windom summer baseball and softball leagues for ages 6 through 14.</p>
+      <div class="story-meta">Sports &bull; March 30, 2026</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Regional</div>
+    <div class="story-card">
+      <h3>MnDOT announces Hwy 71 resurfacing timeline</h3>
+      <p>Work on a 12-mile stretch south of Windom is expected to begin in June, with lane closures through August.</p>
+      <div class="story-meta">Regional &bull; April 1, 2026</div>
+    </div>
+    <div class="story-card">
+      <h3>Southwest Minnesota broadband expansion moves forward</h3>
+      <p>Federal grant funding clears the way for high-speed internet buildout in underserved rural areas.</p>
+      <div class="story-meta">Regional &bull; March 29, 2026</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -25,3 +25,13 @@ data/events/*
 !data/events/.gitkeep
 data/
 *.db
+
+# Pitch-deck build artifacts — source (build_publisher_pitch_deck.js +
+# main_street_os_pitch.md) is committed; rendered outputs regenerate.
+slide-*.jpg
+docs/publisher_pitch_deck.pdf
+docs/publisher_pitch_deck.pptx
+
+# Claude Code project state
+.claude/
+memory/

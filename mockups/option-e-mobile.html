@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=375, initial-scale=1.0">
+<title>Option E — Community Dashboard (Mobile) — Cottonwood County Citizen</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #f0f2f5; color: #1a1a1a; max-width: 375px; margin: 0 auto; }
+  a { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  h1, h2, h3, h4 { font-family: Georgia, 'Times New Roman', serif; }
+
+  /* --- Header --- */
+  .header {
+    background: #2d5f2d; color: #fff; padding: 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .header h1 { font-size: 15px; line-height: 1.25; }
+  .header .badge {
+    font-family: system-ui, sans-serif; font-size: 9px; font-weight: 700;
+    letter-spacing: .06em; text-transform: uppercase;
+    background: rgba(255,255,255,.2); padding: 3px 8px; border-radius: 4px; white-space: nowrap;
+  }
+
+  /* --- Channel chips --- */
+  .channel-bar {
+    display: flex; gap: 8px; overflow-x: auto; padding: 12px 16px;
+    background: #fff; border-bottom: 1px solid #e2e5e9;
+  }
+  .channel-bar::-webkit-scrollbar { display: none; }
+  .chip {
+    flex-shrink: 0; padding: 8px 14px; border-radius: 999px; font-size: 13px; font-weight: 500;
+    background: #f3f4f6; border: 1px solid #e5e7eb; cursor: pointer; white-space: nowrap;
+  }
+  .chip.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+
+  /* --- Feed --- */
+  .feed { padding: 16px; }
+  .feed-header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 16px; }
+  .feed-header h2 { font-size: 20px; }
+  .feed-header .count { font-size: 13px; color: #6b7280; }
+
+  .story-card {
+    background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08);
+  }
+  .story-card .tag {
+    display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .04em; padding: 2px 8px; border-radius: 999px; margin-bottom: 8px;
+  }
+  .tag.news { background: #dcfce7; color: #166534; }
+  .tag.sports { background: #fee2e2; color: #991b1b; }
+  .story-card h3 { font-size: 16px; line-height: 1.35; margin-bottom: 6px; }
+  .story-card .meta { font-size: 12px; color: #6b7280; margin-bottom: 6px; }
+  .story-card .excerpt { font-size: 13px; color: #374151; line-height: 1.5; margin-bottom: 8px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .story-card .read-more { font-size: 13px; font-weight: 600; color: #2563eb; }
+
+  /* --- FAB --- */
+  .fab {
+    position: fixed; bottom: 20px; right: 20px; width: 56px; height: 56px;
+    border-radius: 50%; background: #2563eb; color: #fff; border: none;
+    font-size: 24px; cursor: pointer; box-shadow: 0 4px 12px rgba(37,99,235,.4);
+    display: flex; align-items: center; justify-content: center; z-index: 200;
+    transition: transform .15s;
+  }
+  .fab:hover { transform: scale(1.08); }
+
+  /* --- Chat Overlay --- */
+  .chat-overlay {
+    display: none; position: fixed; inset: 0; background: #fff; z-index: 300;
+    flex-direction: column;
+  }
+  .chat-overlay.open { display: flex; }
+  .chat-overlay .co-header {
+    padding: 16px; border-bottom: 1px solid #e2e5e9;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .chat-overlay .co-header h3 { font-family: system-ui, sans-serif; font-size: 16px; font-weight: 600; }
+  .close-chat {
+    width: 32px; height: 32px; border: none; background: #f3f4f6; border-radius: 8px;
+    font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  }
+  .chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 85%; padding: 10px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; }
+  .msg.user { align-self: flex-end; background: #2563eb; color: #fff; border-bottom-right-radius: 4px; }
+  .msg.bot { align-self: flex-start; background: #f3f4f6; color: #1a1a1a; border-bottom-left-radius: 4px; }
+  .msg.bot .source { font-size: 11px; color: #6b7280; margin-top: 6px; display: block; }
+  .suggested-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 10px; }
+  .suggested-chip {
+    padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 500;
+    background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; cursor: pointer;
+  }
+  .chat-input-area { padding: 12px 16px; border-top: 1px solid #e2e5e9; display: flex; gap: 8px; }
+  .chat-input {
+    flex: 1; padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 10px;
+    font-size: 14px; outline: none;
+  }
+  .chat-input:focus { border-color: #2563eb; }
+  .send-btn {
+    padding: 10px 16px; border: none; border-radius: 10px; background: #2563eb; color: #fff;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <h1>Cottonwood County Citizen</h1>
+  <span class="badge">Grand Network</span>
+</header>
+
+<div class="channel-bar">
+  <span class="chip active">📰 News</span>
+  <span class="chip">🏈 Sports</span>
+  <span class="chip">📋 Obituaries</span>
+  <span class="chip">💼 Jobs</span>
+  <span class="chip">🏪 Businesses</span>
+  <span class="chip">📅 Events</span>
+  <span class="chip">🏠 Real Estate</span>
+</div>
+
+<div class="feed">
+  <div class="feed-header">
+    <h2>News</h2>
+    <span class="count">8 stories this week</span>
+  </div>
+
+  <article class="story-card">
+    <span class="tag news">Front Page</span>
+    <h3>Windom Riverfest trims week, keeps traditions</h3>
+    <p class="meta">By Jeremy Behnke &middot; March 30, 2026</p>
+    <p class="excerpt">The annual Riverfest celebration will be condensed this year, but all the community favorites will remain on the schedule.</p>
+    <a href="#" class="read-more">Read more &rarr;</a>
+  </article>
+
+  <article class="story-card">
+    <span class="tag news">Front Page</span>
+    <h3>County board mulls future of buildings</h3>
+    <p class="meta">By Joel Alvstad &middot; March 29, 2026</p>
+    <p class="excerpt">Commissioners are weighing options for aging county-owned properties, including potential renovation or demolition.</p>
+    <a href="#" class="read-more">Read more &rarr;</a>
+  </article>
+
+  <article class="story-card">
+    <span class="tag news">Front Page</span>
+    <h3>Schneider, Horkey team up for new project</h3>
+    <p class="meta">By Stacy Remme &middot; March 28, 2026</p>
+    <p class="excerpt">A collaborative venture between two local entrepreneurs is set to bring fresh energy to the Windom business landscape.</p>
+    <a href="#" class="read-more">Read more &rarr;</a>
+  </article>
+
+  <article class="story-card">
+    <span class="tag news">Front Page</span>
+    <h3>Chamber hires new director</h3>
+    <p class="meta">Staff Report &middot; March 27, 2026</p>
+    <p class="excerpt">The Windom Area Chamber of Commerce has announced the hiring of a new executive director.</p>
+    <a href="#" class="read-more">Read more &rarr;</a>
+  </article>
+
+  <article class="story-card">
+    <span class="tag sports">Sports</span>
+    <h3>Eagles set for season opener</h3>
+    <p class="meta">March 31, 2026</p>
+    <p class="excerpt">The Eagles are poised and ready as spring sports kick off this week with high expectations.</p>
+    <a href="#" class="read-more">Read more &rarr;</a>
+  </article>
+
+  <article class="story-card">
+    <span class="tag sports">Sports</span>
+    <h3>Wolverines sweep past Spartans</h3>
+    <p class="meta">March 30, 2026</p>
+    <p class="excerpt">A dominant performance carried the Wolverines to a convincing sweep in their conference matchup.</p>
+    <a href="#" class="read-more">Read more &rarr;</a>
+  </article>
+
+  <article class="story-card">
+    <span class="tag sports">Sports</span>
+    <h3>Indians roll past Falcons</h3>
+    <p class="meta">March 29, 2026</p>
+    <p class="excerpt">Strong early-game momentum gave the Indians all they needed for a decisive victory.</p>
+    <a href="#" class="read-more">Read more &rarr;</a>
+  </article>
+
+  <article class="story-card">
+    <span class="tag sports">Sports</span>
+    <h3>Cobras have two state medalists</h3>
+    <p class="meta">March 28, 2026</p>
+    <p class="excerpt">Two Cobra athletes brought home hardware from the state tournament.</p>
+    <a href="#" class="read-more">Read more &rarr;</a>
+  </article>
+</div>
+
+<!-- FAB -->
+<button class="fab" onclick="document.querySelector('.chat-overlay').classList.add('open')">💬</button>
+
+<!-- Chat Overlay -->
+<div class="chat-overlay">
+  <div class="co-header">
+    <h3>🤖 AI Assistant</h3>
+    <button class="close-chat" onclick="document.querySelector('.chat-overlay').classList.remove('open')">&times;</button>
+  </div>
+  <div class="chat-messages">
+    <div class="msg bot">Hi! I'm the Cottonwood County Citizen AI assistant. Ask me about local news, sports, businesses, jobs, or events.</div>
+    <div class="msg user">What's new in Riverfest?</div>
+    <div class="msg bot">
+      This year's Riverfest in Windom is being trimmed from a week-long event to a shorter celebration, but all the beloved traditions will remain on the schedule.
+      <span class="source">Source: Cottonwood County Citizen, March 30, 2026</span>
+    </div>
+    <div class="msg user">Who's hiring?</div>
+    <div class="msg bot">
+      Several local employers are hiring:<br><br>
+      <strong>Good Samaritan</strong> — Registered Nurse<br>
+      <strong>HitchDoc</strong> — Multiple Positions<br>
+      <strong>Hy-Vee</strong> — Food Service Manager<br>
+      <strong>Windom Area Schools</strong> — Executive Director
+      <span class="source">Source: Jobs & Help Wanted</span>
+    </div>
+  </div>
+  <div class="suggested-chips">
+    <span class="suggested-chip">Top stories</span>
+    <span class="suggested-chip">Who's hiring?</span>
+    <span class="suggested-chip">Sports scores</span>
+  </div>
+  <div class="chat-input-area">
+    <input class="chat-input" type="text" placeholder="Ask about local news...">
+    <button class="send-btn">Send</button>
+  </div>
+</div>
+
+</body>
+</html>

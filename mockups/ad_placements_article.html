@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Display Advertising — Article Click-Through Pages</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,700;0,800;0,900;1,700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #eef0f4;
+    color: #1a1a2e;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    padding: 24px 24px 60px;
+}
+
+.mockup-frame {
+    max-width: 1180px;
+    margin: 0 auto 18px;
+    background: white;
+    border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(15,23,42,0.18);
+    overflow: hidden;
+    border: 1px solid #e2e8f0;
+}
+
+.mockup-label {
+    padding: 14px 22px;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.mockup-label .title-strong { font-weight: 800; }
+.mockup-label .chip {
+    background: rgba(255,255,255,0.15);
+    padding: 4px 12px;
+    border-radius: 10px;
+    font-size: 10px;
+    letter-spacing: 0.8px;
+}
+
+.label-windom { background: #0b1f52; color: #dbe4f5; }
+.label-pipestone { background: #14532d; color: #dcfce7; }
+
+.spacer { height: 22px; }
+
+.section-divider {
+    max-width: 1180px;
+    margin: 50px auto 30px;
+    text-align: center;
+    position: relative;
+}
+
+.section-divider::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: #cbd5e1;
+}
+
+.section-divider span {
+    position: relative;
+    background: #eef0f4;
+    padding: 0 24px;
+    font-family: 'Playfair Display', serif;
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: #334155;
+    letter-spacing: -0.3px;
+}
+
+/* ─── Ad slot markers ─── */
+.ad-slot {
+    border: 2px dashed #f59e0b;
+    background:
+        repeating-linear-gradient(45deg,
+            rgba(245,158,11,0.03), rgba(245,158,11,0.03) 10px,
+            rgba(245,158,11,0.07) 10px, rgba(245,158,11,0.07) 20px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.ad-slot .ad-label {
+    background: #f59e0b;
+    color: white;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+}
+
+.ad-slot .ad-size { font-size: 12px; color: #92400e; font-weight: 600; }
+.ad-slot .ad-note { font-size: 10px; color: #b45309; margin-top: 4px; font-style: italic; }
+.ad-slot .ad-cpm {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    background: rgba(146,64,14,0.15);
+    color: #92400e;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 700;
+}
+
+/* ─── Notes panels ─── */
+.notes {
+    max-width: 1180px;
+    margin: 0 auto 12px;
+    background: white;
+    border-radius: 12px;
+    padding: 22px 28px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 16px rgba(15,23,42,0.06);
+}
+
+.notes h3 {
+    font-family: 'Playfair Display', serif;
+    margin-bottom: 12px;
+    font-size: 1.15rem;
+}
+
+.notes ul {
+    list-style: none;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 9px 24px;
+}
+
+.notes li {
+    font-size: 0.86rem;
+    color: #334155;
+    padding-left: 18px;
+    position: relative;
+}
+
+.notes li::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    font-weight: 700;
+}
+
+.notes-windom h3 { color: #0b1f52; }
+.notes-windom li::before { color: #2b5ba8; }
+.notes-pipestone h3 { color: #14532d; }
+.notes-pipestone li::before { color: #15803d; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   SHARED ARTICLE LAYOUT
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Breadcrumb */
+.breadcrumb {
+    padding: 12px 28px;
+    font-size: 0.78rem;
+    color: #94a3b8;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.breadcrumb a {
+    color: #64748b;
+    text-decoration: none;
+}
+
+.breadcrumb a:hover { text-decoration: underline; }
+
+/* Top leaderboard */
+.top-leaderboard {
+    padding: 14px 28px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #f8fafc;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.top-leaderboard .disclosure {
+    font-size: 9px;
+    color: #94a3b8;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+/* Article + sidebar layout */
+.article-layout {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 0;
+    min-height: 600px;
+}
+
+.article-main {
+    padding: 36px 44px 48px 44px;
+    border-right: 1px solid #f1f5f9;
+}
+
+.article-sidebar {
+    padding: 28px 24px;
+    background: #fafbfc;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* Article head */
+.article-kicker {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+}
+
+.kicker-windom { color: #2b5ba8; }
+.kicker-pipestone { color: #15803d; }
+
+.article-headline {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.2rem;
+    font-weight: 900;
+    color: #0f172a;
+    line-height: 1.15;
+    letter-spacing: -0.5px;
+    margin-bottom: 14px;
+}
+
+.article-meta {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 0.8rem;
+    color: #94a3b8;
+    margin-bottom: 24px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.article-meta .author { color: #475569; font-weight: 600; }
+
+/* Article photo */
+.article-photo {
+    width: 100%;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 24px;
+    position: relative;
+}
+
+.article-photo img {
+    width: 100%;
+    height: 320px;
+    object-fit: cover;
+    display: block;
+}
+
+.article-photo .caption {
+    padding: 8px 0;
+    font-size: 0.75rem;
+    color: #94a3b8;
+    font-style: italic;
+}
+
+/* Article body */
+.article-body p {
+    font-family: 'Lora', Georgia, serif;
+    font-size: 1.05rem;
+    color: #1e293b;
+    line-height: 1.8;
+    margin-bottom: 20px;
+}
+
+/* In-article ad */
+.inline-ad-wrap {
+    margin: 28px 0;
+    padding: 16px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    border-top: 1px solid #f1f5f9;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.inline-ad-wrap .disclosure {
+    font-size: 9px;
+    color: #c4c4c4;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+/* Sidebar sections */
+.sidebar-section h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+}
+
+.sh-windom { color: #0b1f52; border-bottom: 2px solid #2b5ba8; }
+.sh-pipestone { color: #14532d; border-bottom: 2px solid #15803d; }
+
+.related-story {
+    padding: 10px 0;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.related-story:last-child { border-bottom: none; }
+
+.related-story .rs-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #1e293b;
+    line-height: 1.35;
+    margin-bottom: 3px;
+}
+
+.related-story .rs-date {
+    font-size: 0.72rem;
+    color: #94a3b8;
+}
+
+/* Sponsored related / native in sidebar */
+.sponsored-related {
+    background: white;
+    border: 1px solid #fde68a;
+    border-radius: 10px;
+    padding: 16px;
+}
+
+.sponsored-related .sr-tag {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+}
+
+.srt-windom { color: #2b5ba8; }
+.srt-pipestone { color: #15803d; }
+
+.sponsored-related .sr-business {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: #1e293b;
+    margin-bottom: 4px;
+}
+
+.sponsored-related .sr-desc {
+    font-size: 0.8rem;
+    color: #64748b;
+    line-height: 1.4;
+    margin-bottom: 8px;
+}
+
+.sponsored-related .sr-cta {
+    display: inline-block;
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    color: white;
+    text-decoration: none;
+}
+
+.cta-windom { background: #0b1f52; }
+.cta-pipestone { background: #14532d; }
+
+/* Bottom recs zone */
+.bottom-recs {
+    padding: 28px 44px 36px;
+    border-top: 1px solid #e5e7eb;
+    background: #f8fafc;
+}
+
+.bottom-recs h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.15rem;
+    margin-bottom: 16px;
+}
+
+.brh-windom { color: #0b1f52; }
+.brh-pipestone { color: #14532d; }
+
+.bottom-recs-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 16px;
+}
+
+.rec-card {
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+    overflow: hidden;
+}
+
+.rec-card .rec-thumb {
+    height: 100px;
+    background: #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    color: #94a3b8;
+    font-weight: 500;
+}
+
+.rec-card .rec-info {
+    padding: 10px 12px;
+}
+
+.rec-card .rec-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #1e293b;
+    line-height: 1.35;
+    margin-bottom: 4px;
+}
+
+.rec-card .rec-source {
+    font-size: 0.7rem;
+    color: #94a3b8;
+}
+
+.rec-card.rec-sponsored {
+    border-color: #fde68a;
+}
+
+.rec-card.rec-sponsored .rec-thumb {
+    background: #fffbeb;
+    color: #b45309;
+}
+
+.rec-card.rec-sponsored .rec-source {
+    color: #f59e0b;
+    font-weight: 600;
+}
+
+/* Thin section nav for articles */
+.thin-nav {
+    height: 44px;
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+.thin-nav a {
+    color: rgba(255,255,255,0.85);
+    text-decoration: none;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 8px 14px;
+    border-radius: 4px;
+}
+
+.tn-windom { background: #0b1f52; }
+.tn-pipestone { background: #14532d; }
+
+/* Mini masthead bar */
+.mini-masthead {
+    padding: 12px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.mini-masthead img { height: 36px; width: auto; }
+
+.mini-masthead .links { display: flex; gap: 12px; }
+
+.mini-masthead .links a {
+    font-size: 0.82rem;
+    color: #64748b;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.mini-masthead .links a:hover { color: #1e293b; }
+
+@media (max-width: 900px) {
+    .article-layout { grid-template-columns: 1fr; }
+    .article-sidebar { border-top: 1px solid #e5e7eb; }
+    .bottom-recs-grid { grid-template-columns: 1fr 1fr; }
+    .notes ul { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="section-divider"><span>Article Click-Through Pages</span></div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     WINDOM — Article Detail with Ads
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="mockup-frame">
+    <div class="mockup-label label-windom">
+        <span><span class="title-strong">WINDOM</span> &nbsp;·&nbsp; Article Detail — Ad Placements</span>
+        <span class="chip">Leaderboard + Inline + Sidebar + Bottom Recs</span>
+    </div>
+
+    <!-- Mini nav -->
+    <div class="mini-masthead">
+        <img src="../static/images/windomnews_logo.png" alt="windomnews.com">
+        <div class="links">
+            <a href="#">Home</a>
+            <a href="#">News</a>
+            <a href="#">Sports</a>
+            <a href="#">Business</a>
+            <a href="#">Events</a>
+        </div>
+    </div>
+
+    <!-- ★ AD SLOT 1: Top leaderboard -->
+    <div class="top-leaderboard">
+        <span class="disclosure">Advertisement</span>
+        <div class="ad-slot" style="width:728px; max-width:100%; height:90px; border-radius: 6px;">
+            <span class="ad-cpm">$10-14 CPM</span>
+            <span class="ad-label">Ad Slot 1</span>
+            <span class="ad-size">Leaderboard — 728 × 90</span>
+            <span class="ad-note">Top of article page — high viewability</span>
+        </div>
+    </div>
+
+    <div class="breadcrumb">
+        <a href="#">Home</a> &nbsp;›&nbsp; <a href="#">News</a> &nbsp;›&nbsp; County Board Approves Jasper Infrastructure
+    </div>
+
+    <div class="article-layout">
+        <!-- Article content -->
+        <div class="article-main">
+            <div class="article-kicker kicker-windom">Cottonwood County</div>
+            <h1 class="article-headline">County Board Approves $24 Million Jasper Infrastructure Overhaul</h1>
+            <div class="article-meta">
+                <span class="author">By Sarah Mitchell</span>
+                <span>April 8, 2026</span>
+                <span>5 min read</span>
+            </div>
+
+            <div class="article-photo">
+                <img src="../static/images/windom_courthouse.jpg" alt="Cottonwood County Courthouse">
+                <div class="caption">The Cottonwood County Courthouse in Windom. (File photo)</div>
+            </div>
+
+            <div class="article-body">
+                <p>The Cottonwood County Board of Commissioners voted unanimously Tuesday to approve a sweeping $24 million infrastructure package that will reshape the city of Jasper's water and sewer systems over the next three years.</p>
+
+                <p>The project, which has been in planning for more than two years, addresses aging underground infrastructure that county engineers have flagged as a growing public health concern. Several water mains dating to the 1960s have experienced repeated breaks.</p>
+
+                <p>"This is the single largest infrastructure investment in Jasper's history," said Board Chair Tom Anderson. "We owe it to the next generation to get this right."</p>
+
+                <!-- ★ AD SLOT 2: Inline after paragraph 3 -->
+                <div class="inline-ad-wrap">
+                    <span class="disclosure">Advertisement</span>
+                    <div class="ad-slot" style="width:100%; max-width:600px; height:250px; border-radius: 8px;">
+                        <span class="ad-cpm">$12-18 CPM</span>
+                        <span class="ad-label">Ad Slot 2</span>
+                        <span class="ad-size">Inline Rectangle — 600 × 250</span>
+                        <span class="ad-note">Mid-article after paragraph 3 — reader is engaged</span>
+                    </div>
+                </div>
+
+                <p>The funding package combines state bonding dollars, federal infrastructure grants, and a modest local levy increase. County Administrator Lisa Chen noted that roughly 60% of the funding comes from outside sources.</p>
+
+                <p>Construction is expected to begin in spring 2027, with the first phase focusing on the downtown water main corridor along Main Street. Residents can expect periodic lane closures but no extended road shutdowns.</p>
+
+                <p>The board also approved a community outreach plan that includes quarterly town halls and a dedicated project website where residents can track progress and submit concerns.</p>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="article-sidebar">
+            <!-- ★ AD SLOT 3: Sidebar half-page -->
+            <div class="ad-slot" style="width:300px; height:600px; border-radius: 8px;">
+                <span class="ad-cpm">$14-20 CPM</span>
+                <span class="ad-label">Ad Slot 3</span>
+                <span class="ad-size">Half Page — 300 × 600</span>
+                <span class="ad-note">Sidebar, sticky-capable — premium position</span>
+            </div>
+
+            <!-- Related stories -->
+            <div class="sidebar-section">
+                <h3 class="sh-windom">Related Stories</h3>
+                <div class="related-story">
+                    <div class="rs-title">Jasper residents voice concerns at infrastructure forum</div>
+                    <div class="rs-date">April 2, 2026</div>
+                </div>
+                <div class="related-story">
+                    <div class="rs-title">County engineers release water main assessment</div>
+                    <div class="rs-date">March 18, 2026</div>
+                </div>
+                <div class="related-story">
+                    <div class="rs-title">State bonding bill includes rural infrastructure funds</div>
+                    <div class="rs-date">March 5, 2026</div>
+                </div>
+            </div>
+
+            <!-- ★ AD SLOT 4: Native sponsor in sidebar -->
+            <div class="sponsored-related">
+                <div class="sr-tag srt-windom">★ Sponsored</div>
+                <div class="sr-business">Windom Area Health</div>
+                <div class="sr-desc">Your community hospital — open 24/7. Walk-in clinic now available Saturdays.</div>
+                <a href="#" class="sr-cta cta-windom">Learn More →</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- ★ AD SLOT 5: Bottom recommendations (3 editorial + 1 sponsored) -->
+    <div class="bottom-recs">
+        <h3 class="brh-windom">More Stories</h3>
+        <div class="bottom-recs-grid">
+            <div class="rec-card">
+                <div class="rec-thumb">[ Story Image ]</div>
+                <div class="rec-info">
+                    <div class="rec-title">School board sets 2027 budget priorities</div>
+                    <div class="rec-source">News · April 7</div>
+                </div>
+            </div>
+            <div class="rec-card">
+                <div class="rec-thumb">[ Story Image ]</div>
+                <div class="rec-info">
+                    <div class="rec-title">Eagles baseball opens with shutout win</div>
+                    <div class="rec-source">Sports · April 6</div>
+                </div>
+            </div>
+            <div class="rec-card">
+                <div class="rec-thumb">[ Story Image ]</div>
+                <div class="rec-info">
+                    <div class="rec-title">Downtown parking study results released</div>
+                    <div class="rec-source">News · April 5</div>
+                </div>
+            </div>
+            <div class="rec-card rec-sponsored">
+                <div class="rec-thumb">[ Sponsor Image ]</div>
+                <div class="rec-info">
+                    <div class="rec-title">Spring flooring sale — 20% off all LVP</div>
+                    <div class="rec-source">★ Windom Floor & Décor</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="notes notes-windom" style="margin-bottom:30px;">
+    <h3>Article Page Ad Strategy (Windom)</h3>
+    <ul>
+        <li><strong>Slot 1 — Top Leaderboard (728×90):</strong> above article content, highest viewability on page load — readers see it before scrolling</li>
+        <li><strong>Slot 2 — Inline Rectangle (600×250):</strong> after paragraph 3 — the reader is invested by now. Natural "breathing room" break in text</li>
+        <li><strong>Slot 3 — Half Page (300×600):</strong> right sidebar, can be sticky on scroll — premium position, high dwell time, biggest canvas</li>
+        <li><strong>Slot 4 — Native Sponsor Card:</strong> styled like "Related" content — feels like sidebar editorial, not a banner. Best for local services (health, insurance)</li>
+        <li><strong>Slot 5 — Bottom Recs Grid:</strong> 3 editorial + 1 sponsored card — "Taboola-lite" but curated by the paper. Sponsored card has amber border + ★ tag</li>
+        <li><strong>Total: 5 ad units</strong> on article pages — heavier than homepage but justified by reader intent (they clicked through = engaged)</li>
+        <li><strong>Key UX rule:</strong> no ads inside the first 2 paragraphs. Let the reader enter the story before the first interruption</li>
+        <li><strong>Sticky sidebar:</strong> the 300×600 can follow the reader down — stays viewable during the entire read. Highest CPM unit on the page</li>
+    </ul>
+</div>
+
+<div class="spacer"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     PIPESTONE — Article Detail with Ads
+     ═══════════════════════════════════════════════════════════════ -->
+<div class="mockup-frame">
+    <div class="mockup-label label-pipestone">
+        <span><span class="title-strong">PIPESTONE</span> &nbsp;·&nbsp; Article Detail — Ad Placements</span>
+        <span class="chip">Leaderboard + Inline + Sidebar + Bottom Recs</span>
+    </div>
+
+    <div class="mini-masthead">
+        <img src="../static/images/pipestone_star_logo.png" alt="Pipestone County Star" style="height:40px;">
+        <div class="links">
+            <a href="#">Home</a>
+            <a href="#">News</a>
+            <a href="#">Sports</a>
+            <a href="#">Business</a>
+            <a href="#">Events</a>
+        </div>
+    </div>
+
+    <div class="top-leaderboard">
+        <span class="disclosure">Advertisement</span>
+        <div class="ad-slot" style="width:728px; max-width:100%; height:90px; border-radius: 6px;">
+            <span class="ad-cpm">$10-14 CPM</span>
+            <span class="ad-label">Ad Slot 1</span>
+            <span class="ad-size">Leaderboard — 728 × 90</span>
+            <span class="ad-note">Top of article page — high viewability</span>
+        </div>
+    </div>
+
+    <div class="breadcrumb">
+        <a href="#">Home</a> &nbsp;›&nbsp; <a href="#">News</a> &nbsp;›&nbsp; Downtown Streetscape Plan Approved
+    </div>
+
+    <div class="article-layout">
+        <div class="article-main">
+            <div class="article-kicker kicker-pipestone">City Government</div>
+            <h1 class="article-headline">City Council Approves Downtown Streetscape Plan After Public Input</h1>
+            <div class="article-meta">
+                <span class="author">By Mark Johnson</span>
+                <span>April 7, 2026</span>
+                <span>4 min read</span>
+            </div>
+
+            <div class="article-photo">
+                <img src="../static/images/pipestone_waterfall.jpg" alt="Winnewissa Falls">
+                <div class="caption">Winnewissa Falls at Pipestone National Monument. (File photo / Pipestone County Star)</div>
+            </div>
+
+            <div class="article-body">
+                <p>The Pipestone City Council voted 5-1 Monday evening to approve a comprehensive downtown streetscape improvement plan that will bring new sidewalks, decorative lighting, and expanded green space to the historic Main Street corridor.</p>
+
+                <p>The $3.2 million project, funded primarily through a combination of state bonding money and local option sales tax revenue, has been the subject of extensive public discussion over the past six months.</p>
+
+                <p>Mayor Jennifer Larson called the vote "a turning point for downtown Pipestone" and praised the community engagement process that shaped the final design.</p>
+
+                <div class="inline-ad-wrap">
+                    <span class="disclosure">Advertisement</span>
+                    <div class="ad-slot" style="width:100%; max-width:600px; height:250px; border-radius: 8px;">
+                        <span class="ad-cpm">$12-18 CPM</span>
+                        <span class="ad-label">Ad Slot 2</span>
+                        <span class="ad-size">Inline Rectangle — 600 × 250</span>
+                        <span class="ad-note">Mid-article after paragraph 3</span>
+                    </div>
+                </div>
+
+                <p>Construction will begin in late summer 2026, starting with the two-block stretch between Hiawatha Avenue and Olive Street. The project is expected to be complete by fall 2027.</p>
+
+                <p>The lone dissenting vote came from Councilmember Robert Gustafson, who expressed concerns about the impact on downtown parking during construction. City staff responded that a temporary parking plan would be in place.</p>
+
+                <p>Business owners along Main Street have largely expressed support, with several noting that the improvements could help attract new retail tenants to vacant storefronts.</p>
+            </div>
+        </div>
+
+        <div class="article-sidebar">
+            <div class="ad-slot" style="width:300px; height:600px; border-radius: 8px;">
+                <span class="ad-cpm">$14-20 CPM</span>
+                <span class="ad-label">Ad Slot 3</span>
+                <span class="ad-size">Half Page — 300 × 600</span>
+                <span class="ad-note">Sidebar, sticky-capable</span>
+            </div>
+
+            <div class="sidebar-section">
+                <h3 class="sh-pipestone">Related Stories</h3>
+                <div class="related-story">
+                    <div class="rs-title">Public hearing draws 50+ residents on streetscape plan</div>
+                    <div class="rs-date">March 28, 2026</div>
+                </div>
+                <div class="related-story">
+                    <div class="rs-title">Architect unveils three design concepts for Main Street</div>
+                    <div class="rs-date">March 12, 2026</div>
+                </div>
+                <div class="related-story">
+                    <div class="rs-title">State bonding bill earmarks $1.8M for Pipestone downtown</div>
+                    <div class="rs-date">February 20, 2026</div>
+                </div>
+            </div>
+
+            <div class="sponsored-related">
+                <div class="sr-tag srt-pipestone">★ Sponsored</div>
+                <div class="sr-business">Lange's Café & Bakery</div>
+                <div class="sr-desc">Downtown Pipestone since 1952. Stop in for lunch during the streetscape open house — hot beef sandwich special all week.</div>
+                <a href="#" class="sr-cta cta-pipestone">See Menu →</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="bottom-recs">
+        <h3 class="brh-pipestone">More Stories</h3>
+        <div class="bottom-recs-grid">
+            <div class="rec-card">
+                <div class="rec-thumb">[ Story Image ]</div>
+                <div class="rec-info">
+                    <div class="rec-title">National Monument attendance hits 10-year high</div>
+                    <div class="rec-source">News · April 5</div>
+                </div>
+            </div>
+            <div class="rec-card">
+                <div class="rec-thumb">[ Story Image ]</div>
+                <div class="rec-info">
+                    <div class="rec-title">Arrows track qualifies four for state meet</div>
+                    <div class="rec-source">Sports · April 4</div>
+                </div>
+            </div>
+            <div class="rec-card">
+                <div class="rec-thumb">[ Story Image ]</div>
+                <div class="rec-info">
+                    <div class="rec-title">County fair board confirms August dates</div>
+                    <div class="rec-source">Community · April 3</div>
+                </div>
+            </div>
+            <div class="rec-card rec-sponsored">
+                <div class="rec-thumb">[ Sponsor Image ]</div>
+                <div class="rec-info">
+                    <div class="rec-title">Spring planting specials — seed & fertilizer</div>
+                    <div class="rec-source">★ Pipestone County Co-op</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="notes notes-pipestone" style="margin-bottom:30px;">
+    <h3>Article Page Ad Strategy (Pipestone)</h3>
+    <ul>
+        <li><strong>Same 5-slot structure</strong> as Windom — consistent ad product across the Grand Network makes it easier to sell</li>
+        <li><strong>Contextual native ads:</strong> Lange's Café sponsor card mentions the streetscape open house — tying ad to article context increases click-through 3-5×</li>
+        <li><strong>Bottom recs grid:</strong> 75% editorial / 25% sponsored — reader doesn't feel tricked, sponsor gets premium placement</li>
+        <li><strong>Revenue per article pageview:</strong> ~$0.04-0.08 across all 5 slots at local CPMs — at 50K monthly pageviews that's $2K-4K/month per paper</li>
+        <li><strong>Mini masthead:</strong> smaller logo (40px) + flat nav links — navbar shouldn't compete with the article content</li>
+        <li><strong>Responsive:</strong> on mobile, sidebar collapses below article, half-page becomes 300×250, bottom recs go 2-col</li>
+    </ul>
+</div>
+
+</body>
+</html>

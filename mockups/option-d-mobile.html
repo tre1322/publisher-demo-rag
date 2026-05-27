@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=375, initial-scale=1.0">
+<title>Option D — News Hub (Mobile) — Cottonwood County Citizen</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #f0f2f5; color: #1a1a1a; max-width: 375px; margin: 0 auto; }
+  a { color: inherit; text-decoration: none; }
+  h1, h2, h3, h4 { font-family: Georgia, 'Times New Roman', serif; }
+
+  /* --- Header --- */
+  .header {
+    background: #2d5f2d; color: #fff; padding: 16px; display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .header h1 { font-size: 15px; line-height: 1.25; }
+  .header .badge {
+    font-family: system-ui, sans-serif; font-size: 9px; font-weight: 700;
+    letter-spacing: .06em; text-transform: uppercase;
+    background: rgba(255,255,255,.2); padding: 3px 8px; border-radius: 4px; white-space: nowrap;
+  }
+
+  /* --- Channel chips --- */
+  .channel-bar {
+    display: flex; gap: 8px; overflow-x: auto; padding: 12px 16px;
+    background: #fff; border-bottom: 1px solid #e2e5e9;
+    -webkit-overflow-scrolling: touch;
+  }
+  .channel-bar::-webkit-scrollbar { display: none; }
+  .chip {
+    flex-shrink: 0; padding: 8px 14px; border-radius: 999px; font-size: 13px; font-weight: 500;
+    background: #f3f4f6; border: 1px solid #e5e7eb; cursor: pointer; white-space: nowrap;
+    transition: background .15s;
+  }
+  .chip.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+  .chip:hover:not(.active) { background: #e8f0fe; }
+
+  /* --- Content --- */
+  .content { padding: 16px; }
+  .search-bar {
+    width: 100%; padding: 12px 16px 12px 40px; border: 1px solid #d1d5db;
+    border-radius: 10px; font-size: 14px; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' fill='none' viewBox='0 0 24 24'%3E%3Cpath d='M21 21l-4.35-4.35M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z' stroke='%239ca3af' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") 12px center no-repeat;
+    outline: none;
+  }
+  .search-bar:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+
+  .section-title { font-size: 18px; font-weight: 700; margin: 24px 0 12px; }
+  .section-title span { color: #6b7280; font-size: 12px; font-weight: 400; margin-left: 6px; }
+
+  .card {
+    background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08); transition: transform .2s, box-shadow .2s;
+  }
+  .card:active { transform: scale(.98); }
+  .card .tag {
+    display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .04em; padding: 2px 8px; border-radius: 999px; margin-bottom: 8px;
+  }
+  .tag.news { background: #dcfce7; color: #166534; }
+  .tag.sports { background: #fee2e2; color: #991b1b; }
+  .card h3 { font-size: 16px; line-height: 1.35; margin-bottom: 6px; }
+  .card .meta { font-size: 12px; color: #6b7280; margin-bottom: 6px; }
+  .card .excerpt { font-size: 13px; color: #374151; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+  /* --- Biz horizontal --- */
+  .biz-scroll { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 4px; }
+  .biz-scroll::-webkit-scrollbar { display: none; }
+  .biz-card {
+    min-width: 220px; background: #fff; border-radius: 12px; padding: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08); flex-shrink: 0;
+  }
+  .biz-card h4 { font-size: 15px; margin-bottom: 4px; }
+  .biz-card .biz-cat {
+    display: inline-block; font-size: 10px; font-weight: 600; background: #dcfce7; color: #166534;
+    padding: 2px 6px; border-radius: 999px; margin-bottom: 6px;
+  }
+  .biz-card .biz-info { font-size: 12px; color: #6b7280; line-height: 1.4; }
+
+  /* --- FAB --- */
+  .fab {
+    position: fixed; bottom: 20px; right: 20px; width: 56px; height: 56px;
+    border-radius: 50%; background: #2563eb; color: #fff; border: none;
+    font-size: 24px; cursor: pointer; box-shadow: 0 4px 12px rgba(37,99,235,.4);
+    display: flex; align-items: center; justify-content: center;
+    transition: transform .15s, box-shadow .15s; z-index: 200;
+  }
+  .fab:hover { transform: scale(1.08); box-shadow: 0 6px 20px rgba(37,99,235,.5); }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <h1>Cottonwood County Citizen</h1>
+  <span class="badge">Grand Network</span>
+</header>
+
+<div class="channel-bar">
+  <span class="chip active">📰 News</span>
+  <span class="chip">🏈 Sports</span>
+  <span class="chip">📋 Obituaries</span>
+  <span class="chip">💼 Jobs</span>
+  <span class="chip">🏪 Businesses</span>
+  <span class="chip">📅 Events</span>
+  <span class="chip">🏠 Real Estate</span>
+</div>
+
+<div class="content">
+  <input class="search-bar" type="text" placeholder="Search news, businesses, or ask AI...">
+
+  <h2 class="section-title">Front Page <span>4 stories</span></h2>
+
+  <article class="card">
+    <span class="tag news">Front Page</span>
+    <h3>Windom Riverfest trims week, keeps traditions</h3>
+    <p class="meta">By Jeremy Behnke &middot; March 30, 2026</p>
+    <p class="excerpt">The annual Riverfest celebration will be condensed this year, but organizers say all the community favorites will remain on the schedule.</p>
+  </article>
+  <article class="card">
+    <span class="tag news">Front Page</span>
+    <h3>County board mulls future of buildings</h3>
+    <p class="meta">By Joel Alvstad &middot; March 29, 2026</p>
+    <p class="excerpt">Cottonwood County commissioners are weighing options for aging county-owned properties, including potential renovation or demolition.</p>
+  </article>
+  <article class="card">
+    <span class="tag news">Front Page</span>
+    <h3>Schneider, Horkey team up for new project</h3>
+    <p class="meta">By Stacy Remme &middot; March 28, 2026</p>
+    <p class="excerpt">A new collaborative venture between two well-known local entrepreneurs is set to bring fresh energy to the Windom business landscape.</p>
+  </article>
+  <article class="card">
+    <span class="tag news">Front Page</span>
+    <h3>Chamber hires new director</h3>
+    <p class="meta">Staff Report &middot; March 27, 2026</p>
+    <p class="excerpt">The Windom Area Chamber of Commerce has announced the hiring of a new executive director to lead economic development efforts.</p>
+  </article>
+
+  <h2 class="section-title">Sports <span>4 stories</span></h2>
+
+  <article class="card">
+    <span class="tag sports">Sports</span>
+    <h3>Eagles set for season opener</h3>
+    <p class="meta">March 31, 2026</p>
+    <p class="excerpt">The Eagles are poised and ready as spring sports kick off this week with high expectations.</p>
+  </article>
+  <article class="card">
+    <span class="tag sports">Sports</span>
+    <h3>Wolverines sweep past Spartans</h3>
+    <p class="meta">March 30, 2026</p>
+    <p class="excerpt">A dominant performance on both sides of the ball carried the Wolverines to a convincing sweep.</p>
+  </article>
+  <article class="card">
+    <span class="tag sports">Sports</span>
+    <h3>Indians roll past Falcons</h3>
+    <p class="meta">March 29, 2026</p>
+    <p class="excerpt">Strong early-game momentum gave the Indians all they needed as they cruised to a decisive victory.</p>
+  </article>
+  <article class="card">
+    <span class="tag sports">Sports</span>
+    <h3>Cobras have two state medalists</h3>
+    <p class="meta">March 28, 2026</p>
+    <p class="excerpt">Two Cobra athletes brought home hardware from the state tournament.</p>
+  </article>
+
+  <h2 class="section-title">Local Businesses</h2>
+  <div class="biz-scroll">
+    <div class="biz-card">
+      <h4>Country Pride True Value</h4>
+      <span class="biz-cat">Hardware &amp; Home</span>
+      <p class="biz-info">Mountain Lake, MN<br>(507) 427-2773</p>
+    </div>
+    <div class="biz-card">
+      <h4>Hy-Vee</h4>
+      <span class="biz-cat">Grocery</span>
+      <p class="biz-info">Windom, MN<br>(507) 831-2838</p>
+    </div>
+    <div class="biz-card">
+      <h4>Good Samaritan</h4>
+      <span class="biz-cat">Senior Care</span>
+      <p class="biz-info">Windom, MN<br>(507) 831-1788</p>
+    </div>
+  </div>
+</div>
+
+<button class="fab" onclick="alert('Chat overlay would open here')">💬</button>
+
+</body>
+</html>

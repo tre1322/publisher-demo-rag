@@ -1,0 +1,1247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Display Advertising Placements — Homepage Options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,700;0,800;0,900;1,700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #eef0f4;
+    color: #1a1a2e;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    padding: 24px 24px 60px;
+}
+
+/* ─── Shared chrome ─── */
+.mockup-frame {
+    max-width: 1180px;
+    margin: 0 auto 18px;
+    background: white;
+    border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(15,23,42,0.18);
+    overflow: hidden;
+    border: 1px solid #e2e8f0;
+}
+
+.mockup-label {
+    padding: 14px 22px;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.mockup-label .title-strong { font-weight: 800; }
+
+.mockup-label .chip {
+    background: rgba(255,255,255,0.15);
+    padding: 4px 12px;
+    border-radius: 10px;
+    font-size: 10px;
+    letter-spacing: 0.8px;
+}
+
+.label-windom {
+    background: #0b1f52;
+    color: #dbe4f5;
+}
+
+.label-pipestone {
+    background: #14532d;
+    color: #dcfce7;
+}
+
+.spacer { height: 22px; }
+
+.section-divider {
+    max-width: 1180px;
+    margin: 50px auto 30px;
+    text-align: center;
+    position: relative;
+}
+
+.section-divider::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: #cbd5e1;
+}
+
+.section-divider span {
+    position: relative;
+    background: #eef0f4;
+    padding: 0 24px;
+    font-family: 'Playfair Display', serif;
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: #334155;
+    letter-spacing: -0.3px;
+}
+
+/* ─── Ad slot visual markers ─── */
+.ad-slot {
+    border: 2px dashed #f59e0b;
+    background:
+        repeating-linear-gradient(
+            45deg,
+            rgba(245,158,11,0.03),
+            rgba(245,158,11,0.03) 10px,
+            rgba(245,158,11,0.07) 10px,
+            rgba(245,158,11,0.07) 20px
+        );
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.ad-slot .ad-label {
+    background: #f59e0b;
+    color: white;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+}
+
+.ad-slot .ad-size {
+    font-size: 12px;
+    color: #92400e;
+    font-weight: 600;
+}
+
+.ad-slot .ad-note {
+    font-size: 10px;
+    color: #b45309;
+    margin-top: 4px;
+    font-style: italic;
+}
+
+.ad-slot .ad-cpm {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    background: rgba(146,64,14,0.15);
+    color: #92400e;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+/* ─── Notes panels ─── */
+.notes {
+    max-width: 1180px;
+    margin: 0 auto 12px;
+    background: white;
+    border-radius: 12px;
+    padding: 22px 28px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 16px rgba(15,23,42,0.06);
+}
+
+.notes h3 {
+    font-family: 'Playfair Display', serif;
+    margin-bottom: 12px;
+    font-size: 1.15rem;
+}
+
+.notes-windom h3 { color: #0b1f52; }
+.notes-pipestone h3 { color: #14532d; }
+
+.notes ul {
+    list-style: none;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 9px 24px;
+}
+
+.notes li {
+    font-size: 0.86rem;
+    color: #334155;
+    padding-left: 18px;
+    position: relative;
+}
+
+.notes li::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    font-weight: 700;
+}
+
+.notes-windom li::before { color: #2b5ba8; }
+.notes-pipestone li::before { color: #15803d; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   SHARED COMPONENT STYLES (Option B masthead base)
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Utility bar */
+.utility-bar {
+    border-bottom: 1px solid #e5e7eb;
+    padding: 6px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.75rem;
+}
+
+.utility-bar .date { font-weight: 600; letter-spacing: 0.3px; }
+.utility-bar .util-links { display: flex; gap: 18px; }
+.utility-bar .util-links a { text-decoration: none; }
+.utility-bar .util-links a:hover { opacity: 0.7; }
+
+.ub-windom { background: #f1f5fb; color: #64748b; }
+.ub-windom .util-links a { color: #64748b; }
+
+.ub-pipestone { background: #faf8f3; color: #78716c; }
+.ub-pipestone .util-links a { color: #78716c; }
+
+/* Masthead */
+.masthead {
+    background: white;
+    padding: 28px 24px 22px;
+    text-align: center;
+}
+
+.masthead img { width: auto; display: inline-block; }
+.masthead .tagline {
+    font-family: 'Playfair Display', serif;
+    font-style: italic;
+    font-size: 0.92rem;
+    margin-top: 10px;
+    letter-spacing: 0.3px;
+}
+
+.mh-windom .tagline { color: #475569; }
+.mh-pipestone .tagline { color: #57534e; }
+
+/* Section nav */
+.section-nav {
+    padding: 0 24px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+.section-nav a {
+    color: rgba(255,255,255,0.85);
+    text-decoration: none;
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 8px 14px;
+    border-radius: 4px;
+}
+
+.section-nav a:hover { background: rgba(255,255,255,0.12); color: white; }
+
+.sn-windom { background: #0b1f52; }
+.sn-pipestone { background: #14532d; }
+
+/* Hero */
+.hero {
+    position: relative;
+    padding: 56px 24px 64px;
+    text-align: center;
+    overflow: hidden;
+    isolation: isolate;
+}
+
+.hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center 42%;
+    filter: grayscale(12%) brightness(1.1) contrast(1.05);
+    opacity: 0.3;
+    z-index: 0;
+}
+
+.hero::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+}
+
+.hero-windom { background: #0b1f52; }
+.hero-windom::before { background-image: url('../static/images/windom_courthouse.jpg'); }
+.hero-windom::after {
+    background:
+        linear-gradient(180deg, rgba(11,31,82,0.2) 0%, rgba(11,31,82,0.5) 100%),
+        radial-gradient(ellipse at center, transparent 0%, rgba(11,31,82,0.3) 80%);
+}
+
+.hero-pipestone { background: #14532d; }
+.hero-pipestone::before { background-image: url('../static/images/pipestone_waterfall.jpg'); }
+.hero-pipestone::after {
+    background:
+        linear-gradient(180deg, rgba(20,83,45,0.2) 0%, rgba(20,83,45,0.5) 100%),
+        radial-gradient(ellipse at center, transparent 0%, rgba(20,83,45,0.3) 80%);
+}
+
+.hero-content {
+    position: relative;
+    z-index: 2;
+    max-width: 720px;
+    margin: 0 auto;
+}
+
+.hero .kicker {
+    display: inline-block;
+    background: rgba(255,255,255,0.13);
+    border: 1px solid rgba(255,255,255,0.35);
+    color: white;
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    backdrop-filter: blur(6px);
+}
+
+.hero h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.8rem;
+    font-weight: 900;
+    color: white;
+    margin-bottom: 10px;
+    letter-spacing: -0.8px;
+    line-height: 1.1;
+    text-shadow: 0 2px 24px rgba(0,0,0,0.4);
+}
+
+.hero .subtitle {
+    font-family: 'Playfair Display', serif;
+    font-style: italic;
+    font-size: 1.05rem;
+    color: rgba(255,255,255,0.95);
+    margin-bottom: 26px;
+    max-width: 560px;
+    margin-left: auto;
+    margin-right: auto;
+    text-shadow: 0 1px 10px rgba(0,0,0,0.4);
+}
+
+.search-box {
+    max-width: 700px;
+    margin: 0 auto;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 16px 50px rgba(0,0,0,0.28);
+    display: flex;
+    align-items: center;
+    padding: 0 8px 0 18px;
+    height: 58px;
+}
+
+.search-box .icon { color: #94a3b8; margin-right: 10px; font-size: 17px; }
+
+.search-box input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-size: 15px;
+    font-family: inherit;
+    background: transparent;
+}
+
+.search-box input::placeholder { color: #94a3b8; }
+
+.search-box button {
+    padding: 10px 22px;
+    border-radius: 8px;
+    border: none;
+    color: white;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.sb-windom button { background: #0b1f52; }
+.sb-pipestone button { background: #14532d; }
+
+.pills {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 18px;
+}
+
+.pills button {
+    padding: 6px 14px;
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.4);
+    background: rgba(255,255,255,0.13);
+    color: white;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+/* ─── Content grid ─── */
+.content-grid {
+    padding: 32px 28px 40px;
+    display: grid;
+    gap: 22px;
+    background: #f8fafc;
+    border-top: 1px solid #e5e7eb;
+}
+
+.grid-3col { grid-template-columns: 1fr 1fr 1fr; }
+.grid-sidebar { grid-template-columns: 1fr 1fr 300px; }
+.grid-2-plus-sidebar { grid-template-columns: 1fr 1fr 300px; }
+.grid-3col-stacked { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: auto auto; }
+
+/* Stacked column — lets a grid cell hold multiple cards vertically */
+.stacked-col {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+/* Events mini card */
+.events-card {
+    background: white;
+    border-radius: 10px;
+    padding: 16px 18px;
+    border: 1px solid #e5e7eb;
+}
+
+.events-card h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.05rem;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid;
+}
+
+.eh-windom { color: #0b1f52; border-color: #2b5ba8; }
+.eh-pipestone { color: #14532d; border-color: #15803d; }
+
+.events-card .event-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 7px 0;
+    border-bottom: 1px solid #f5f5f4;
+    font-size: 0.82rem;
+}
+
+.events-card .event-item:last-child { border-bottom: none; }
+
+.event-date-badge {
+    flex-shrink: 0;
+    width: 38px;
+    text-align: center;
+    border-radius: 6px;
+    padding: 3px 0;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.edb-windom { background: #eff3fb; color: #2b5ba8; }
+.edb-pipestone { background: #f0fdf4; color: #15803d; }
+
+.event-date-badge .month {
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+}
+
+.event-date-badge .day { font-size: 15px; }
+
+.event-title { color: #334155; font-weight: 500; line-height: 1.35; }
+
+/* Classified mini card */
+.classifieds-card {
+    background: white;
+    border-radius: 10px;
+    padding: 16px 18px;
+    border: 1px solid #fde68a;
+}
+
+.classifieds-card h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.05rem;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #f59e0b;
+    color: #92400e;
+}
+
+.classifieds-card .classified-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 0;
+    border-bottom: 1px solid #fef3c7;
+    font-size: 0.82rem;
+}
+
+.classifieds-card .classified-item:last-child { border-bottom: none; }
+
+.classified-icon {
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+}
+
+.ci-windom { background: #eff3fb; }
+.ci-pipestone { background: #f0fdf4; }
+
+.classified-text { color: #44403c; font-weight: 500; line-height: 1.3; }
+.classified-text .cl-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 1px; }
+.clt-windom { color: #2b5ba8; }
+.clt-pipestone { color: #15803d; }
+
+.col-card {
+    background: white;
+    border-radius: 10px;
+    padding: 18px;
+    border: 1px solid #e5e7eb;
+}
+
+.col-card h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.15rem;
+    margin-bottom: 12px;
+    padding-bottom: 9px;
+    border-bottom: 2px solid;
+}
+
+.cc-windom h2 { color: #0b1f52; border-color: #2b5ba8; }
+.cc-pipestone h2 { color: #14532d; border-color: #15803d; }
+
+.col-card .story {
+    padding: 8px 0;
+    font-size: 0.84rem;
+    color: #334155;
+    border-bottom: 1px solid #f1f5f9;
+    line-height: 1.4;
+}
+
+.col-card .story:last-child { border-bottom: none; }
+
+/* ─── Native ad card (styled like content but marked) ─── */
+.native-ad-card {
+    background: white;
+    border-radius: 10px;
+    padding: 18px;
+    border: 1px solid #fde68a;
+    position: relative;
+}
+
+.native-ad-card .sponsored-tag {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.nat-windom .sponsored-tag { color: #2b5ba8; }
+.nat-pipestone .sponsored-tag { color: #15803d; }
+
+.native-ad-card .sponsor-logo {
+    width: 100%;
+    height: 130px;
+    background: #f8fafc;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 12px;
+    border: 1px dashed #e2e8f0;
+    color: #94a3b8;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.native-ad-card .sponsor-name {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #1e293b;
+    margin-bottom: 4px;
+}
+
+.native-ad-card .sponsor-desc {
+    font-size: 0.82rem;
+    color: #64748b;
+    line-height: 1.45;
+}
+
+.native-ad-card .sponsor-cta {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: none;
+    color: white;
+}
+
+.nat-windom .sponsor-cta { background: #0b1f52; }
+.nat-pipestone .sponsor-cta { background: #14532d; }
+
+/* ─── Sidebar ad stack ─── */
+.sidebar-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* ─── Leaderboard between elements ─── */
+.leaderboard-wrap {
+    padding: 12px 28px;
+    display: flex;
+    justify-content: center;
+    background: #f8fafc;
+    border-top: 1px solid #e5e7eb;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+/* ─── Billboard zone ─── */
+.billboard-wrap {
+    padding: 16px 28px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #f8fafc;
+    border-top: 1px solid #e5e7eb;
+}
+
+.billboard-wrap .ad-disclosure {
+    font-size: 9px;
+    color: #94a3b8;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+/* ─── Sponsored answer in hero ─── */
+.sponsored-answer {
+    max-width: 700px;
+    margin: 22px auto 0;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 10px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    backdrop-filter: blur(6px);
+}
+
+.sponsored-answer .sa-tag {
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.6);
+    flex-shrink: 0;
+}
+
+.sponsored-answer .sa-text {
+    font-size: 13px;
+    color: rgba(255,255,255,0.92);
+    line-height: 1.4;
+}
+
+.sponsored-answer .sa-text strong {
+    color: white;
+}
+
+/* ─── Sticky bottom bar ─── */
+.sticky-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 10px 24px;
+    font-size: 13px;
+    border-top: 1px solid #e5e7eb;
+}
+
+.sticky-bar .sb-tag {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.5;
+}
+
+.sticky-bar .sb-text { color: #334155; }
+.sticky-bar .sb-text strong { color: #1e293b; }
+
+.sticky-bar .sb-cta {
+    padding: 5px 12px;
+    border-radius: 6px;
+    border: none;
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.sbar-windom { background: #f1f5fb; }
+.sbar-windom .sb-tag { color: #64748b; }
+.sbar-windom .sb-cta { background: #0b1f52; }
+
+.sbar-pipestone { background: #faf8f3; }
+.sbar-pipestone .sb-tag { color: #78716c; }
+.sbar-pipestone .sb-cta { background: #14532d; }
+
+@media (max-width: 820px) {
+    .grid-3col, .grid-sidebar, .grid-2-plus-sidebar { grid-template-columns: 1fr; }
+    .notes ul { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     AD LAYOUT 1: "HERITAGE RESPECTFUL"
+     Classic newspaper ad placements — leaderboard + sidebar 300x250s
+     ══════════════════════════════════════════════════════════════════════ -->
+
+<div class="section-divider"><span>Ad Layout 1 — Heritage Respectful</span></div>
+
+<!-- ── WINDOM ── -->
+<div class="mockup-frame">
+    <div class="mockup-label label-windom">
+        <span><span class="title-strong">WINDOM</span> &nbsp;·&nbsp; Layout 1: Heritage Respectful</span>
+        <span class="chip">Leaderboard + Sidebar Stack</span>
+    </div>
+
+    <div class="utility-bar ub-windom">
+        <span class="date">Thursday, April 9, 2026 · Windom, MN · 64°F</span>
+        <div class="util-links">
+            <a href="#">E-Edition</a>
+            <a href="#">Obituaries</a>
+            <a href="#">Subscribe</a>
+            <a href="#">Login</a>
+        </div>
+    </div>
+
+    <div class="masthead mh-windom" style="border-bottom: 3px double #0b1f52;">
+        <img src="../static/images/windomnews_logo.png" alt="windomnews.com" style="height:72px;">
+        <div class="tagline">Cottonwood County's trusted news source since 1886</div>
+    </div>
+
+    <!-- ★ AD SLOT 1: Leaderboard between masthead and section nav -->
+    <div class="leaderboard-wrap">
+        <div class="ad-slot" style="width:728px; height:90px; border-radius: 6px;">
+            <span class="ad-cpm">$8-12 CPM</span>
+            <span class="ad-label">Ad Slot 1</span>
+            <span class="ad-size">Leaderboard — 728 × 90</span>
+            <span class="ad-note">Below masthead, above section nav</span>
+        </div>
+    </div>
+
+    <nav class="section-nav sn-windom">
+        <a href="#">News</a><a href="#">Sports</a><a href="#">Obituaries</a>
+        <a href="#">Business</a><a href="#">Events</a><a href="#">Opinion</a>
+    </nav>
+
+    <section class="hero hero-windom">
+        <div class="hero-content">
+            <span class="kicker">✦ Powered by AI</span>
+            <h1>Ask Windom Anything</h1>
+            <p class="subtitle">Your local AI assistant for Cottonwood County.</p>
+            <div class="search-box sb-windom">
+                <span class="icon">🔍</span>
+                <input type="text" placeholder="What would you like to know?">
+                <button>Ask</button>
+            </div>
+            <div class="pills">
+                <button>This Week's News</button>
+                <button>Who's Hiring?</button>
+                <button>Sports Scores</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Content with sidebar ad stack -->
+    <div class="content-grid grid-2-plus-sidebar">
+        <div class="col-card cc-windom">
+            <h2>News</h2>
+            <div class="story">County board approves Jasper infrastructure funding</div>
+            <div class="story">Courthouse landscaping project moves forward</div>
+            <div class="story">School district unveils new budget proposal</div>
+            <div class="story">Windom Area Health awarded rural grant</div>
+        </div>
+        <div class="col-card cc-windom">
+            <h2>Sports</h2>
+            <div class="story">Windom Eagles win district championship</div>
+            <div class="story">High school baseball season opens Friday</div>
+            <div class="story">Summer rec sign-ups begin next week</div>
+            <div class="story">Eagles track qualifies five for sections</div>
+        </div>
+
+        <!-- ★ AD SLOT 2 & 3: Right rail 300x250 stack -->
+        <div class="sidebar-stack">
+            <div class="ad-slot" style="width:300px; height:250px; border-radius: 8px;">
+                <span class="ad-cpm">$10-15 CPM</span>
+                <span class="ad-label">Ad Slot 2</span>
+                <span class="ad-size">Medium Rectangle — 300 × 250</span>
+                <span class="ad-note">Right rail, top position</span>
+            </div>
+            <div class="ad-slot" style="width:300px; height:250px; border-radius: 8px;">
+                <span class="ad-cpm">$6-9 CPM</span>
+                <span class="ad-label">Ad Slot 3</span>
+                <span class="ad-size">Medium Rectangle — 300 × 250</span>
+                <span class="ad-note">Right rail, second position</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="notes notes-windom" style="margin-bottom:30px;">
+    <h3>Layout 1 — Heritage Respectful (Windom)</h3>
+    <ul>
+        <li><strong>Slot 1 — Leaderboard (728×90):</strong> between masthead and section nav — mirrors traditional print banner ad placement, highest viewability</li>
+        <li><strong>Slot 2 & 3 — Right rail stack (300×250):</strong> classic newspaper sidebar — two rectangles stacked, doesn't push stories down</li>
+        <li><strong>Content shifts</strong> from 3-col to 2-col + sidebar rail to make room for ads without feeling cramped</li>
+        <li><strong>Total ad load:</strong> 3 display units — light, respectful, non-intrusive</li>
+        <li><strong>Revenue note:</strong> local CPMs ($8–15) × high viewability = better per-impression yield than national programmatic</li>
+        <li><strong>Trade-off:</strong> conservative — leaves revenue on the table but protects reader trust</li>
+    </ul>
+</div>
+
+<!-- ── PIPESTONE ── -->
+<div class="mockup-frame">
+    <div class="mockup-label label-pipestone">
+        <span><span class="title-strong">PIPESTONE</span> &nbsp;·&nbsp; Layout 1: Heritage Respectful</span>
+        <span class="chip">Leaderboard + Sidebar Stack</span>
+    </div>
+
+    <div class="utility-bar ub-pipestone">
+        <span class="date">Thursday, April 9, 2026 · Pipestone, MN · 62°F</span>
+        <div class="util-links">
+            <a href="#">E-Edition</a>
+            <a href="#">Obituaries</a>
+            <a href="#">Subscribe</a>
+            <a href="#">Login</a>
+        </div>
+    </div>
+
+    <div class="masthead mh-pipestone" style="border-bottom: 3px double #14532d;">
+        <img src="../static/images/pipestone_star_logo.png" alt="Pipestone County Star" style="height:88px;">
+        <div class="tagline">Serving Pipestone County since 1879</div>
+    </div>
+
+    <div class="leaderboard-wrap">
+        <div class="ad-slot" style="width:728px; height:90px; border-radius: 6px;">
+            <span class="ad-cpm">$8-12 CPM</span>
+            <span class="ad-label">Ad Slot 1</span>
+            <span class="ad-size">Leaderboard — 728 × 90</span>
+            <span class="ad-note">Below masthead, above section nav</span>
+        </div>
+    </div>
+
+    <nav class="section-nav sn-pipestone">
+        <a href="#">News</a><a href="#">Sports</a><a href="#">Obituaries</a>
+        <a href="#">Business</a><a href="#">Events</a><a href="#">Opinion</a>
+    </nav>
+
+    <section class="hero hero-pipestone">
+        <div class="hero-content">
+            <span class="kicker">✦ Powered by AI</span>
+            <h1>Ask Pipestone Anything</h1>
+            <p class="subtitle">Your local AI assistant for Pipestone County.</p>
+            <div class="search-box sb-pipestone">
+                <span class="icon">🔍</span>
+                <input type="text" placeholder="What would you like to know?">
+                <button>Ask</button>
+            </div>
+            <div class="pills">
+                <button>This Week's News</button>
+                <button>Who's Hiring?</button>
+                <button>Sports Scores</button>
+            </div>
+        </div>
+    </section>
+
+    <div class="content-grid grid-2-plus-sidebar">
+        <div class="col-card cc-pipestone">
+            <h2>News</h2>
+            <div class="story">City council approves downtown streetscape plan</div>
+            <div class="story">National Monument unveils new exhibit</div>
+            <div class="story">School board sets fall enrollment dates</div>
+            <div class="story">County highway project enters bid phase</div>
+        </div>
+        <div class="col-card cc-pipestone">
+            <h2>Sports</h2>
+            <div class="story">Arrows softball wins regional opener</div>
+            <div class="story">Track team qualifies four for state</div>
+            <div class="story">Summer baseball schedule released</div>
+            <div class="story">Golf team takes conference title</div>
+        </div>
+        <div class="sidebar-stack">
+            <div class="ad-slot" style="width:300px; height:250px; border-radius: 8px;">
+                <span class="ad-cpm">$10-15 CPM</span>
+                <span class="ad-label">Ad Slot 2</span>
+                <span class="ad-size">Medium Rectangle — 300 × 250</span>
+                <span class="ad-note">Right rail, top position</span>
+            </div>
+            <div class="ad-slot" style="width:300px; height:250px; border-radius: 8px;">
+                <span class="ad-cpm">$6-9 CPM</span>
+                <span class="ad-label">Ad Slot 3</span>
+                <span class="ad-size">Medium Rectangle — 300 × 250</span>
+                <span class="ad-note">Right rail, second position</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="spacer"></div>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     AD LAYOUT 2: "REVENUE + COMMUNITY"
+     Native business spotlight + billboard + sponsored answer + sticky
+     ══════════════════════════════════════════════════════════════════════ -->
+
+<div class="section-divider"><span>Ad Layout 2 — Revenue + Community</span></div>
+
+<!-- ── WINDOM ── -->
+<div class="mockup-frame">
+    <div class="mockup-label label-windom">
+        <span><span class="title-strong">WINDOM</span> &nbsp;·&nbsp; Layout 2: Revenue + Community</span>
+        <span class="chip">Billboard + Native Card + Sponsored Answer + Sticky</span>
+    </div>
+
+    <div class="utility-bar ub-windom">
+        <span class="date">Thursday, April 9, 2026 · Windom, MN · 64°F</span>
+        <div class="util-links">
+            <a href="#">E-Edition</a>
+            <a href="#">Obituaries</a>
+            <a href="#">Subscribe</a>
+            <a href="#">Login</a>
+        </div>
+    </div>
+
+    <div class="masthead mh-windom" style="border-bottom: 3px double #0b1f52;">
+        <img src="../static/images/windomnews_logo.png" alt="windomnews.com" style="height:72px;">
+        <div class="tagline">Cottonwood County's trusted news source since 1886</div>
+    </div>
+
+    <nav class="section-nav sn-windom">
+        <a href="#">News</a><a href="#">Sports</a><a href="#">Obituaries</a>
+        <a href="#">Business</a><a href="#">Events</a><a href="#">Opinion</a>
+    </nav>
+
+    <section class="hero hero-windom">
+        <div class="hero-content">
+            <span class="kicker">✦ Powered by AI</span>
+            <h1>Ask Windom Anything</h1>
+            <p class="subtitle">Your local AI assistant for Cottonwood County.</p>
+            <div class="search-box sb-windom">
+                <span class="icon">🔍</span>
+                <input type="text" placeholder="What would you like to know?">
+                <button>Ask</button>
+            </div>
+            <div class="pills">
+                <button>This Week's News</button>
+                <button>Who's Hiring?</button>
+                <button>Sports Scores</button>
+            </div>
+
+            <!-- ★ AD SLOT 1: Sponsored answer inside the hero -->
+            <div class="sponsored-answer">
+                <span class="sa-tag">Sponsored</span>
+                <span class="sa-text"><strong>Windom Area Health</strong> — Walk-in clinic now open Saturdays 8am–noon. No appointment needed. <u>Learn more →</u></span>
+            </div>
+        </div>
+    </section>
+
+    <!-- ★ AD SLOT 2: Billboard between hero and content -->
+    <div class="billboard-wrap">
+        <span class="ad-disclosure">Advertisement</span>
+        <div class="ad-slot" style="width:970px; max-width:100%; height:250px; border-radius: 8px;">
+            <span class="ad-cpm">$15-22 CPM</span>
+            <span class="ad-label">Ad Slot 2</span>
+            <span class="ad-size">Billboard — 970 × 250</span>
+            <span class="ad-note">Between hero and content — highest impact position</span>
+        </div>
+    </div>
+
+    <!-- Content with stacked columns -->
+    <div class="content-grid grid-3col-stacked">
+        <!-- LEFT COLUMN: News + Regional stacked -->
+        <div class="stacked-col">
+            <div class="col-card cc-windom">
+                <h2>News</h2>
+                <div class="story">County board approves Jasper infrastructure funding</div>
+                <div class="story">Courthouse landscaping project moves forward</div>
+                <div class="story">School district unveils new budget proposal</div>
+                <div class="story">Windom Area Health awarded rural grant</div>
+            </div>
+            <div class="col-card cc-windom">
+                <h2>Regional</h2>
+                <div class="story">Jackson County approves wind farm expansion</div>
+                <div class="story">Pipestone National Monument sets summer hours</div>
+                <div class="story">Nobles County bridge project enters bid phase</div>
+            </div>
+        </div>
+
+        <!-- CENTER COLUMN: Business Spotlight + Events + Classifieds stacked -->
+        <div class="stacked-col">
+            <!-- ★ AD SLOT 3: Native "Business Spotlight" card -->
+            <div class="native-ad-card nat-windom">
+                <div class="sponsored-tag">★ Business Spotlight</div>
+                <div class="sponsor-logo">[ Business Photo / Logo ]</div>
+                <div class="sponsor-name">Windom Floor & Décor</div>
+                <div class="sponsor-desc">Serving Cottonwood County for 30 years. Spring flooring sale — 20% off all LVP through April.</div>
+                <a href="#" class="sponsor-cta">Visit Business →</a>
+            </div>
+
+            <div class="events-card">
+                <h3 class="eh-windom">Events</h3>
+                <div class="event-item">
+                    <div class="event-date-badge edb-windom"><div class="month">Apr</div><div class="day">12</div></div>
+                    <span class="event-title">Spring Craft Fair — Windom Community Center</span>
+                </div>
+                <div class="event-item">
+                    <div class="event-date-badge edb-windom"><div class="month">Apr</div><div class="day">15</div></div>
+                    <span class="event-title">County Board Meeting — 7pm Courthouse</span>
+                </div>
+                <div class="event-item">
+                    <div class="event-date-badge edb-windom"><div class="month">Apr</div><div class="day">19</div></div>
+                    <span class="event-title">Eagles Baseball vs. Redwood Valley</span>
+                </div>
+            </div>
+
+            <div class="classifieds-card">
+                <h3>Classifieds</h3>
+                <div class="classified-item">
+                    <div class="classified-icon ci-windom">🏠</div>
+                    <div class="classified-text"><span class="cl-tag clt-windom">For Sale</span>3BR home on 9th Ave — updated kitchen, 2-car garage</div>
+                </div>
+                <div class="classified-item">
+                    <div class="classified-icon ci-windom">🔧</div>
+                    <div class="classified-text"><span class="cl-tag clt-windom">Help Wanted</span>Diesel mechanic — Tru-Steel Mfg, full benefits</div>
+                </div>
+                <div class="classified-item">
+                    <div class="classified-icon ci-windom">🚜</div>
+                    <div class="classified-text"><span class="cl-tag clt-windom">Farm & Ag</span>JD 7230R, 2,400 hrs — serious inquiries only</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT COLUMN: Sports -->
+        <div class="stacked-col">
+            <div class="col-card cc-windom">
+                <h2>Sports</h2>
+                <div class="story">Windom Eagles win district championship</div>
+                <div class="story">High school baseball season opens Friday</div>
+                <div class="story">Summer rec sign-ups begin next week</div>
+                <div class="story">Eagles track qualifies five for sections</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ★ AD SLOT 4: Sticky bottom bar -->
+    <div class="sticky-bar sbar-windom">
+        <span class="sb-tag">Sponsored</span>
+        <span class="sb-text"><strong>HyVee Windom</strong> — Weekly deals just dropped. Fresh produce, deli specials, pharmacy savings.</span>
+        <button class="sb-cta">See Deals</button>
+    </div>
+</div>
+
+<div class="notes notes-windom" style="margin-bottom:30px;">
+    <h3>Layout 2 — Revenue + Community (Windom)</h3>
+    <ul>
+        <li><strong>3-column stacked layout:</strong> News + Regional | Business Spotlight + Events + Classifieds | Sports — all content visible, nothing lost</li>
+        <li><strong>Left column:</strong> News on top, Regional below — keeps the "what happened nearby" feel from before, just stacked vertically</li>
+        <li><strong>Center column:</strong> Business Spotlight (ad) → Events → Classifieds — a mix of revenue and community content that reads as a "what's happening" feed</li>
+        <li><strong>Events card:</strong> date badges with month/day mini-calendar look — high scannability, drives local engagement</li>
+        <li><strong>Classifieds card:</strong> amber border ties it visually to the Business Spotlight — feels like a "marketplace" zone readers will learn to check</li>
+        <li><strong>Right column:</strong> Sports stands alone — it has the depth and reader interest to fill its own column</li>
+        <li><strong>Revenue model:</strong> Sponsored Answer ($200-500/mo flat); Billboard (CPM $15-22); Business Spotlight (fixed weekly); Classifieds (paid listings); Sticky bar (monthly)</li>
+        <li><strong>Key insight:</strong> the center column is the Grand Network monetization engine — Spotlight, Events, and Classifieds are all sellable inventory that feels like content</li>
+    </ul>
+</div>
+
+<!-- ── PIPESTONE ── -->
+<div class="mockup-frame">
+    <div class="mockup-label label-pipestone">
+        <span><span class="title-strong">PIPESTONE</span> &nbsp;·&nbsp; Layout 2: Revenue + Community</span>
+        <span class="chip">Billboard + Native Card + Sponsored Answer + Sticky</span>
+    </div>
+
+    <div class="utility-bar ub-pipestone">
+        <span class="date">Thursday, April 9, 2026 · Pipestone, MN · 62°F</span>
+        <div class="util-links">
+            <a href="#">E-Edition</a>
+            <a href="#">Obituaries</a>
+            <a href="#">Subscribe</a>
+            <a href="#">Login</a>
+        </div>
+    </div>
+
+    <div class="masthead mh-pipestone" style="border-bottom: 3px double #14532d;">
+        <img src="../static/images/pipestone_star_logo.png" alt="Pipestone County Star" style="height:88px;">
+        <div class="tagline">Serving Pipestone County since 1879</div>
+    </div>
+
+    <nav class="section-nav sn-pipestone">
+        <a href="#">News</a><a href="#">Sports</a><a href="#">Obituaries</a>
+        <a href="#">Business</a><a href="#">Events</a><a href="#">Opinion</a>
+    </nav>
+
+    <section class="hero hero-pipestone">
+        <div class="hero-content">
+            <span class="kicker">✦ Powered by AI</span>
+            <h1>Ask Pipestone Anything</h1>
+            <p class="subtitle">Your local AI assistant for Pipestone County.</p>
+            <div class="search-box sb-pipestone">
+                <span class="icon">🔍</span>
+                <input type="text" placeholder="What would you like to know?">
+                <button>Ask</button>
+            </div>
+            <div class="pills">
+                <button>This Week's News</button>
+                <button>Who's Hiring?</button>
+                <button>Sports Scores</button>
+            </div>
+
+            <div class="sponsored-answer">
+                <span class="sa-tag">Sponsored</span>
+                <span class="sa-text"><strong>Pipestone County Medical Center</strong> — New family practice accepting patients. Call 507-825-5811. <u>Learn more →</u></span>
+            </div>
+        </div>
+    </section>
+
+    <div class="billboard-wrap">
+        <span class="ad-disclosure">Advertisement</span>
+        <div class="ad-slot" style="width:970px; max-width:100%; height:250px; border-radius: 8px;">
+            <span class="ad-cpm">$15-22 CPM</span>
+            <span class="ad-label">Ad Slot 2</span>
+            <span class="ad-size">Billboard — 970 × 250</span>
+            <span class="ad-note">Between hero and content — highest impact position</span>
+        </div>
+    </div>
+
+    <div class="content-grid grid-3col-stacked">
+        <!-- LEFT COLUMN: News + Regional stacked -->
+        <div class="stacked-col">
+            <div class="col-card cc-pipestone">
+                <h2>News</h2>
+                <div class="story">City council approves downtown streetscape plan</div>
+                <div class="story">National Monument unveils new exhibit</div>
+                <div class="story">School board sets fall enrollment dates</div>
+                <div class="story">County highway project enters bid phase</div>
+            </div>
+            <div class="col-card cc-pipestone">
+                <h2>Regional</h2>
+                <div class="story">Murray County announces spring road work</div>
+                <div class="story">Lincoln County weather advisory lifted</div>
+                <div class="story">Tri-county fair board confirms August dates</div>
+            </div>
+        </div>
+
+        <!-- CENTER COLUMN: Business Spotlight + Events + Classifieds stacked -->
+        <div class="stacked-col">
+            <div class="native-ad-card nat-pipestone">
+                <div class="sponsored-tag">★ Business Spotlight</div>
+                <div class="sponsor-logo">[ Business Photo / Logo ]</div>
+                <div class="sponsor-name">Lange's Café & Bakery</div>
+                <div class="sponsor-desc">Downtown Pipestone's favorite lunch spot since 1952. Try our famous hot beef sandwich and homemade pie.</div>
+                <a href="#" class="sponsor-cta">Visit Business →</a>
+            </div>
+
+            <div class="events-card">
+                <h3 class="eh-pipestone">Events</h3>
+                <div class="event-item">
+                    <div class="event-date-badge edb-pipestone"><div class="month">Apr</div><div class="day">11</div></div>
+                    <span class="event-title">Civil War Roundtable — Pipestone County Museum</span>
+                </div>
+                <div class="event-item">
+                    <div class="event-date-badge edb-pipestone"><div class="month">Apr</div><div class="day">14</div></div>
+                    <span class="event-title">City Council Meeting — 6pm City Hall</span>
+                </div>
+                <div class="event-item">
+                    <div class="event-date-badge edb-pipestone"><div class="month">Apr</div><div class="day">18</div></div>
+                    <span class="event-title">Arrows Softball vs. Luverne — 4:30pm</span>
+                </div>
+            </div>
+
+            <div class="classifieds-card">
+                <h3>Classifieds</h3>
+                <div class="classified-item">
+                    <div class="classified-icon ci-pipestone">🏠</div>
+                    <div class="classified-text"><span class="cl-tag clt-pipestone">For Sale</span>4BR on Hiawatha Ave — big lot, new roof 2025</div>
+                </div>
+                <div class="classified-item">
+                    <div class="classified-icon ci-pipestone">🔧</div>
+                    <div class="classified-text"><span class="cl-tag clt-pipestone">Help Wanted</span>Line cook — Lange's Café, flexible hours</div>
+                </div>
+                <div class="classified-item">
+                    <div class="classified-icon ci-pipestone">🚜</div>
+                    <div class="classified-text"><span class="cl-tag clt-pipestone">Farm & Ag</span>CIH 2388 combine, field ready — $42K OBO</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT COLUMN: Sports -->
+        <div class="stacked-col">
+            <div class="col-card cc-pipestone">
+                <h2>Sports</h2>
+                <div class="story">Arrows softball wins regional opener</div>
+                <div class="story">Track team qualifies four for state</div>
+                <div class="story">Summer baseball schedule released</div>
+                <div class="story">Golf team takes conference title</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="sticky-bar sbar-pipestone">
+        <span class="sb-tag">Sponsored</span>
+        <span class="sb-text"><strong>Pipestone County Co-op</strong> — Spring planting specials on seed, fertilizer, and crop protection.</span>
+        <button class="sb-cta">View Specials</button>
+    </div>
+</div>
+
+</body>
+</html>

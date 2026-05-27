@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Option B: Newspaper First (Desktop) - Cottonwood County Citizen</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #f3f4f6; color: #1a1a1a; min-width: 1200px; }
+
+  /* Header */
+  .header { background: #2d5f2d; color: white; display: flex; align-items: center; justify-content: space-between; padding: 12px 32px; }
+  .header-left { display: flex; align-items: center; gap: 16px; }
+  .header h1 { font-family: Georgia, serif; font-size: 22px; font-weight: 700; letter-spacing: 0.5px; }
+  .badge { background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; letter-spacing: 1px; }
+  .header-nav { display: flex; gap: 20px; font-size: 14px; }
+  .header-nav a { color: rgba(255,255,255,0.85); text-decoration: none; }
+
+  /* Content */
+  .content { max-width: 1200px; margin: 0 auto; padding: 28px 32px; }
+
+  .section-label { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #dc2626; margin-bottom: 14px; padding-bottom: 6px; border-bottom: 2px solid #dc2626; display: inline-block; }
+  .section { margin-bottom: 36px; }
+
+  /* Front page 3-card grid */
+  .fp-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .fp-card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.07); cursor: pointer; transition: box-shadow 0.15s, transform 0.15s; }
+  .fp-card:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.12); transform: translateY(-2px); }
+  .fp-img { height: 180px; background: linear-gradient(135deg, #e5e7eb 0%, #d1d5db 100%); display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 13px; }
+  .fp-card.lead { grid-column: 1 / 3; }
+  .fp-card.lead .fp-img { height: 240px; }
+  .fp-body { padding: 16px 18px; }
+  .fp-body h3 { font-family: Georgia, serif; font-size: 18px; line-height: 1.35; margin-bottom: 8px; }
+  .fp-card.lead .fp-body h3 { font-size: 22px; }
+  .fp-body p { font-size: 13px; color: #6b7280; line-height: 1.5; }
+  .fp-meta { font-size: 11px; color: #9ca3af; margin-top: 8px; }
+
+  /* Sports + Regional row */
+  .lower-row { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; }
+  .sports-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  .story-card { background: white; border-radius: 10px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); cursor: pointer; transition: box-shadow 0.15s; }
+  .story-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+  .story-card h3 { font-family: Georgia, serif; font-size: 15px; line-height: 1.35; margin-bottom: 6px; }
+  .story-card p { font-size: 13px; color: #6b7280; line-height: 1.45; }
+  .story-meta { font-size: 11px; color: #9ca3af; margin-top: 6px; }
+
+  .regional-sidebar .story-card { margin-bottom: 12px; }
+
+  /* Chat widget (collapsed) */
+  .chat-widget-collapsed { position: fixed; bottom: 24px; right: 24px; width: 380px; background: white; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.15); z-index: 100; overflow: hidden; }
+  .cw-bar { display: flex; align-items: center; gap: 10px; padding: 14px 18px; }
+  .cw-icon { width: 40px; height: 40px; background: #2d5f2d; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .cw-icon svg { width: 20px; height: 20px; fill: white; }
+  .cw-input { flex: 1; padding: 10px 14px; border: 1px solid #e5e7eb; border-radius: 20px; font-size: 13px; color: #9ca3af; background: #f9fafb; outline: none; }
+  .cw-expand { width: 36px; height: 36px; background: #f3f4f6; border: none; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .cw-expand svg { width: 16px; height: 16px; fill: #6b7280; }
+
+  /* Chat widget (expanded overlay) */
+  .chat-widget-expanded { position: fixed; bottom: 24px; right: 420px; width: 400px; height: 500px; background: white; border-radius: 16px; box-shadow: 0 12px 48px rgba(0,0,0,0.2); z-index: 101; display: flex; flex-direction: column; overflow: hidden; }
+  .cwe-header { background: #2d5f2d; color: white; padding: 16px 18px; display: flex; align-items: center; justify-content: space-between; }
+  .cwe-header h3 { font-family: Georgia, serif; font-size: 16px; }
+  .cwe-close { background: none; border: none; color: rgba(255,255,255,0.7); font-size: 20px; cursor: pointer; }
+  .cwe-messages { flex: 1; overflow-y: auto; padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+
+  .msg { max-width: 85%; display: flex; flex-direction: column; gap: 3px; }
+  .msg.bot { align-self: flex-start; }
+  .msg.user { align-self: flex-end; }
+  .msg .bubble { padding: 10px 14px; border-radius: 14px; font-size: 13px; line-height: 1.5; }
+  .msg.bot .bubble { background: #f3f4f6; border-bottom-left-radius: 4px; }
+  .msg.user .bubble { background: #2563eb; color: white; border-bottom-right-radius: 4px; }
+  .msg .bubble a { color: #2563eb; text-decoration: underline; }
+  .msg .label { font-size: 10px; color: #9ca3af; font-weight: 500; }
+  .msg.user .label { text-align: right; }
+
+  .cwe-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 18px; }
+  .chip { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; padding: 6px 12px; border-radius: 16px; font-size: 12px; cursor: pointer; }
+
+  .cwe-input { padding: 12px 18px; border-top: 1px solid #e5e7eb; display: flex; gap: 8px; }
+  .cwe-input input { flex: 1; padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 20px; font-size: 13px; outline: none; }
+  .cwe-input button { background: #2d5f2d; color: white; border: none; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+
+  /* Label annotation */
+  .demo-label { position: fixed; bottom: 530px; right: 420px; background: #1e293b; color: white; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; z-index: 102; }
+  .demo-label2 { position: fixed; bottom: 72px; right: 24px; background: #1e293b; color: white; padding: 4px 10px; border-radius: 6px; font-size: 10px; font-weight: 600; z-index: 102; transform: translateY(28px); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <h1>Cottonwood County Citizen</h1>
+    <span class="badge">GRAND NETWORK</span>
+  </div>
+  <nav class="header-nav">
+    <a href="#">Home</a>
+    <a href="#">News</a>
+    <a href="#">Sports</a>
+    <a href="#">Opinion</a>
+    <a href="#">Obituaries</a>
+    <a href="#">Subscribe</a>
+  </nav>
+</div>
+
+<div class="content">
+  <!-- Front Page -->
+  <div class="section">
+    <div class="section-label">Front Page</div>
+    <div class="fp-grid">
+      <div class="fp-card lead">
+        <div class="fp-img">Photo placeholder</div>
+        <div class="fp-body">
+          <h3>Windom Riverfest trims week, keeps traditions</h3>
+          <p>Organizers say the beloved summer festival will shift to a long weekend format while preserving the parade, live music on the Des Moines River stage, and the fireworks finale that draw thousands each year.</p>
+          <div class="fp-meta">Front Page &bull; April 2, 2026</div>
+        </div>
+      </div>
+      <div class="fp-card">
+        <div class="fp-img">Photo placeholder</div>
+        <div class="fp-body">
+          <h3>County board mulls future of buildings</h3>
+          <p>Commissioners weigh options for aging county-owned properties.</p>
+          <div class="fp-meta">Front Page &bull; April 1, 2026</div>
+        </div>
+      </div>
+      <div class="fp-card">
+        <div class="fp-img">Photo placeholder</div>
+        <div class="fp-body">
+          <h3>Schneider, Horkey team up for new project</h3>
+          <p>Two local entrepreneurs announce a joint venture to revitalize a vacant downtown storefront.</p>
+          <div class="fp-meta">Front Page &bull; March 31, 2026</div>
+        </div>
+      </div>
+      <div class="fp-card">
+        <div class="fp-img">Photo placeholder</div>
+        <div class="fp-body">
+          <h3>Chamber hires new director</h3>
+          <p>The Windom Area Chamber of Commerce welcomes its new executive director.</p>
+          <div class="fp-meta">Front Page &bull; March 30, 2026</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sports + Regional -->
+  <div class="lower-row">
+    <div class="section">
+      <div class="section-label">Sports</div>
+      <div class="sports-grid">
+        <div class="story-card">
+          <h3>Eagles set for season opener</h3>
+          <p>Windom football gears up for a competitive fall schedule with a roster full of returning starters.</p>
+          <div class="story-meta">Sports &bull; April 2, 2026</div>
+        </div>
+        <div class="story-card">
+          <h3>Wolverines sweep past Spartans</h3>
+          <p>Mt. Lake Area-Comfrey volleyball claims a decisive three-set victory in conference play.</p>
+          <div class="story-meta">Sports &bull; April 1, 2026</div>
+        </div>
+        <div class="story-card">
+          <h3>Cross-country team eyes section title</h3>
+          <p>Strong early-season performances have local runners believing a championship is within reach.</p>
+          <div class="story-meta">Sports &bull; March 31, 2026</div>
+        </div>
+        <div class="story-card">
+          <h3>Youth baseball signups open for summer</h3>
+          <p>Registration is now open for Windom summer leagues for ages 6 through 14.</p>
+          <div class="story-meta">Sports &bull; March 30, 2026</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section regional-sidebar">
+      <div class="section-label">Regional</div>
+      <div class="story-card">
+        <h3>MnDOT announces Hwy 71 resurfacing timeline</h3>
+        <p>Work on a 12-mile stretch south of Windom is expected to begin in June.</p>
+        <div class="story-meta">Regional &bull; April 1, 2026</div>
+      </div>
+      <div class="story-card">
+        <h3>Southwest MN broadband expansion moves forward</h3>
+        <p>Federal grant funding clears the way for high-speed internet in rural areas.</p>
+        <div class="story-meta">Regional &bull; March 29, 2026</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Collapsed chat widget -->
+<div class="chat-widget-collapsed">
+  <div class="cw-bar">
+    <div class="cw-icon">
+      <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/></svg>
+    </div>
+    <div class="cw-input">Ask about local news...</div>
+    <div class="cw-expand">
+      <svg viewBox="0 0 24 24"><path d="M7 14l5-5 5 5z"/></svg>
+    </div>
+  </div>
+</div>
+<span class="demo-label2">Collapsed state</span>
+
+<!-- Expanded chat overlay -->
+<div class="chat-widget-expanded">
+  <div class="cwe-header">
+    <h3>Ask the Citizen</h3>
+    <button class="cwe-close">&times;</button>
+  </div>
+  <div class="cwe-messages">
+    <div class="msg bot">
+      <span class="label">Citizen AI</span>
+      <div class="bubble">Welcome! I can help you find local news, sports scores, event details, and more from the Cottonwood County Citizen. What would you like to know?</div>
+    </div>
+    <div class="msg user">
+      <span class="label">You</span>
+      <div class="bubble">What's new in Riverfest?</div>
+    </div>
+    <div class="msg bot">
+      <span class="label">Citizen AI</span>
+      <div class="bubble">
+        The Windom Riverfest committee announced changes for 2026 &mdash; the festival is shifting to a long weekend (Thu-Sun) while keeping all the traditions: parade, river stage music, and fireworks.
+        <br><br>
+        <a href="#">Read full story &rarr;</a>
+      </div>
+    </div>
+  </div>
+  <div class="cwe-chips">
+    <span class="chip">Latest headlines</span>
+    <span class="chip">Eagles scores</span>
+    <span class="chip">County board</span>
+  </div>
+  <div class="cwe-input">
+    <input type="text" placeholder="Ask about local news...">
+    <button>
+      <svg width="16" height="16" fill="white" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+    </button>
+  </div>
+</div>
+<span class="demo-label">Expanded state</span>
+
+</body>
+</html>

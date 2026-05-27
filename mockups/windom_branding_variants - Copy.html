@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Windom Branding — Format Variants B & C</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,700;0,800;0,900;1,700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #eef0f4;
+    color: #1a1a2e;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    padding: 24px 24px 60px;
+}
+
+.mockup-frame {
+    max-width: 1180px;
+    margin: 0 auto 40px;
+    background: white;
+    border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(15,23,42,0.18);
+    overflow: hidden;
+    border: 1px solid #e2e8f0;
+}
+
+.mockup-label {
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 12px 22px;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.mockup-label .chip {
+    background: rgba(255,255,255,0.12);
+    padding: 3px 10px;
+    border-radius: 10px;
+    font-size: 10px;
+    letter-spacing: 0.8px;
+}
+
+.mockup-label .title-strong {
+    color: #ffffff;
+    font-weight: 700;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   OPTION B — EDITORIAL MASTHEAD (newspaper heritage feel)
+   ═══════════════════════════════════════════════════════════════════ */
+
+.b-utility-bar {
+    background: #f8fafc;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 6px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.75rem;
+    color: #64748b;
+}
+
+.b-utility-bar .date {
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+
+.b-utility-bar .util-links {
+    display: flex;
+    gap: 18px;
+}
+
+.b-utility-bar .util-links a {
+    color: #64748b;
+    text-decoration: none;
+}
+
+.b-utility-bar .util-links a:hover { color: #0b1f52; }
+
+.b-masthead {
+    background: white;
+    padding: 28px 24px 22px;
+    text-align: center;
+    border-bottom: 3px double #0b1f52;
+}
+
+.b-masthead img {
+    height: 72px;
+    width: auto;
+    display: inline-block;
+}
+
+.b-masthead .tagline {
+    font-family: 'Playfair Display', serif;
+    font-style: italic;
+    font-size: 0.95rem;
+    color: #475569;
+    margin-top: 10px;
+    letter-spacing: 0.3px;
+}
+
+.b-section-nav {
+    background: #0b1f52;
+    padding: 0 24px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+.b-section-nav a {
+    color: rgba(255,255,255,0.85);
+    text-decoration: none;
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 8px 16px;
+    border-radius: 4px;
+    transition: all 0.15s;
+}
+
+.b-section-nav a:hover {
+    background: rgba(255,255,255,0.1);
+    color: white;
+}
+
+.b-hero {
+    position: relative;
+    padding: 64px 24px 72px;
+    text-align: center;
+    overflow: hidden;
+    isolation: isolate;
+    background: #0b1f52;
+}
+
+.b-hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url('../static/images/windom_courthouse.jpg');
+    background-size: cover;
+    background-position: center 42%;
+    filter: grayscale(15%) brightness(1.15) contrast(1.05);
+    opacity: 0.32;
+    z-index: 0;
+}
+
+.b-hero::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(180deg, rgba(11,31,82,0.25) 0%, rgba(11,31,82,0.55) 100%),
+        radial-gradient(ellipse at center, transparent 0%, rgba(11,31,82,0.35) 80%);
+    z-index: 1;
+}
+
+.b-hero-content {
+    position: relative;
+    z-index: 2;
+    max-width: 720px;
+    margin: 0 auto;
+}
+
+.b-hero .kicker {
+    display: inline-block;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.35);
+    color: white;
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    margin-bottom: 18px;
+    backdrop-filter: blur(6px);
+}
+
+.b-hero h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 3rem;
+    font-weight: 900;
+    color: white;
+    margin-bottom: 12px;
+    letter-spacing: -0.8px;
+    line-height: 1.1;
+    text-shadow: 0 2px 24px rgba(0,0,0,0.45);
+}
+
+.b-hero .subtitle {
+    font-family: 'Playfair Display', serif;
+    font-style: italic;
+    font-size: 1.1rem;
+    color: rgba(255,255,255,0.95);
+    margin-bottom: 28px;
+    max-width: 560px;
+    margin-left: auto;
+    margin-right: auto;
+    text-shadow: 0 1px 10px rgba(0,0,0,0.5);
+}
+
+.b-search-box {
+    max-width: 720px;
+    margin: 0 auto;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 18px 50px rgba(0,0,0,0.28), 0 2px 6px rgba(0,0,0,0.1);
+    display: flex;
+    align-items: center;
+    padding: 0 8px 0 20px;
+    height: 62px;
+    border: 1px solid rgba(255,255,255,0.2);
+}
+
+.b-search-box .icon { color: #94a3b8; margin-right: 12px; font-size: 18px; }
+
+.b-search-box input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-size: 16px;
+    font-family: inherit;
+    background: transparent;
+}
+
+.b-search-box input::placeholder { color: #94a3b8; }
+
+.b-search-box button {
+    padding: 11px 24px;
+    border-radius: 8px;
+    border: none;
+    background: #0b1f52;
+    color: white;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.3px;
+}
+
+.b-pills {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 20px;
+}
+
+.b-pills button {
+    padding: 7px 16px;
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.4);
+    background: rgba(255,255,255,0.12);
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    font-family: inherit;
+}
+
+.b-pills button:hover {
+    background: rgba(255,255,255,0.22);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   OPTION C — SPLIT MAGAZINE (modern, photographic, premium)
+   ═══════════════════════════════════════════════════════════════════ */
+
+.c-navbar {
+    background: #0b1f52;
+    color: white;
+    padding: 0 28px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.c-navbar .brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.c-navbar .brand-logo-wrap {
+    background: white;
+    padding: 6px 12px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+}
+
+.c-navbar .brand-logo-wrap img {
+    height: 32px;
+    width: auto;
+    display: block;
+}
+
+.c-navbar .network-chip {
+    background: rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.85);
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    border: 1px solid rgba(255,255,255,0.15);
+}
+
+.c-navbar .links {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.c-navbar .links a {
+    color: rgba(255,255,255,0.8);
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 8px 14px;
+    border-radius: 6px;
+}
+
+.c-navbar .links a:hover {
+    background: rgba(255,255,255,0.08);
+    color: white;
+}
+
+.c-navbar .login-btn {
+    background: white !important;
+    color: #0b1f52 !important;
+    padding: 8px 18px !important;
+    font-weight: 700 !important;
+}
+
+.c-hero {
+    display: grid;
+    grid-template-columns: 1.05fr 1fr;
+    min-height: 460px;
+    position: relative;
+}
+
+/* Left — chat panel on navy */
+.c-hero-left {
+    background: linear-gradient(135deg, #0b1f52 0%, #142b6b 50%, #1d3a8a 100%);
+    padding: 56px 48px 56px 56px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.c-hero-left::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(circle at 30% 30%, rgba(99,102,241,0.25) 0%, transparent 50%),
+        radial-gradient(circle at 80% 80%, rgba(139,95,191,0.2) 0%, transparent 50%);
+    pointer-events: none;
+}
+
+.c-hero-left .content {
+    position: relative;
+    z-index: 1;
+    max-width: 520px;
+}
+
+.c-hero-left .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #a5b4fc;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+}
+
+.c-hero-left .eyebrow::before {
+    content: '';
+    width: 28px;
+    height: 2px;
+    background: #a5b4fc;
+}
+
+.c-hero-left h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.8rem;
+    font-weight: 900;
+    color: white;
+    margin-bottom: 12px;
+    letter-spacing: -0.6px;
+    line-height: 1.1;
+}
+
+.c-hero-left .subtitle {
+    font-size: 1rem;
+    color: rgba(255,255,255,0.8);
+    margin-bottom: 28px;
+    line-height: 1.55;
+    max-width: 460px;
+}
+
+.c-hero-left .search-card {
+    background: white;
+    border-radius: 14px;
+    padding: 18px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.4);
+}
+
+.c-hero-left .search-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 0 6px 0 14px;
+    height: 48px;
+    margin-bottom: 12px;
+}
+
+.c-hero-left .search-row .icon { color: #94a3b8; font-size: 16px; }
+
+.c-hero-left .search-row input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-size: 15px;
+    font-family: inherit;
+    background: transparent;
+}
+
+.c-hero-left .search-row input::placeholder { color: #94a3b8; }
+
+.c-hero-left .search-row button {
+    padding: 9px 18px;
+    border-radius: 7px;
+    border: none;
+    background: #0b1f52;
+    color: white;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.c-hero-left .pill-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.c-hero-left .pill-row button {
+    padding: 6px 12px;
+    border-radius: 14px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.c-hero-left .pill-row button:hover {
+    background: #eff3fb;
+    border-color: #c7d5ee;
+    color: #0b1f52;
+}
+
+/* Right — courthouse photo */
+.c-hero-right {
+    position: relative;
+    background-image: url('../static/images/windom_courthouse.jpg');
+    background-size: cover;
+    background-position: center 38%;
+    overflow: hidden;
+}
+
+.c-hero-right::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, rgba(11,31,82,0.35) 0%, rgba(11,31,82,0) 30%);
+    pointer-events: none;
+}
+
+.c-hero-right .photo-caption {
+    position: absolute;
+    bottom: 20px;
+    right: 24px;
+    color: rgba(255,255,255,0.9);
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+    background: rgba(0,0,0,0.4);
+    padding: 6px 12px;
+    border-radius: 6px;
+    backdrop-filter: blur(6px);
+    z-index: 2;
+}
+
+/* Shared content stub */
+.content-stub {
+    padding: 36px 28px 44px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 22px;
+    background: #f8fafc;
+    border-top: 1px solid #e5e7eb;
+}
+
+.col-card {
+    background: white;
+    border-radius: 10px;
+    padding: 20px;
+    border: 1px solid #e5e7eb;
+}
+
+.col-card h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.2rem;
+    color: #0b1f52;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #2b5ba8;
+}
+
+.col-card .story {
+    padding: 9px 0;
+    font-size: 0.85rem;
+    color: #334155;
+    border-bottom: 1px solid #f1f5f9;
+    line-height: 1.4;
+}
+
+.col-card .story:last-child { border-bottom: none; }
+
+/* Design notes */
+.notes {
+    max-width: 1180px;
+    margin: 0 auto 30px;
+    background: white;
+    border-radius: 12px;
+    padding: 22px 28px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 16px rgba(15,23,42,0.06);
+}
+
+.notes h3 {
+    font-family: 'Playfair Display', serif;
+    color: #0b1f52;
+    margin-bottom: 12px;
+    font-size: 1.15rem;
+}
+
+.notes ul {
+    list-style: none;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 9px 24px;
+}
+
+.notes li {
+    font-size: 0.86rem;
+    color: #334155;
+    padding-left: 18px;
+    position: relative;
+}
+
+.notes li::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: #2b5ba8;
+    font-weight: 700;
+}
+
+.spacer { height: 18px; }
+
+@media (max-width: 820px) {
+    .c-hero { grid-template-columns: 1fr; }
+    .c-hero-right { min-height: 280px; }
+    .notes ul, .content-stub { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════════════
+     OPTION B — EDITORIAL MASTHEAD
+     ════════════════════════════════════════════════════════════════ -->
+<div class="mockup-frame">
+    <div class="mockup-label">
+        <span><span class="title-strong">OPTION B</span> &nbsp;·&nbsp; Editorial Masthead (newspaper heritage)</span>
+        <span class="chip">Desktop · 1180px</span>
+    </div>
+
+    <!-- Utility bar (date + quick links, classic newspaper) -->
+    <div class="b-utility-bar">
+        <span class="date">Thursday, April 9, 2026 &nbsp;·&nbsp; Windom, MN &nbsp;·&nbsp; 64°F</span>
+        <div class="util-links">
+            <a href="#">E-Edition</a>
+            <a href="#">Obituaries</a>
+            <a href="#">Classifieds</a>
+            <a href="#">Subscribe</a>
+            <a href="#">Login</a>
+        </div>
+    </div>
+
+    <!-- Big masthead with centered logo -->
+    <div class="b-masthead">
+        <img src="../static/images/windomnews_logo.png" alt="windomnews.com">
+        <div class="tagline">Cottonwood County's trusted news source since 1886</div>
+    </div>
+
+    <!-- Section nav -->
+    <nav class="b-section-nav">
+        <a href="#">News</a>
+        <a href="#">Sports</a>
+        <a href="#">Obituaries</a>
+        <a href="#">Business</a>
+        <a href="#">Events</a>
+        <a href="#">Opinion</a>
+        <a href="#">Podcasts</a>
+    </nav>
+
+    <!-- Hero with courthouse photo -->
+    <section class="b-hero">
+        <div class="b-hero-content">
+            <span class="kicker">✦ Powered by AI</span>
+            <h1>Ask Windom Anything</h1>
+            <p class="subtitle">
+                Your local AI assistant for Cottonwood County news, events, and community.
+            </p>
+
+            <div class="b-search-box">
+                <span class="icon">🔍</span>
+                <input type="text" placeholder="What would you like to know?">
+                <button>Ask</button>
+            </div>
+
+            <div class="b-pills">
+                <button>This Week's News</button>
+                <button>Who's Hiring?</button>
+                <button>Sports Scores</button>
+                <button>Events Tonight</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Content stub -->
+    <div class="content-stub">
+        <div class="col-card">
+            <h2>News</h2>
+            <div class="story">County board approves Jasper infrastructure funding</div>
+            <div class="story">Courthouse landscaping project moves forward</div>
+            <div class="story">School district unveils new budget</div>
+        </div>
+        <div class="col-card">
+            <h2>Sports</h2>
+            <div class="story">Windom Eagles win district championship</div>
+            <div class="story">High school baseball season opens Friday</div>
+            <div class="story">Summer rec sign-ups begin</div>
+        </div>
+        <div class="col-card">
+            <h2>Regional</h2>
+            <div class="story">Pipestone announces road work schedule</div>
+            <div class="story">Jackson weather advisory lifted</div>
+            <div class="story">Tri-county fair dates confirmed</div>
+        </div>
+    </div>
+</div>
+
+<div class="notes">
+    <h3>Option B — Editorial Masthead</h3>
+    <ul>
+        <li><strong>Feel:</strong> traditional newspaper heritage — nameplate + section nav + double rule</li>
+        <li><strong>Utility bar:</strong> date/weather/quick links above (classic top strip)</li>
+        <li><strong>Logo:</strong> 72px tall, centered as a masthead (not a small nav logo)</li>
+        <li><strong>Double rule:</strong> navy 3px double border under masthead — old-school newspaper</li>
+        <li><strong>Section nav:</strong> navy bar with uppercase section links</li>
+        <li><strong>Courthouse:</strong> 32% opacity, more prominent (hero has more room to work)</li>
+        <li><strong>Headline:</strong> Playfair 3rem — feels like a print nameplate</li>
+        <li><strong>Tagline:</strong> italic Playfair — "trusted since 1886" heritage line</li>
+        <li><strong>Best for:</strong> readers who expect a newspaper, longform audience, brand heritage</li>
+        <li><strong>Trade-off:</strong> chat assistant reads as editorial, not tech-forward</li>
+    </ul>
+</div>
+
+<div class="spacer"></div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     OPTION C — SPLIT MAGAZINE
+     ════════════════════════════════════════════════════════════════ -->
+<div class="mockup-frame">
+    <div class="mockup-label">
+        <span><span class="title-strong">OPTION C</span> &nbsp;·&nbsp; Split Magazine (modern, photographic, premium)</span>
+        <span class="chip">Desktop · 1180px</span>
+    </div>
+
+    <!-- Navbar with logo on navy -->
+    <nav class="c-navbar">
+        <div class="brand">
+            <div class="brand-logo-wrap">
+                <img src="../static/images/windomnews_logo.png" alt="windomnews.com">
+            </div>
+            <span class="network-chip">Grand Network</span>
+        </div>
+        <div class="links">
+            <a href="#">News</a>
+            <a href="#">Sports</a>
+            <a href="#">Business</a>
+            <a href="#">Events</a>
+            <a href="#" class="login-btn">Subscribe</a>
+        </div>
+    </nav>
+
+    <!-- Split hero -->
+    <section class="c-hero">
+        <!-- Left: chat + headline on navy gradient -->
+        <div class="c-hero-left">
+            <div class="content">
+                <div class="eyebrow">Local AI · Powered by Grand Network</div>
+                <h1>Ask Windom<br>anything.</h1>
+                <p class="subtitle">
+                    News, events, businesses, jobs, sports, weather — Cottonwood County, instantly.
+                </p>
+
+                <div class="search-card">
+                    <div class="search-row">
+                        <span class="icon">🔍</span>
+                        <input type="text" placeholder="Try: 'Who's hiring this week?'">
+                        <button>Ask</button>
+                    </div>
+                    <div class="pill-row">
+                        <button>What's new this week?</button>
+                        <button>Who's hiring?</button>
+                        <button>Sports scores</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: full-bleed courthouse photo -->
+        <div class="c-hero-right">
+            <div class="photo-caption">Cottonwood County Courthouse, Windom</div>
+        </div>
+    </section>
+
+    <!-- Content stub -->
+    <div class="content-stub">
+        <div class="col-card">
+            <h2>News</h2>
+            <div class="story">County board approves Jasper infrastructure funding</div>
+            <div class="story">Courthouse landscaping project moves forward</div>
+            <div class="story">School district unveils new budget</div>
+        </div>
+        <div class="col-card">
+            <h2>Sports</h2>
+            <div class="story">Windom Eagles win district championship</div>
+            <div class="story">High school baseball season opens Friday</div>
+            <div class="story">Summer rec sign-ups begin</div>
+        </div>
+        <div class="col-card">
+            <h2>Regional</h2>
+            <div class="story">Pipestone announces road work schedule</div>
+            <div class="story">Jackson weather advisory lifted</div>
+            <div class="story">Tri-county fair dates confirmed</div>
+        </div>
+    </div>
+</div>
+
+<div class="notes">
+    <h3>Option C — Split Magazine</h3>
+    <ul>
+        <li><strong>Feel:</strong> modern magazine/premium tech — 55/45 split hero</li>
+        <li><strong>Courthouse at full opacity</strong> on the right — photo is the showpiece, no overlay fighting it</li>
+        <li><strong>Left side</strong> is dedicated to the chat product: navy gradient + eyebrow + headline + elevated search card</li>
+        <li><strong>Logo</strong> sits in a white pill on the navy navbar — keeps brand readable without changing nav color</li>
+        <li><strong>Search card</strong> is an elevated white panel with built-in pills inside, feels like a product</li>
+        <li><strong>Photo caption</strong> "Cottonwood County Courthouse, Windom" — adds place and authority</li>
+        <li><strong>Responsive:</strong> stacks vertically on mobile, photo becomes banner above the chat</li>
+        <li><strong>Best for:</strong> showcasing AI chat as the hero product while tying to place</li>
+        <li><strong>Trade-off:</strong> more visual weight on photo; mobile stacking means photo eats a lot of first scroll</li>
+    </ul>
+</div>
+
+</body>
+</html>
