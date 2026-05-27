@@ -126,7 +126,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-27 · v40 — Phase F: Tier 4 Inventory + Billing/Usage + Chatbot Preview. Quadd bumped to Tier 4 ($799/mo). Three new surfaces — Inventory sidebar tab w/ feed connect + fixture importer + faceted-search visibility; Billing sub-tab in Settings w/ tier picker + usage table + invoice history; Chatbot Preview sidebar tab w/ sentiment + escalation flags + transcript drilldown.';
+  const BUILD_VERSION = '2026-05-27 · v41 — Phase F polish: Home tile "Chatbot conversations" now reads live count (was stuck on seeded 0); "Train the bot on this" CTA in transcript modal now hands the consumer\'s opening intent to Marketing Plan via a confirm-or-dismiss banner that appends to customer_language.';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -726,6 +726,29 @@
         <circle cx={stepX(values.length - 1)} cy={stepY(values[values.length - 1])} r="2.5" fill={color} />
       </svg>
     );
+  };
+
+  /* ============================================================
+     TRAIN-THE-BOT HELPERS
+     ============================================================ */
+  // Polish item: "Train the bot on this" pulls the consumer's opening intent
+  // out of a chatbot transcript and queues it as a phrase to add to the
+  // Marketing Plan's customer-language list. Decision: first consumer turn
+  // only (cleanest signal of intent), case-insensitive exact dedupe against
+  // the existing list (predictable; same phrase doesn't pile up).
+  const extractTrainingPhrases = (transcript) => {
+    const opener = (transcript?.transcript || []).find(t => t.who === 'consumer');
+    const text = (opener?.text || '').trim();
+    return text ? [text] : [];
+  };
+  const mergeCustomerLanguage = (existing, incoming) => {
+    const have = new Set((existing || []).map(p => p.trim().toLowerCase()));
+    const out = [...(existing || [])];
+    for (const p of incoming) {
+      const key = p.trim().toLowerCase();
+      if (key && !have.has(key)) { have.add(key); out.push(p.trim()); }
+    }
+    return out;
   };
 
   /* ============================================================
@@ -4054,7 +4077,7 @@
   /* ============================================================
      VIEW: MARKETING PLAN
      ============================================================ */
-  const MarketingPlanView = () => {
+  const MarketingPlanView = ({ pendingTrain, onClearTrain }) => {
     const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings, voiceBrief } = useDashboard();
     const mutate = useDashboardMutate();
     const [tab, setTab] = useState('strategy');
@@ -4063,12 +4086,28 @@
     const [planError, setPlanError] = useState(null);
     const [planToast, setPlanToast] = useState(null);
     const [briefOpen, setBriefOpen] = useState(true);  // voice brief panel starts expanded on Day 1
+    const [adoptingTrain, setAdoptingTrain] = useState(false);
 
     useEffect(() => {
       if (!planToast) return;
       const t = setTimeout(() => setPlanToast(null), 3000);
       return () => clearTimeout(t);
     }, [planToast]);
+
+    // Handler for the "Add to customer language" CTA in the pendingTrain banner.
+    // Merges the captured phrase(s) into marketingPlan.customerLanguage (the AI
+    // Agent reads this on every turn), then clears the banner.
+    const adoptTrain = async () => {
+      if (!pendingTrain || adoptingTrain) return;
+      setAdoptingTrain(true);
+      const merged = mergeCustomerLanguage(marketingPlan?.customerLanguage || [], pendingTrain.phrases || []);
+      const ok = await saveField('customerLanguage', merged);
+      setAdoptingTrain(false);
+      if (ok) {
+        setPlanToast(`Added "${pendingTrain.phrases[0]}" to your customer language list.`);
+        onClearTrain?.();
+      }
+    };
 
     // PUT a single field. autosave-on-blur: caller passes the field key and
     // new value, we POST and update context. Errors surface in the banner.
@@ -4139,6 +4178,47 @@
           </div>
         )}
         <div className="px-8 py-7 space-y-5">
+          {/* "Train the bot on this" handoff banner — shown when the owner
+              came in from a Chatbot transcript. Confirms the captured phrase
+              and offers a one-click append to customer_language. */}
+          {pendingTrain && (
+            <Card className="bg-gradient-to-br from-violet-50 via-white to-white border-violet-200">
+              <div className="flex items-start gap-4">
+                <div className="shrink-0 w-11 h-11 rounded-xl bg-violet-500 text-white flex items-center justify-center">
+                  <Icon name="target" size={20} strokeWidth={2} />
+                </div>
+                <div className="flex-1">
+                  <div className="text-[11px] uppercase tracking-wider font-semibold text-violet-700 mb-1">Captured from chatbot</div>
+                  <div className="font-serif text-lg text-ink leading-snug">
+                    Add this consumer phrase to your customer language?
+                  </div>
+                  <blockquote className="text-sm text-ink leading-relaxed italic border-l-4 border-violet-300 pl-3 py-1 mt-2">
+                    {pendingTrain.phrases[0]}
+                  </blockquote>
+                  <div className="text-xs text-ink-faint mt-2">
+                    From conversation about <strong>{pendingTrain.topicLabel}</strong>
+                    {pendingTrain.escalationFlag && pendingTrain.escalationReason
+                      ? <> · flagged for escalation: <span className="text-amber-700">{pendingTrain.escalationReason}</span></>
+                      : null}
+                  </div>
+                  <div className="flex items-center gap-2 mt-4">
+                    <button
+                      onClick={adoptTrain}
+                      disabled={adoptingTrain}
+                      className="px-3 py-1.5 rounded-lg bg-brand-700 text-white text-sm hover:bg-brand-800 disabled:opacity-60 inline-flex items-center gap-2">
+                      <Icon name="check" size={14} /> {adoptingTrain ? 'Adding…' : 'Add to customer language'}
+                    </button>
+                    <button
+                      onClick={() => onClearTrain?.()}
+                      className="px-3 py-1.5 rounded-lg border border-surface-edge text-sm text-ink hover:bg-surface inline-flex items-center gap-2">
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
+
           {/* Voice brief — the synthesized source the rest of the plan derives from */}
           {voiceBrief && (
             <Card className="bg-gradient-to-br from-violet-50 via-white to-white border-violet-200">
@@ -5569,7 +5649,7 @@
   /* ============================================================
      VIEW: CHATBOT PREVIEW  (Phase F.3 — Tier 3+)
      ============================================================ */
-  const ChatbotPreviewView = ({ onNavigate }) => {
+  const ChatbotPreviewView = ({ onNavigate, onTrain }) => {
     const { business } = useDashboard();
     const mutate = useDashboardMutate();
     const [state, setState]     = useState(null);
@@ -5584,15 +5664,26 @@
 
     // Sync the dashboard-context chatbot slim slice from a freshly-fetched
     // /api/chatbot response. Keeps the sidebar badge + Home tile honest
-    // without a separate /api/bootstrap roundtrip.
+    // without a separate /api/bootstrap roundtrip. Also patches stats.chatbot
+    // so the Home view's "Chatbot conversations" tile matches the live count
+    // right after Import sample / Clear fixtures.
     const syncBootstrapSlice = useCallback((data) => {
+      const count = data.totals?.count || 0;
       mutate(prev => prev ? ({
         ...prev,
         chatbot: {
           tierEligible:      data.tierEligible,
-          conversationCount: data.totals?.count || 0,
+          conversationCount: count,
           escalationCount:   data.totals?.escalationCount || 0,
         },
+        stats: prev.stats ? ({
+          ...prev.stats,
+          chatbot: {
+            ...(prev.stats.chatbot || {}),
+            value:  count,
+            helper: count > 0 ? 'served this month' : 'not yet configured',
+          },
+        }) : prev.stats,
       }) : prev);
     }, [mutate]);
 
@@ -5863,7 +5954,25 @@
                   <>{transcript.consumerLabel} · {transcript.turnCount} turns · {Math.round(transcript.durationSeconds)}s</>
                 )}
               </div>
-              <button onClick={() => onNavigate?.('plan')}
+              <button
+                onClick={() => {
+                  if (!transcript) return;
+                  const phrases = extractTrainingPhrases(transcript);
+                  if (phrases.length === 0) {
+                    // Defensive: a transcript with no consumer turn is unusual,
+                    // but soft-fall to a plain navigate so the CTA never feels broken.
+                    onNavigate?.('plan');
+                    return;
+                  }
+                  onTrain?.({
+                    topicLabel: transcript.topicLabel,
+                    escalationFlag: transcript.escalationFlag,
+                    escalationReason: transcript.escalationReason,
+                    phrases,
+                  });
+                  setOpenId(null);
+                  setTranscript(null);
+                }}
                 className="px-3 py-1.5 rounded-lg bg-brand-700 text-white text-sm hover:bg-brand-800 inline-flex items-center gap-2">
                 <Icon name="target" size={14} /> Train the bot on this
               </button>
@@ -6667,9 +6776,17 @@
     // and scrollIntoView + flashes a highlight ring. Auto-clears so a manual
     // re-visit doesn't re-trigger the scroll.
     const [scrollToId, setScrollToId] = useState(null);
+    // Polish: when ChatbotPreview's "Train the bot on this" CTA fires, we stash
+    // the captured intent here and navigate to plan; MarketingPlanView reads it
+    // and renders a banner to confirm-or-dismiss the add to customer language.
+    const [pendingTrain, setPendingTrain] = useState(null);
     const navigate = (nextView, nextScrollToId = null) => {
       setView(nextView);
       setScrollToId(nextScrollToId);
+    };
+    const handleTrain = (payload) => {
+      setPendingTrain(payload);
+      navigate('plan');
     };
 
     useEffect(() => {
@@ -6730,10 +6847,10 @@
           {view === 'performance' && <PerformanceView />}
           {view === 'ads'         && <AdsView onNavigate={navigate} />}
           {view === 'reviews'     && <ReviewsView scrollToId={scrollToId} onScrollHandled={() => setScrollToId(null)} />}
-          {view === 'plan'        && <MarketingPlanView />}
+          {view === 'plan'        && <MarketingPlanView pendingTrain={pendingTrain} onClearTrain={() => setPendingTrain(null)} />}
           {view === 'inventory'   && <InventoryView onNavigate={navigate} />}
           {view === 'chat'        && <ChatView onNavigate={navigate} />}
-          {view === 'chatbotpreview' && <ChatbotPreviewView onNavigate={navigate} />}
+          {view === 'chatbotpreview' && <ChatbotPreviewView onNavigate={navigate} onTrain={handleTrain} />}
           {view === 'settings'    && <SettingsView onTalkToHuman={() => setHumanOpen(true)} />}
         </main>
 

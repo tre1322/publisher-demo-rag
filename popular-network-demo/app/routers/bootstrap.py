@@ -187,20 +187,37 @@ def _chat_payload(turn: ChatTurn) -> dict[str, Any]:
     return payload
 
 
-def _stats_payload(notices: DashboardNotices | None, agg: ReviewAggregate | None) -> dict[str, Any]:
-    """Compose the Home-view stat tiles. Phase A: use seeded overrides verbatim."""
+def _stats_payload(
+    notices: DashboardNotices | None,
+    agg: ReviewAggregate | None,
+    *,
+    tier: int = 0,
+    chatbot_count: int = 0,
+) -> dict[str, Any]:
+    """Compose the Home-view stat tiles. Phase A: use seeded overrides verbatim.
+
+    Phase F polish: the chatbot tile is computed from the live ChatbotConversation
+    count (not a seeded override), so the Home tile and Sidebar badge agree after
+    fixture import. Below Tier 3 the tile stays as a "Tier 3+ preview" upsell.
+    """
     overrides = (notices.stats_overrides_json if notices else None) or {}
     reviews_stat = overrides.get("reviews") or {
         "value": 7,
         "rating": agg.aggregate if agg else 4.8,
         "helper": f"{agg.aggregate if agg else 4.8} ★ avg",
     }
+    if tier < 3:
+        chatbot_stat = {"value": 0, "helper": "Tier 3+ preview"}
+    elif chatbot_count == 0:
+        chatbot_stat = {"value": 0, "helper": "not yet configured"}
+    else:
+        chatbot_stat = {"value": chatbot_count, "helper": "served this month"}
     return {
         "posts":      overrides.get("posts",      {"value": 12, "prev": 8, "delta": "+4", "helper": "across FB, IG, GBP"}),
         "engagement": overrides.get("engagement", {"value": "+28%", "helper": "vs prior 30 days", "positive": True}),
         "reviews":    reviews_stat,
         "spend":      overrides.get("spend",      {"used": 112, "budget": 150, "helper": "$200 / mo recommended"}),
-        "chatbot":    overrides.get("chatbot",    {"value": 34, "helper": "Tier 3 preview"}),
+        "chatbot":    chatbot_stat,
     }
 
 
@@ -329,7 +346,7 @@ def get_bootstrap(business_id: int = 1, db: Session = Depends(get_db)) -> dict[s
 
     payload: dict[str, Any] = {
         "business": _business_payload(biz),
-        "stats": _stats_payload(notices, agg),
+        "stats": _stats_payload(notices, agg, tier=biz.tier, chatbot_count=chatbot_total_count),
         "attention": notices.attention_json if notices else [],
         "weekRecap": notices.week_recap_json if notices else [],
         "posts": [_post_payload(p) for p in posts],
