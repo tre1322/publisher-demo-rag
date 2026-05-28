@@ -38,6 +38,12 @@ class Business(Base):
     tech_name: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     years_in_town: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     ase_certified: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Phase H.2.2 — widget CORS allowlist. JSON list of allowed origins
+    # (e.g. ["https://cottonwoodcountycitizen.com", "https://staging.example.com"]).
+    # When null/empty, /api/widget/chat accepts any Origin (v1 default — most
+    # pilots won't bother locking this down at first). When populated, the
+    # widget endpoint enforces it on preflight + actual request.
+    allowed_origins_json: Mapped[Any] = mapped_column(JSON, nullable=True)
 
 
 class Post(Base):

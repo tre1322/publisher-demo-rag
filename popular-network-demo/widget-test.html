@@ -1,0 +1,71 @@
+<!doctype html>
+<!--
+  Popular Network — Widget test page
+
+  Standalone manual-verification page for /static/widget.js. Mimics what a
+  publisher's site would look like after pasting in the embed snippet.
+
+  Hit:    http://localhost:8765/widget-test.html
+  Click:  the chat bubble in the bottom-right
+  Send:   any message; should get a Claude reply (requires ANTHROPIC_API_KEY)
+
+  This is NOT served as an auth-gated page — the widget is supposed to work
+  unauthenticated for consumers visiting a publisher's site.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Widget test — Popular Network</title>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f7fa; }
+    .container { max-width: 760px; margin: 80px auto; padding: 40px; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+    h1 { margin: 0 0 12px; font-size: 28px; color: #0f172a; }
+    p { color: #475569; line-height: 1.6; }
+    code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+    .note { padding: 16px; background: #fef3c7; border: 1px solid #fde68a; border-radius: 8px; margin: 16px 0; font-size: 14px; color: #92400e; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Mock publisher article</h1>
+    <p>
+      This page simulates what a small-publisher website looks like after they paste in the
+      <code>PopularNetworkWidget.init(...)</code> snippet. The chat bubble in the bottom-right
+      is loaded by <code>/static/widget.js</code>, configured for <code>businessId: 1</code> (Quadd.ai).
+    </p>
+    <p>
+      Click the bubble, type a question, and you should get a Claude-generated reply that uses
+      Quadd's voice brief as system context. The session id persists to <code>sessionStorage</code>
+      so a page refresh continues the same conversation.
+    </p>
+    <div class="note">
+      <strong>Requires:</strong> <code>ANTHROPIC_API_KEY</code> env var set when running the server
+      (<code>uv run python -m app.main</code>). Without it the widget shows a "temporarily unavailable" message.
+    </div>
+    <p>
+      <strong>Try sending:</strong>
+    </p>
+    <ul>
+      <li>"What does Quadd.ai do?"</li>
+      <li>"Tell me about pricing"</li>
+      <li>"Can I talk to a human?"  (should set escalation_flag = true in the dashboard)</li>
+    </ul>
+    <p>
+      Sessions land in <code>Settings → Chatbot Preview</code> on the dashboard with
+      <code>source='ingested'</code>.
+    </p>
+  </div>
+
+  <script src="/static/widget.js"></script>
+  <script>
+    PopularNetworkWidget.init({
+      businessId: 1,
+      apiBaseUrl: '',                // same-origin
+      title: 'Ask Quadd.ai',
+      greeting: 'Hi! I can answer questions about Quadd.ai — what we do, pricing, integrations. What would you like to know?',
+      accent: '#3b82f6',
+    });
+  </script>
+</body>
+</html>

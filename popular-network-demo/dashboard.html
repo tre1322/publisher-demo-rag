@@ -126,7 +126,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-28 · v45 — Phase H.1.5 dashboard auth gate + login page. / and /dashboard.html redirect to /login when unauthed; /login redirects to / when authed. New login.html (Tailwind CDN, no React) POSTs to /api/auth/login. Sign-out button added to Settings → Account tab. RequireBusinessMiddleware no longer exempts /login so the route handler can detect logged-in users and redirect them away. 18/18 smokes green (smoke_login added).';
+  const BUILD_VERSION = '2026-05-28 · v46 — Phase H.1.6 invite flow + H.2 publisher embed. Invite mint/list/revoke at /api/auth/invites (owner-only); public claim at /invite?token=... New embeddable chat widget (/static/widget.js, vanilla JS ~8KB) targets POST /api/widget/chat (anonymous, per-IP rate limit, per-business daily Claude token cap). Per-business CORS allowlist via Business.allowed_origins_json. Integrations tab adds "Chat widget embed" snippet card. 20/20 smokes green (smoke_invite + smoke_widget added).';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -6859,6 +6859,44 @@ fetch('https://amplafai.com/api/chatbot/ingest', {
 });`}</pre>
                     <div className="text-xs text-ink-soft mt-2">
                       Returns <span className="font-mono">{`{ ok, conversationId, sentiment, escalationFlag }`}</span>. Idempotent on <span className="font-mono">external_session_id</span> — safe to retry after a network blip.
+                    </div>
+                  </Card>
+
+                  {/* Phase H.2.3 — Chat widget embed snippet. Different from
+                      the relay above: publishers without their own chatbot
+                      drop these two <script> tags on their site to install
+                      our widget directly. Chats stream into /api/widget/chat
+                      and surface in Chatbot Preview the same way ingested
+                      sessions do (source='ingested'). */}
+                  <Card>
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <SectionHeader title="Chat widget embed"
+                        subtitle="Drop two script tags on your site to install the chat bubble." />
+                      <button onClick={() => copyToClipboard(
+                        `<script src="${location.origin}/static/widget.js"></script>\n<script>\n  PopularNetworkWidget.init({\n    businessId: ${business.id || 1},\n    apiBaseUrl: '${location.origin}',\n    title: 'Ask ${(business.name || 'us').replace(/'/g, "\\'")}',\n    greeting: 'Hi! How can we help today?'\n  });\n</script>`,
+                        'Embed snippet'
+                      )} className="text-xs px-2 py-1 rounded-md border border-surface-edge text-ink-soft hover:bg-surface inline-flex items-center gap-1">
+                        <Icon name="copy" size={12} /> Copy
+                      </button>
+                    </div>
+                    <pre className="bg-ink/90 text-white/90 rounded-lg p-4 overflow-x-auto text-xs leading-relaxed">{`<script src="${location.origin}/static/widget.js"></script>
+<script>
+  PopularNetworkWidget.init({
+    businessId: ${business.id || 1},
+    apiBaseUrl: '${location.origin}',
+    title: 'Ask ${(business.name || 'us').replace(/'/g, "\\'")}',
+    greeting: 'Hi! How can we help today?'
+  });
+</script>`}</pre>
+                    <div className="text-xs text-ink-soft mt-2">
+                      The widget floats as a bubble bottom-right; click to expand into a chat panel. Conversations append to Chatbot Preview as <span className="font-mono">source='ingested'</span>. Per-IP rate limit: 50 msgs/hour. Per-business daily token cap: 100k Claude tokens.
+                    </div>
+                    <div className="mt-3 flex items-center gap-2">
+                      <a href="/static/widget.js" target="_blank" rel="noopener"
+                        className="text-xs underline text-ink-soft hover:text-ink">View widget.js source</a>
+                      <span className="text-ink-faint">·</span>
+                      <a href="/widget-test.html" target="_blank" rel="noopener"
+                        className="text-xs underline text-ink-soft hover:text-ink">Try it on the test page</a>
                     </div>
                   </Card>
                 </div>

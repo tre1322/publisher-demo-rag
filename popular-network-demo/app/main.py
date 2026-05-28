@@ -49,6 +49,7 @@ from .routers import (
     reach,
     reviews,
     settings,
+    widget,
 )
 from .seed import seed_if_empty
 
@@ -67,6 +68,7 @@ def _startup() -> None:
     # init_db() above creates all tables fresh; this catches the case where
     # the table exists but a newer column hasn't been added yet.
     _add_col_if_missing("settings", "notifications_json", "JSON")  # B.4
+    _add_col_if_missing("businesses", "allowed_origins_json", "JSON")  # H.2.2 widget CORS
     inserted = seed_if_empty()
     if inserted:
         log.info("Seeded Quadd.ai (business_id=1) — Day-1 customer w/ voice brief loaded")
@@ -307,6 +309,7 @@ app.add_middleware(RequireBusinessMiddleware)
 
 app.include_router(auth.router, prefix="/api", tags=["auth"])
 app.include_router(invites.router, prefix="/api", tags=["invites"])
+app.include_router(widget.router, prefix="/api", tags=["widget"])
 app.include_router(bootstrap.router, prefix="/api", tags=["bootstrap"])
 app.include_router(posts.router, prefix="/api", tags=["posts"])
 app.include_router(approvals.router, prefix="/api", tags=["approvals"])
