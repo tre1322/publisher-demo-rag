@@ -27,6 +27,11 @@ from .sessions import COOKIE_NAME, lookup_session, touch_session
 # Paths that bypass the auth check entirely (truly public).
 # /api/auth/logout is here so a stale/expired session can still call it to
 # clear the cookie — the endpoint handles the no-cookie case gracefully.
+#
+# Note: /login (HTML page) is NOT exempt. We want the middleware to populate
+# request.state.user_id so the route handler can redirect logged-in users
+# AWAY from /login back to /. Unauthed users still get through (the
+# "no /api/ + no cookie → call_next" branch below handles HTML pages).
 EXEMPT_PREFIXES: tuple[str, ...] = (
     "/api/auth/login",
     "/api/auth/register",
@@ -36,7 +41,6 @@ EXEMPT_PREFIXES: tuple[str, ...] = (
     "/docs",
     "/redoc",
     "/openapi.json",
-    "/login",             # login page HTML
     "/favicon",
 )
 

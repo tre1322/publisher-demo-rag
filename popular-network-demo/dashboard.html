@@ -126,7 +126,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-05-27 · v44 — Compose "Re-draft from brief" wired to new POST /api/compose/redraft (one-shot Claude call with forced compose_drafts tool_use). Disabled-visible during request, error banner on failure, success toast. Backend: app/routers/compose.py + system_prompt scrubbed of hardcoded Westbrook seasonal context (was leaking into every Quadd chat turn). Performance _INSIGHTS_POOL fully migrated to Quadd-themed insights (LinkedIn extractor demos, INMA co-marketing, 38-page court doc origin).';
+  const BUILD_VERSION = '2026-05-28 · v45 — Phase H.1.5 dashboard auth gate + login page. / and /dashboard.html redirect to /login when unauthed; /login redirects to / when authed. New login.html (Tailwind CDN, no React) POSTs to /api/auth/login. Sign-out button added to Settings → Account tab. RequireBusinessMiddleware no longer exempts /login so the route handler can detect logged-in users and redirect them away. 18/18 smokes green (smoke_login added).';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -6456,6 +6456,32 @@
                     </p>
                   </div>
                   <Button icon="phone" variant="primary" onClick={onTalkToHuman}>Talk to a human</Button>
+                </div>
+              </Card>
+
+              {/* Phase H.1.5 — sign-out. Server-side gate redirects to /login
+                  on next nav after the cookie is cleared. */}
+              <Card>
+                <SectionHeader title="Session" subtitle="Sign out of this device." />
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-ink-soft">
+                    You're signed in on this device. Clicking sign out will end this session and send you back to the login page.
+                  </p>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon="logout"
+                    onClick={async () => {
+                      try {
+                        await fetch('/api/auth/logout', { method: 'POST' });
+                      } catch (e) {
+                        console.error('[settings.logout]', e);
+                      }
+                      window.location = '/login';
+                    }}
+                  >
+                    Sign out
+                  </Button>
                 </div>
               </Card>
             </div>

@@ -1,0 +1,140 @@
+<!doctype html>
+<!--
+  Popular Network — Login
+
+  Phase H.1.5 — minimal auth-gate landing page. No React; a single <form> that
+  POSTs to /api/auth/login, then window.location = "/" on success.
+
+  Visual language matches dashboard.html:
+    - Tailwind CDN
+    - Soft grey background (#fafafa), white card, rounded-2xl, shadow-sm
+    - System font stack — same as dashboard
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in — Popular Network</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    html { font-size: 19px; }  /* Matches Trevor's 2496px-monitor calibration. */
+    body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  </style>
+</head>
+<body class="min-h-screen bg-[#fafafa] flex items-center justify-center px-4">
+
+  <div class="w-full max-w-md">
+    <div class="mb-8 text-center">
+      <h1 class="text-3xl font-semibold text-slate-900 tracking-tight">Popular Network</h1>
+      <p class="mt-2 text-sm text-slate-500">Marketing Agent</p>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+      <h2 class="text-xl font-semibold text-slate-900 mb-1">Sign in</h2>
+      <p class="text-sm text-slate-500 mb-6">Use the email and password from your publisher's invite.</p>
+
+      <form id="login-form" class="space-y-4" autocomplete="on">
+        <div>
+          <label for="email" class="block text-sm font-medium text-slate-700 mb-1">Email</label>
+          <input
+            type="email" id="email" name="email" required autocomplete="email"
+            class="w-full px-3 py-2 border border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder:text-slate-400"
+            placeholder="you@business.com"
+          />
+        </div>
+        <div>
+          <label for="password" class="block text-sm font-medium text-slate-700 mb-1">Password</label>
+          <input
+            type="password" id="password" name="password" required minlength="8" autocomplete="current-password"
+            class="w-full px-3 py-2 border border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder="At least 8 characters"
+          />
+        </div>
+
+        <!-- Disabled-visible error banner: always rendered, hidden until set
+             (per CLAUDE.md "Prefer disabled-visible" pattern). -->
+        <div id="error-banner" class="hidden text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2"></div>
+
+        <button
+          type="submit" id="submit-btn"
+          class="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg transition-colors"
+        >
+          Sign in
+        </button>
+      </form>
+
+      <p class="mt-6 text-xs text-slate-400 text-center">
+        Forgot your password? Email your publisher to reset.
+      </p>
+    </div>
+
+    <p class="mt-8 text-xs text-slate-400 text-center">
+      Trouble signing in? Contact your publisher or
+      <a href="mailto:help@popularnetwork.example" class="underline hover:text-slate-600">help@popularnetwork.example</a>
+    </p>
+  </div>
+
+  <script>
+    // Minimal vanilla JS — no React for the login page. Three responsibilities:
+    //   1. POST credentials to /api/auth/login (the cookie is set by the server)
+    //   2. On 200 → redirect to /  (the auth-gated root that serves dashboard.html)
+    //   3. On 401/429/etc → surface a human message in the error banner
+    const form = document.getElementById("login-form");
+    const submitBtn = document.getElementById("submit-btn");
+    const errorBanner = document.getElementById("error-banner");
+
+    function showError(msg) {
+      errorBanner.textContent = msg;
+      errorBanner.classList.remove("hidden");
+    }
+    function clearError() {
+      errorBanner.textContent = "";
+      errorBanner.classList.add("hidden");
+    }
+
+    // Map server `detail` strings to UX copy. Generic fallback for unknown codes.
+    const ERROR_COPY = {
+      invalid_credentials: "Email or password is incorrect.",
+      too_many_attempts: "Too many sign-in attempts. Try again in 15 minutes.",
+      user_disabled: "This account has been deactivated. Contact your publisher.",
+    };
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      clearError();
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Signing in…";
+
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+
+      try {
+        const resp = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        if (resp.ok) {
+          // Cookie was set by the server. Hard navigate so the gate-checked
+          // root route sees the cookie on the next request.
+          window.location = "/";
+          return;
+        }
+        let detail = "Sign-in failed.";
+        try {
+          const body = await resp.json();
+          detail = ERROR_COPY[body.detail] || `Sign-in failed (${resp.status}).`;
+        } catch {
+          detail = `Sign-in failed (${resp.status}).`;
+        }
+        showError(detail);
+      } catch (err) {
+        showError("Network error. Check your connection and try again.");
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Sign in";
+      }
+    });
+  </script>
+</body>
+</html>

@@ -25,7 +25,7 @@ from fastapi import FastAPI
 # set" and refuses to overwrite. The result: load_dotenv returns True but the
 # value stays empty. Override=True ensures the .env value wins.
 load_dotenv(find_dotenv(usecwd=True), override=True)
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
 from starlette.responses import Response
@@ -321,13 +321,47 @@ app.include_router(chatbot.router, prefix="/api", tags=["chatbot"])
 app.include_router(compose.router, prefix="/api", tags=["compose"])
 
 
+# Phase H.1.5 — auth-gate the dashboard HTML.
+#
+# RequireBusinessMiddleware already resolves the session cookie and sets
+# request.state.user_id for HTML paths too (not just /api/*). So these route
+# handlers just check state — no duplicate DB lookup.
+#
+# Why server-side gate instead of client-side: avoids the "flash of unstyled
+# dashboard before redirect" UX problem. Unauthed users see /login directly,
+# never the dashboard chrome.
+
+
+def _is_authed(request: Request) -> bool:
+    return getattr(request.state, "user_id", None) is not None
+
+
 @app.get("/", include_in_schema=False)
-def root() -> FileResponse:
+def root(request: Request):
+    if not _is_authed(request):
+        return RedirectResponse(url="/login", status_code=302)
     return FileResponse(ROOT / "dashboard.html")
 
 
-# Static files: serve dashboard.html and (future) assets/ at the root.
-# This MUST be last so /api/* routes win.
+@app.get("/dashboard.html", include_in_schema=False)
+def dashboard_html(request: Request):
+    # Same gate as /. Covers direct URL hits + the StaticFiles fallback.
+    if not _is_authed(request):
+        return RedirectResponse(url="/login", status_code=302)
+    return FileResponse(ROOT / "dashboard.html")
+
+
+@app.get("/login", include_in_schema=False)
+def login_page(request: Request):
+    # If already logged in, skip the form and go straight to the dashboard.
+    if _is_authed(request):
+        return RedirectResponse(url="/", status_code=302)
+    return FileResponse(ROOT / "login.html")
+
+
+# Static files: served unauthenticated (assets, favicon, etc).
+# dashboard.html intentionally NOT here — it has its own gated route above
+# that wins because StaticFiles is mounted last and routes match first.
 app.mount("/", StaticFiles(directory=str(ROOT), html=True), name="static")
 
 
