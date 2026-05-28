@@ -686,6 +686,37 @@ class UserSession(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
 
 
+class Invite(Base):
+    """Per-business invite to join as a BusinessUser.
+
+    Owner/superuser mints one with a target email + role. We persist the
+    sha256 hash + 12-char prefix (same shape as ChatbotIngestionKey, same
+    rationale: DB leak doesn't expose live tokens). The raw token is shown
+    once at creation — the owner copies the /invite?token=... URL and sends
+    it however they want (email today is out of scope, just hand-off the
+    URL).
+
+    Email is locked at mint time so the claimer can't accidentally create
+    an account under a different identity than the publisher intended.
+    Accepted invites stay in the table for audit (when, by whom).
+    """
+
+    __tablename__ = "invites"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"))
+    email: Mapped[str] = mapped_column(String(254), index=True)
+    role: Mapped[str] = mapped_column(String(16), default="owner")
+    token_prefix: Mapped[str] = mapped_column(String(16), index=True)  # first 12 chars, visible
+    token_hash: Mapped[str] = mapped_column(String(64))                # sha256 of full token
+    created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    accepted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    accepted_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
 class BusinessUser(Base):
     """Join: which users have access to which businesses, and at what role.
 

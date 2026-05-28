@@ -35,8 +35,10 @@ from .sessions import COOKIE_NAME, lookup_session, touch_session
 EXEMPT_PREFIXES: tuple[str, ...] = (
     "/api/auth/login",
     "/api/auth/register",
-    "/api/auth/logout",   # both /logout and /logout-all match — see AUTH_NO_BIZ to require auth for -all
-    "/api/widget/",       # public widget chat (H.2)
+    "/api/auth/logout",            # both /logout and /logout-all match — see AUTH_NO_BIZ to require auth for -all
+    "/api/auth/invites/lookup",    # public — preview invite for the claim page
+    "/api/auth/invites/claim",     # public — accept invite + mint session
+    "/api/widget/",                # public widget chat (H.2)
     "/static/",
     "/docs",
     "/redoc",

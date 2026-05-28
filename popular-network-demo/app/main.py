@@ -42,6 +42,7 @@ from .routers import (
     chatbot,
     compose,
     inventory,
+    invites,
     marketing_plan,
     performance,
     posts,
@@ -305,6 +306,7 @@ async def _no_cache(request: Request, call_next: Callable[[Request], Awaitable[R
 app.add_middleware(RequireBusinessMiddleware)
 
 app.include_router(auth.router, prefix="/api", tags=["auth"])
+app.include_router(invites.router, prefix="/api", tags=["invites"])
 app.include_router(bootstrap.router, prefix="/api", tags=["bootstrap"])
 app.include_router(posts.router, prefix="/api", tags=["posts"])
 app.include_router(approvals.router, prefix="/api", tags=["approvals"])
@@ -357,6 +359,13 @@ def login_page(request: Request):
     if _is_authed(request):
         return RedirectResponse(url="/", status_code=302)
     return FileResponse(ROOT / "login.html")
+
+
+@app.get("/invite", include_in_schema=False)
+def invite_page(request: Request):
+    # Public — invitee opens this URL with ?token=...; client-side JS in
+    # invite.html calls /api/auth/invites/lookup to confirm + render details.
+    return FileResponse(ROOT / "invite.html")
 
 
 # Static files: served unauthenticated (assets, favicon, etc).

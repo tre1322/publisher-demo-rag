@@ -1,0 +1,182 @@
+<!doctype html>
+<!--
+  Popular Network — Invite claim page (Phase H.1.6)
+
+  Loads with ?token=... in the URL. Lifecycle:
+    1. Parse token from query string
+    2. GET /api/auth/invites/lookup?token=... → preview (business, role, email)
+    3. Render: "Join {business} as {role} for {email}" + password input
+    4. POST /api/auth/invites/claim → cookie set, redirect to /
+
+  Disabled-visible: form renders immediately with disabled inputs; the
+  preview either fills it in (enable) or paints a clear error banner.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Accept invite — Popular Network</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    html { font-size: 19px; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  </style>
+</head>
+<body class="min-h-screen bg-[#fafafa] flex items-center justify-center px-4">
+
+  <div class="w-full max-w-md">
+    <div class="mb-8 text-center">
+      <h1 class="text-3xl font-semibold text-slate-900 tracking-tight">Popular Network</h1>
+      <p class="mt-2 text-sm text-slate-500">Marketing Agent</p>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+      <h2 class="text-xl font-semibold text-slate-900 mb-1">Accept your invite</h2>
+      <p id="preview-text" class="text-sm text-slate-500 mb-6">Loading invite…</p>
+
+      <!-- Disabled-visible error banner. -->
+      <div id="error-banner" class="hidden text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-4"></div>
+
+      <form id="claim-form" class="space-y-4" autocomplete="off">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Email</label>
+          <input
+            type="email" id="email-display" disabled
+            class="w-full px-3 py-2 border border-slate-200 rounded-lg text-base bg-slate-50 text-slate-500"
+          />
+        </div>
+        <div>
+          <label for="display-name" class="block text-sm font-medium text-slate-700 mb-1">Your name <span class="text-slate-400 font-normal">(optional)</span></label>
+          <input
+            type="text" id="display-name" maxlength="120" autocomplete="name" disabled
+            class="w-full px-3 py-2 border border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50 disabled:cursor-not-allowed"
+            placeholder="Jane Doe"
+          />
+        </div>
+        <div>
+          <label for="password" class="block text-sm font-medium text-slate-700 mb-1">Choose a password</label>
+          <input
+            type="password" id="password" required minlength="8" autocomplete="new-password" disabled
+            class="w-full px-3 py-2 border border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50 disabled:cursor-not-allowed"
+            placeholder="At least 8 characters"
+          />
+        </div>
+
+        <button
+          type="submit" id="submit-btn" disabled
+          class="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg transition-colors"
+        >
+          Create account &amp; sign in
+        </button>
+      </form>
+
+      <p class="mt-6 text-xs text-slate-400 text-center">
+        Already have an account with this email?
+        <a href="/login" class="underline hover:text-slate-600">Sign in instead</a>.
+      </p>
+    </div>
+  </div>
+
+  <script>
+    const previewText = document.getElementById("preview-text");
+    const errorBanner = document.getElementById("error-banner");
+    const form = document.getElementById("claim-form");
+    const emailDisplay = document.getElementById("email-display");
+    const displayName = document.getElementById("display-name");
+    const password = document.getElementById("password");
+    const submitBtn = document.getElementById("submit-btn");
+
+    function showError(msg) {
+      errorBanner.textContent = msg;
+      errorBanner.classList.remove("hidden");
+    }
+    function clearError() {
+      errorBanner.textContent = "";
+      errorBanner.classList.add("hidden");
+    }
+    function setEnabled(on) {
+      displayName.disabled = !on;
+      password.disabled = !on;
+      submitBtn.disabled = !on;
+    }
+
+    const ERROR_COPY = {
+      invite_not_found_or_invalid: "This invite link is invalid, expired, or already used. Ask your publisher to resend.",
+      email_already_registered_please_login: "Looks like you already have an account with this email. Sign in instead.",
+    };
+
+    function getToken() {
+      const p = new URLSearchParams(window.location.search);
+      return p.get("token") || "";
+    }
+
+    async function loadPreview() {
+      const token = getToken();
+      if (!token) {
+        showError("This invite link is missing the token parameter.");
+        previewText.textContent = "Invalid invite URL.";
+        return;
+      }
+      try {
+        const r = await fetch("/api/auth/invites/lookup?token=" + encodeURIComponent(token));
+        if (!r.ok) {
+          let body = {};
+          try { body = await r.json(); } catch {}
+          const code = body.detail || "invite_not_found_or_invalid";
+          showError(ERROR_COPY[code] || "Couldn't load this invite (" + r.status + ").");
+          previewText.textContent = "Invite unavailable.";
+          return;
+        }
+        const data = await r.json();
+        previewText.innerHTML =
+          "Join <strong>" + escapeHtml(data.businessName) + "</strong> as <strong>" +
+          escapeHtml(data.role) + "</strong>" +
+          (data.publisher ? " via " + escapeHtml(data.publisher) : "") + ".";
+        emailDisplay.value = data.email;
+        setEnabled(true);
+      } catch (err) {
+        showError("Network error loading invite. Try refreshing.");
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      clearError();
+      setEnabled(false);
+      submitBtn.textContent = "Creating account…";
+      try {
+        const r = await fetch("/api/auth/invites/claim", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            token: getToken(),
+            password: password.value,
+            display_name: displayName.value.trim() || null,
+          }),
+        });
+        if (r.ok) { window.location = "/"; return; }
+        let detail = "Couldn't accept invite.";
+        try {
+          const body = await r.json();
+          detail = ERROR_COPY[body.detail] || (body.detail ? "Server: " + body.detail : "Couldn't accept invite (" + r.status + ").");
+        } catch {
+          detail = "Couldn't accept invite (" + r.status + ").";
+        }
+        showError(detail);
+        setEnabled(true);
+        submitBtn.textContent = "Create account & sign in";
+      } catch (err) {
+        showError("Network error. Try again.");
+        setEnabled(true);
+        submitBtn.textContent = "Create account & sign in";
+      }
+    });
+
+    loadPreview();
+  </script>
+</body>
+</html>
