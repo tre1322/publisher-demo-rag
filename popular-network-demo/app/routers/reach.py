@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from ..auth.deps import get_tenant_id
 from ..db import get_db
 from ..models import ReachTier
 
@@ -102,7 +103,7 @@ def estimate_reach(
 @router.post("/reach/estimate")
 def post_reach_estimate(
     body: ReachEstimateBody,
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     tier = (

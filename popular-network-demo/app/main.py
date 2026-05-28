@@ -30,10 +30,12 @@ from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
 from starlette.responses import Response
 
+from .auth.middleware import RequireBusinessMiddleware
 from .db import _add_col_if_missing, init_db
 from .routers import (
     ads,
     approvals,
+    auth,
     billing,
     bootstrap,
     chat,
@@ -300,6 +302,9 @@ async def _no_cache(request: Request, call_next: Callable[[Request], Awaitable[R
     return response
 
 
+app.add_middleware(RequireBusinessMiddleware)
+
+app.include_router(auth.router, prefix="/api", tags=["auth"])
 app.include_router(bootstrap.router, prefix="/api", tags=["bootstrap"])
 app.include_router(posts.router, prefix="/api", tags=["posts"])
 app.include_router(approvals.router, prefix="/api", tags=["approvals"])

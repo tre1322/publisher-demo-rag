@@ -29,6 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from ..auth.deps import get_tenant_id
 from ..db import get_db
 from ..models import (
     AdCampaign,
@@ -161,7 +162,7 @@ def connection_payload(c: AdConnection) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 @router.get("/ads")
-def get_ads(business_id: int = 1, db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_ads(business_id: int = Depends(get_tenant_id), db: Session = Depends(get_db)) -> dict[str, Any]:
     """Bootstrap-equivalent for the Ads & Spend view.
 
     Returns budgets (current month), all campaigns, all connections, and
@@ -215,7 +216,7 @@ def get_ads(business_id: int = 1, db: Session = Depends(get_db)) -> dict[str, An
 
 
 @router.get("/ads/budgets")
-def list_budgets(business_id: int = 1, db: Session = Depends(get_db)) -> dict[str, Any]:
+def list_budgets(business_id: int = Depends(get_tenant_id), db: Session = Depends(get_db)) -> dict[str, Any]:
     month = _current_month_year()
     rows = (
         db.query(AdPlatformBudget)
@@ -229,7 +230,7 @@ def list_budgets(business_id: int = 1, db: Session = Depends(get_db)) -> dict[st
 def update_budget(
     platform: AdPlatform,
     body: BudgetUpdateBody,
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     month = _current_month_year()
@@ -265,7 +266,7 @@ def update_budget(
 
 @router.get("/ads/campaigns")
 def list_campaigns(
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     status: Optional[str] = Query(None, description="Filter by status"),
     platform: Optional[str] = Query(None, description="Filter by platform"),
     db: Session = Depends(get_db),
@@ -282,7 +283,7 @@ def list_campaigns(
 @router.post("/ads/campaigns")
 def create_campaign(
     body: CampaignCreateBody,
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     biz = db.get(Business, business_id)
@@ -359,7 +360,7 @@ def create_campaign(
 def update_campaign(
     campaign_id: int,
     body: CampaignUpdateBody,
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     c = db.get(AdCampaign, campaign_id)
@@ -391,7 +392,7 @@ def update_campaign(
 @router.delete("/ads/campaigns/{campaign_id}")
 def delete_campaign(
     campaign_id: int,
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     c = db.get(AdCampaign, campaign_id)
@@ -406,7 +407,7 @@ def delete_campaign(
 @router.post("/ads/campaigns/{campaign_id}/approve")
 def approve_campaign(
     campaign_id: int,
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     c = db.get(AdCampaign, campaign_id)
@@ -438,7 +439,7 @@ def approve_campaign(
 
 @router.post("/ads/tick")
 def tick_simulator(
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     hours: float = Query(24.0, ge=0.1, le=24.0, description="Hours to advance"),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -527,7 +528,7 @@ def tick_simulator(
 @router.post("/ads/connections")
 def connect_account(
     body: ConnectBody,
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Mock OAuth flow. Real OAuth deferred to V2."""
@@ -562,7 +563,7 @@ def connect_account(
 @router.delete("/ads/connections/{connection_id}")
 def disconnect_account(
     connection_id: int,
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     row = db.get(AdConnection, connection_id)

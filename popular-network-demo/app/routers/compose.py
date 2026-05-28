@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..agent.system_prompt import build_system_prompt
+from ..auth.deps import get_tenant_id
 from ..db import get_db
 
 log = logging.getLogger("popular_network.compose")
@@ -37,7 +38,7 @@ _VALID_PLATFORMS = {"fb", "ig", "gbp", "web"}
 
 
 class RedraftRequest(BaseModel):
-    business_id: int = 1
+    # business_id moved out of the body in Phase H.1 — see chat.py for rationale.
     topic: str = Field(min_length=1, max_length=300)
     notes: str = Field(default="", max_length=2000)
     tone: str = Field(default="friendly", max_length=40)
@@ -123,7 +124,11 @@ def _build_redraft_message(req: RedraftRequest) -> str:
 
 
 @router.post("/compose/redraft")
-def redraft(req: RedraftRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
+def redraft(
+    req: RedraftRequest,
+    business_id: int = Depends(get_tenant_id),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
     # Validate platforms early — the frontend's `chosen` array is the source.
     bad = [p for p in req.platforms if p not in _VALID_PLATFORMS]
     if bad:
@@ -134,7 +139,7 @@ def redraft(req: RedraftRequest, db: Session = Depends(get_db)) -> dict[str, Any
     if not os.environ.get("ANTHROPIC_API_KEY"):
         raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY not configured")
 
-    system_text = build_system_prompt(db, req.business_id)
+    system_text = build_system_prompt(db, business_id)
     user_message = _build_redraft_message(req)
 
     client = Anthropic()

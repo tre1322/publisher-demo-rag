@@ -38,6 +38,7 @@ from ..chatbot_extract import (
     extract_topic_label,
     score_sentiment,
 )
+from ..auth.deps import get_tenant_id
 from ..db import get_db
 from ..models import Business, ChatbotConversation, ChatbotIngestionKey
 
@@ -89,7 +90,7 @@ def conversation_full(c: ChatbotConversation) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 @router.get("/chatbot")
-def get_chatbot(business_id: int = 1, db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_chatbot(business_id: int = Depends(get_tenant_id), db: Session = Depends(get_db)) -> dict[str, Any]:
     biz = db.get(Business, business_id)
     if biz is None:
         raise HTTPException(status_code=404, detail=f"business {business_id} not found")
@@ -141,7 +142,7 @@ def get_chatbot(business_id: int = 1, db: Session = Depends(get_db)) -> dict[str
 
 @router.get("/chatbot/conversations")
 def list_conversations(
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     sentiment: Optional[str] = Query(None, description="positive|neutral|negative|mixed"),
     escalation_only: bool = Query(False),
     search: Optional[str] = Query(None, max_length=200),
@@ -166,7 +167,7 @@ def list_conversations(
 @router.get("/chatbot/conversations/{conversation_id}")
 def get_conversation(
     conversation_id: int,
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     c = db.get(ChatbotConversation, conversation_id)
@@ -309,7 +310,7 @@ _QUADD_FIXTURES = [
 
 
 @router.post("/chatbot/seed-fixtures")
-def seed_fixtures(business_id: int = 1, db: Session = Depends(get_db)) -> dict[str, Any]:
+def seed_fixtures(business_id: int = Depends(get_tenant_id), db: Session = Depends(get_db)) -> dict[str, Any]:
     """Populate fixture conversations so the dashboard has something to show.
 
     Sales-rep affordance — clicking the empty-state CTA imports ~10 sample
@@ -359,7 +360,7 @@ def seed_fixtures(business_id: int = 1, db: Session = Depends(get_db)) -> dict[s
 
 
 @router.delete("/chatbot/fixtures")
-def clear_fixtures(business_id: int = 1, db: Session = Depends(get_db)) -> dict[str, Any]:
+def clear_fixtures(business_id: int = Depends(get_tenant_id), db: Session = Depends(get_db)) -> dict[str, Any]:
     """Wipe seeded fixture conversations. Real conversations untouched."""
     removed = (
         db.query(ChatbotConversation)
@@ -591,7 +592,7 @@ class KeyCreatePayload(BaseModel):
 
 
 @router.get("/chatbot/keys")
-def list_keys(business_id: int = 1, db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+def list_keys(business_id: int = Depends(get_tenant_id), db: Session = Depends(get_db)) -> list[dict[str, Any]]:
     rows = (
         db.query(ChatbotIngestionKey)
         .filter(ChatbotIngestionKey.business_id == business_id)
@@ -616,7 +617,7 @@ def list_keys(business_id: int = 1, db: Session = Depends(get_db)) -> list[dict[
 @router.post("/chatbot/keys")
 def create_key(
     payload: KeyCreatePayload,
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Mint a fresh key. RAW key is returned ONCE — the dashboard must show
@@ -649,7 +650,7 @@ def create_key(
 @router.delete("/chatbot/keys/{key_id}")
 def revoke_key(
     key_id: int,
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     row = db.get(ChatbotIngestionKey, key_id)

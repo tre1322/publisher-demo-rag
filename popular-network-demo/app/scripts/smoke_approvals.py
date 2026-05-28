@@ -44,11 +44,13 @@ def main() -> None:
 
     from fastapi.testclient import TestClient
     from app.main import app
+    from app.scripts._auth_helper import bootstrap_login
     from app.db import SessionLocal
     from app.models import Approval, Post, Review
 
     # Context-manager form triggers FastAPI's startup hook → init_db + seed.
     with TestClient(app) as client:
+        bootstrap_login(client)
         _run_assertions(client, SessionLocal, Approval, Post, Review)
 
     shutil.rmtree(_tmpdir, ignore_errors=True)

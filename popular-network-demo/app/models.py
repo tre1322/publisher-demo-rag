@@ -629,3 +629,81 @@ class ChatbotIngestionKey(Base):
     last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     use_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+# ---------------------------------------------------------------------------
+# Phase H.1 — Multi-tenant auth foundation
+# ---------------------------------------------------------------------------
+# Three tables form the auth backbone:
+#   - User                — one row per human account (login credentials)
+#   - UserSession         — DB-backed sessions; force-logout = DELETE one row
+#   - BusinessUser        — many-to-many join (a user can belong to multiple
+#                            businesses; a business can have multiple staff)
+#
+# The join table is what makes the tenant model real: every request's
+# request.state.business_id is resolved from (session.user_id, active business).
+
+
+class User(Base):
+    """A human login account.
+
+    Email is the login identifier (lowercased on insert/lookup). `is_superuser`
+    grants cross-business admin access (the amplafai-style operator console);
+    NOT the same as being a business owner.
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), unique=True, index=True)  # 254 = RFC 5321 max
+    password_hash: Mapped[str] = mapped_column(String(120))  # bcrypt $2b$ output is 60 chars; pad for future algos
+    display_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    is_superuser: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)  # deactivate = soft-disable login without deleting history
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class UserSession(Base):
+    """DB-backed session (cookie holds opaque token, server holds the rest).
+
+    Force-logout is a single DELETE on this table. Sessions auto-expire at
+    `expires_at`; the auth middleware purges expired rows lazily on lookup.
+    `last_seen_at` updates on every authed request (cheap; lets us show
+    "active session on Chrome 2 hours ago" in account settings later).
+    """
+
+    __tablename__ = "user_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)  # sha256 of opaque token in cookie
+    active_business_id: Mapped[Optional[int]] = mapped_column(ForeignKey("businesses.id"), nullable=True)
+    user_agent: Mapped[Optional[str]] = mapped_column(String(400), nullable=True)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class BusinessUser(Base):
+    """Join: which users have access to which businesses, and at what role.
+
+    Composite primary key (user_id, business_id) so a user can't have two
+    role rows on the same business — the latest invite-accept overwrites.
+
+    Role model (locked 2026-05-27): Linear-style three-tier.
+      - "owner"  — full access including billing + invites
+      - "editor" — publish + ads + reviews + inventory, no billing/invites/settings
+      - "viewer" — read-only across all dashboards
+
+    Capability checks live in `app.auth.permissions.can(role, capability)`.
+    """
+
+    __tablename__ = "business_users"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"), primary_key=True)
+    role: Mapped[str] = mapped_column(String(16), default="owner")
+    invited_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

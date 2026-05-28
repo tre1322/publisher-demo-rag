@@ -47,8 +47,10 @@ def main() -> None:
 
     from fastapi.testclient import TestClient
     from app.main import app
+    from app.scripts._auth_helper import bootstrap_login
 
     with TestClient(app) as client:
+        bootstrap_login(client)
         _run_assertions(client)
 
     shutil.rmtree(_tmpdir, ignore_errors=True)

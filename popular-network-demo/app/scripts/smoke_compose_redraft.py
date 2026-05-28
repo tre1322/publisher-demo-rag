@@ -121,11 +121,13 @@ def main() -> None:
     from fastapi.testclient import TestClient
 
     from app.main import app
+    from app.scripts._auth_helper import bootstrap_login
     from app.db import SessionLocal
     from app.models import Business
 
     # Context-manager form triggers FastAPI startup → seed_if_empty().
     with TestClient(app) as client:
+        bootstrap_login(client)
         _run_assertions(client, SessionLocal, Business)
 
 

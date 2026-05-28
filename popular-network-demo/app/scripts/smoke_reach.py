@@ -48,11 +48,13 @@ def main() -> None:
 
     from fastapi.testclient import TestClient
     from app.main import app
+    from app.scripts._auth_helper import bootstrap_login
 
     # raise_server_exceptions=False lets the NotImplementedError surface as
     # an HTTP 500 we can detect — otherwise TestClient re-raises and we can't
     # gracefully report "formula not implemented yet."
     with TestClient(app, raise_server_exceptions=False) as client:
+        bootstrap_login(client)
         _run_assertions(client)
 
     shutil.rmtree(_tmpdir, ignore_errors=True)

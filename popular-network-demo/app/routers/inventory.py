@@ -32,6 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from ..auth.deps import get_tenant_id
 from ..db import get_db
 from ..models import (
     Business,
@@ -154,7 +155,7 @@ def _require_tier_4_for_writes(db: Session, business_id: int) -> Business:
 # ---------------------------------------------------------------------------
 
 @router.get("/inventory")
-def get_inventory(business_id: int = 1, db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_inventory(business_id: int = Depends(get_tenant_id), db: Session = Depends(get_db)) -> dict[str, Any]:
     """Aggregate slice — used by InventoryView on mount."""
     biz = db.get(Business, business_id)
     if biz is None:
@@ -215,7 +216,7 @@ def get_inventory(business_id: int = 1, db: Session = Depends(get_db)) -> dict[s
 
 
 @router.get("/inventory/feeds")
-def list_feeds(business_id: int = 1, db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+def list_feeds(business_id: int = Depends(get_tenant_id), db: Session = Depends(get_db)) -> list[dict[str, Any]]:
     rows = (
         db.query(InventoryFeed)
         .filter(InventoryFeed.business_id == business_id)
@@ -228,7 +229,7 @@ def list_feeds(business_id: int = 1, db: Session = Depends(get_db)) -> list[dict
 @router.post("/inventory/feeds")
 def connect_feed(
     body: FeedConnectBody,
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Connect a new feed. Tier 4 required."""
@@ -254,7 +255,7 @@ def connect_feed(
 def update_feed(
     feed_id: int,
     body: FeedUpdateBody,
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     _require_tier_4_for_writes(db, business_id)
@@ -275,7 +276,7 @@ def update_feed(
 @router.delete("/inventory/feeds/{feed_id}")
 def disconnect_feed(
     feed_id: int,
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Soft-disconnect — keeps the feed row + its listings, just marks status."""
@@ -291,7 +292,7 @@ def disconnect_feed(
 @router.post("/inventory/feeds/{feed_id}/sync")
 def sync_feed(
     feed_id: int,
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Re-import path. Mocked — bumps last_sync_at + refreshes stale flags."""
@@ -324,7 +325,7 @@ def sync_feed(
 
 @router.get("/inventory/listings")
 def list_listings(
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     status: Optional[str] = Query(None, description="active|sold|pending|stale|removed"),
     stale_only: bool = Query(False),
     search: Optional[str] = Query(None, max_length=200),
@@ -343,7 +344,7 @@ def list_listings(
 
 @router.get("/inventory/facet-hits")
 def list_facet_hits(
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     limit: int = Query(8, ge=1, le=50),
     db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
@@ -450,7 +451,7 @@ _FIXTURE_BY_FEED_TYPE = {
 @router.post("/inventory/import-fixture")
 def import_fixture(
     body: ImportFixtureBody,
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Import a built-in fixture CSV (or paste your own) into a brand-new feed.

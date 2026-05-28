@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from ..agent.system_prompt import build_system_prompt
 from ..agent.tools import MAX_TOOL_ITERATIONS, TOOL_SCHEMAS, execute_tool
+from ..auth.deps import get_tenant_id
 from ..db import get_db
 from ..models import ChatTurn
 
@@ -45,8 +46,10 @@ _LIVE_CONVERSATION_ID = "seed"  # live turns continue the seeded thread
 
 
 class ChatTurnRequest(BaseModel):
+    # business_id was previously a body field; Phase H.1 moved it to a
+    # route-level dependency (business_id → Depends(get_tenant_id)) so
+    # the active tenant can't be spoofed by the request body.
     message: str = Field(min_length=1, max_length=4000)
-    business_id: int = 1
 
 
 # Trigger phrases that force tool_choice={"type":"tool","name":"draft_post"}
@@ -110,7 +113,11 @@ def _sse(event: str, data: dict[str, Any]) -> str:
 
 
 @router.post("/chat/turn")
-def take_turn(req: ChatTurnRequest, db: Session = Depends(get_db)) -> StreamingResponse:
+def take_turn(
+    req: ChatTurnRequest,
+    business_id: int = Depends(get_tenant_id),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
     """Stream the chat turn. Validation errors (422) and missing API key (503)
     are raised before the generator starts so they surface as proper HTTP
     statuses rather than SSE errors.
@@ -127,14 +134,14 @@ def take_turn(req: ChatTurnRequest, db: Session = Depends(get_db)) -> StreamingR
 
     history = (
         db.query(ChatTurn)
-        .filter(ChatTurn.business_id == req.business_id)
+        .filter(ChatTurn.business_id == business_id)
         .order_by(ChatTurn.id.asc())
         .all()
     )
     messages: list[dict[str, Any]] = [_turn_to_message(t) for t in history]
     messages.append({"role": "user", "content": req.message})
 
-    system_text = build_system_prompt(db, req.business_id)
+    system_text = build_system_prompt(db, business_id)
     system_blocks = [
         {
             "type": "text",
@@ -149,7 +156,7 @@ def take_turn(req: ChatTurnRequest, db: Session = Depends(get_db)) -> StreamingR
         _event_generator(
             api_key=api_key,
             db=db,
-            business_id=req.business_id,
+            business_id=business_id,
             owner_message=req.message,
             messages=messages,
             system_blocks=system_blocks,

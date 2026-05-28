@@ -178,10 +178,12 @@ def main() -> None:
 
     from fastapi.testclient import TestClient
     from app.main import app
+    from app.scripts._auth_helper import bootstrap_login
     from app.db import SessionLocal
     from app.models import Approval, ChatTurn, Post
 
     with TestClient(app) as client:
+        bootstrap_login(client)
         _run_validation_surface(client)
         _run_text_only_stream(client, SessionLocal, ChatTurn)
         _run_tool_use_stream(client, SessionLocal, ChatTurn, Post, Approval)

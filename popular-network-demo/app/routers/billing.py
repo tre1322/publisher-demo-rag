@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from ..auth.deps import get_tenant_id
 from ..db import get_db
 from ..models import (
     BillingInvoice,
@@ -131,7 +132,7 @@ def tier_change_payload(req: TierChangeRequest) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 @router.get("/billing")
-def get_billing(business_id: int = 1, db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_billing(business_id: int = Depends(get_tenant_id), db: Session = Depends(get_db)) -> dict[str, Any]:
     """Full slice for Settings → Billing sub-tab."""
     biz = db.get(Business, business_id)
     if biz is None:
@@ -180,13 +181,13 @@ def get_billing(business_id: int = 1, db: Session = Depends(get_db)) -> dict[str
 
 
 @router.get("/billing/usage")
-def get_usage(business_id: int = 1, db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_usage(business_id: int = Depends(get_tenant_id), db: Session = Depends(get_db)) -> dict[str, Any]:
     return usage_payload(business_id, db)
 
 
 @router.get("/billing/invoices")
 def list_invoices(
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     limit: int = 24,
     db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
@@ -203,7 +204,7 @@ def list_invoices(
 @router.post("/billing/change-tier-request")
 def request_tier_change(
     body: TierChangeBody,
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Records a tier-change request. NO CHARGE happens — Stripe deferred.

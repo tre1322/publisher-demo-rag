@@ -21,6 +21,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from ..auth.deps import get_tenant_id
 from ..db import get_db
 from ..models import PerformanceSummary
 from .bootstrap import _performance_payload
@@ -79,7 +80,7 @@ def _scaled_perf(perf: PerformanceSummary, period: str) -> dict[str, Any]:
 @router.get("/performance")
 def get_performance(
     period: Literal["30", "prev30", "ytd"] = Query("30"),
-    business_id: int = 1,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     perf = db.get(PerformanceSummary, business_id)
@@ -111,7 +112,7 @@ _INSIGHTS_POOL = [
 
 
 @router.post("/performance/regenerate-insights")
-def regenerate_insights(business_id: int = 1, db: Session = Depends(get_db)) -> dict[str, Any]:
+def regenerate_insights(business_id: int = Depends(get_tenant_id), db: Session = Depends(get_db)) -> dict[str, Any]:
     perf = db.get(PerformanceSummary, business_id)
     if perf is None:
         raise HTTPException(status_code=404, detail=f"no performance data for business {business_id}")

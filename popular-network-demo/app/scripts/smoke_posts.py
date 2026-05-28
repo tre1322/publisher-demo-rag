@@ -35,10 +35,12 @@ def main() -> None:
 
     from fastapi.testclient import TestClient
     from app.main import app
+    from app.scripts._auth_helper import bootstrap_login
     from app.db import SessionLocal
     from app.models import Post
 
     with TestClient(app) as client:
+        bootstrap_login(client)
         _run_assertions(client, SessionLocal, Post)
 
     shutil.rmtree(_tmpdir, ignore_errors=True)

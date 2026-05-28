@@ -15,6 +15,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from ..auth.deps import get_tenant_id
 from ..db import get_db
 from ..models import (
     AdCampaign,
@@ -223,7 +224,7 @@ def _stats_payload(
 
 
 @router.get("/bootstrap")
-def get_bootstrap(business_id: int = 1, db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_bootstrap(business_id: int = Depends(get_tenant_id), db: Session = Depends(get_db)) -> dict[str, Any]:
     biz = db.get(Business, business_id)
     if biz is None:
         raise HTTPException(status_code=404, detail=f"business {business_id} not found")

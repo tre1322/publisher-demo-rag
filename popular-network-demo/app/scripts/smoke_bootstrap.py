@@ -27,6 +27,7 @@ os.environ["POPULAR_DB_PATH"] = str(_tmpdir / "smoke.db")
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.scripts._auth_helper import bootstrap_login
 
 
 def _fail(msg: str) -> None:
@@ -42,6 +43,7 @@ def main() -> None:
     # Context manager triggers FastAPI startup → init_db + seed against the
     # temp DB selected at module load.
     with TestClient(app) as client:
+        bootstrap_login(client)
         _run_assertions(client)
 
 
