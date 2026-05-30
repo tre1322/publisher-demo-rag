@@ -10,11 +10,12 @@ Run with `python -m app.main` (or `uv run python -m app.main`). The original
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Awaitable, Callable
 
 from dotenv import find_dotenv, load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 # Phase C: load ANTHROPIC_API_KEY before any router imports the SDK.
 # find_dotenv walks up from CWD, so this picks up either popular-network-demo/.env
@@ -371,21 +372,44 @@ def invite_page(request: Request):
     return FileResponse(ROOT / "invite.html")
 
 
+# Dev-only routes. ENVIRONMENT=production hides them with a 404 so a public
+# pilot URL doesn't leak our verification surfaces. Listed explicitly rather
+# than pattern-matched so production behavior is auditable from this file.
+_DEV_ONLY_PATHS = ("/widget-test.html",)
+_IS_PRODUCTION = os.getenv("ENVIRONMENT", "development").lower() == "production"
+
+
+@app.get("/widget-test.html", include_in_schema=False)
+def widget_test(request: Request):
+    if _IS_PRODUCTION:
+        raise HTTPException(status_code=404)
+    return FileResponse(ROOT / "widget-test.html")
+
+
 # Static files: served unauthenticated (assets, favicon, etc).
 # dashboard.html intentionally NOT here — it has its own gated route above
 # that wins because StaticFiles is mounted last and routes match first.
+# Same goes for /widget-test.html — the gated route above wins over the
+# static fallback in production.
 app.mount("/", StaticFiles(directory=str(ROOT), html=True), name="static")
 
 
 def _main() -> None:
     import uvicorn
 
+    # Host/port env-overridable so the droplet can bind 0.0.0.0 behind Caddy
+    # while local dev stays on 127.0.0.1. proxy_headers + forwarded_allow_ips
+    # let the app see real client IPs through the reverse proxy.
+    host = os.getenv("HOST", "127.0.0.1")
+    port = int(os.getenv("PORT", "8765"))
     uvicorn.run(
         "app.main:app",
-        host="127.0.0.1",
-        port=8765,
+        host=host,
+        port=port,
         reload=False,
         log_level="info",
+        proxy_headers=True,
+        forwarded_allow_ips="*",
     )
 
 

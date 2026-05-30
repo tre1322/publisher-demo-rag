@@ -67,11 +67,15 @@ def main() -> int:
         })
         check("1. mint invite -> 200", r.status_code == 200, r.text)
         minted = r.json()
-        for k in ("id", "email", "role", "tokenPrefix", "rawToken", "claimUrl", "expiresAt"):
+        for k in ("id", "email", "role", "tokenPrefix", "rawToken", "claimUrl", "expiresAt", "emailDelivery"):
             check(f"1. minted has {k}", k in minted, str(minted)[:200])
         raw_token = minted.get("rawToken", "")
         check("1. claimUrl points at /invite", minted.get("claimUrl", "").startswith("/invite?token="), minted.get("claimUrl"))
         check("1. tokenPrefix matches first 12 of raw", minted.get("tokenPrefix") == raw_token[:12], "")
+        # Smoke runs with POSTMARK_API_KEY unset → email skipped, no_api_key reason.
+        delivery = minted.get("emailDelivery") or {}
+        check("1. email skipped without POSTMARK_API_KEY", delivery.get("sent") is False, str(delivery))
+        check("1. email skip reason is no_api_key", delivery.get("reason") == "no_api_key", str(delivery))
 
         # 2. List shows it as pending.
         r = client.get("/api/auth/invites")

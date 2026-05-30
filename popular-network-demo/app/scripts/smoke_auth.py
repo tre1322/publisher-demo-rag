@@ -15,10 +15,19 @@ Run with:  uv run python -m app.scripts.smoke_auth
 """
 from __future__ import annotations
 
+import io
 import os
 import sys
 import tempfile
 from pathlib import Path
+
+# Reconfigure stdout for utf-8 so unicode arrows in check() labels don't
+# crash on Windows cp1252 consoles. Same pattern as the other smokes.
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+    except Exception:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", line_buffering=True)
 
 # Isolate DB before importing the app — the engine binds to POPULAR_DB_PATH at import.
 _TMP = tempfile.NamedTemporaryFile(suffix=".db", delete=False)

@@ -37,6 +37,7 @@ from ..auth.sessions import (
     mint_session,
 )
 from ..db import get_db
+from ..email import send_invite_email
 from ..models import Business, BusinessUser, Invite, User
 from ..pwhash import hash_password
 
@@ -124,14 +125,29 @@ def mint_invite(
     db.add(row)
     db.commit()
     db.refresh(row)
+
+    # Best-effort email delivery — failures don't roll back the invite mint.
+    # If POSTMARK_API_KEY is unset (local dev) this is a no-op + returns
+    # {"sent": False, "reason": "no_api_key"} so the owner can copy the URL.
+    biz = db.get(Business, business_id)
+    business_name = biz.name if biz else "your business"
+    claim_url = f"/invite?token={raw}"
+    delivery = send_invite_email(
+        to_email=row.email,
+        claim_url=claim_url,
+        role=row.role,
+        business_name=business_name,
+    )
+
     return {
         "id": row.id,
         "email": row.email,
         "role": row.role,
         "tokenPrefix": row.token_prefix,
         "rawToken": raw,   # shown ONCE — owner copies the URL
-        "claimUrl": f"/invite?token={raw}",
+        "claimUrl": claim_url,
         "expiresAt": row.expires_at.isoformat(),
+        "emailDelivery": delivery,
     }
 
 
