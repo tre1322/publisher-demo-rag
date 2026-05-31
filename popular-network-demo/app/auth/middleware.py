@@ -21,7 +21,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
 from ..db import SessionLocal, current_tenant_id
-from ..models import BusinessUser, User
+from ..models import Business, BusinessUser, User
 from .sessions import COOKIE_NAME, lookup_session, touch_session
 
 # Paths that bypass the auth check entirely (truly public).
@@ -117,6 +117,20 @@ class RequireBusinessMiddleware(BaseHTTPMiddleware):
                 if bu is not None:
                     request.state.business_id = bu.business_id
                     request.state.user_role = bu.role
+
+            # Superuser fallback: if no business is set yet, default to the
+            # first business in the DB so the platform operator lands on a
+            # usable dashboard immediately. Future work: per-superuser session
+            # remembers the last-selected tenant; eventual ops UI lets them
+            # mint invites + switch tenants without ever needing a BusinessUser
+            # row. For pilot-#1 (one tenant), defaulting is correct.
+            if request.state.business_id is None and user.is_superuser:
+                first_biz = (
+                    db.query(Business).order_by(Business.id.asc()).first()
+                )
+                if first_biz is not None:
+                    request.state.business_id = first_biz.id
+                    request.state.user_role = "owner"
 
             # If the route needs a business and we don't have one → 409 (not 401:
             # the user IS authed, just hasn't picked a business yet).
