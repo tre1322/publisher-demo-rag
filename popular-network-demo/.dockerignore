@@ -1,0 +1,38 @@
+# NEVER add uv.lock here — the Dockerfile needs it for `uv sync --frozen`.
+# (Per the CLAUDE.md uv+reverse-proxy lesson — excluding uv.lock breaks the build.)
+
+# Local dev caches
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local virtualenv (don't bake into image)
+.venv/
+
+# Local data — production gets its own SQLite at /app/data via volume
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Repo meta
+.git/
+.gitignore
+.idea/
+.vscode/
+
+# Local secrets (image gets env_file from compose at runtime)
+.env
+.env.local
+.env.*.local
+
+# Docs + tests don't need to be in the runtime image
+tests/
+docs/
+
+# IDE / OS noise
+.DS_Store
+Thumbs.db
