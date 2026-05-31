@@ -6873,13 +6873,13 @@ fetch('https://amplafai.com/api/chatbot/ingest', {
                       <SectionHeader title="Chat widget embed"
                         subtitle="Drop two script tags on your site to install the chat bubble." />
                       <button onClick={() => copyToClipboard(
-                        `<script src="${location.origin}/static/widget.js"></script>\n<script>\n  PopularNetworkWidget.init({\n    businessId: ${business.id || 1},\n    apiBaseUrl: '${location.origin}',\n    title: 'Ask ${(business.name || 'us').replace(/'/g, "\\'")}',\n    greeting: 'Hi! How can we help today?'\n  });\n</script>`,
+                        `<script src="${location.origin}/static/widget.js"><\/script>\n<script>\n  PopularNetworkWidget.init({\n    businessId: ${business.id || 1},\n    apiBaseUrl: '${location.origin}',\n    title: 'Ask ${(business.name || 'us').replace(/'/g, "\\'")}',\n    greeting: 'Hi! How can we help today?'\n  });\n<\/script>`,
                         'Embed snippet'
                       )} className="text-xs px-2 py-1 rounded-md border border-surface-edge text-ink-soft hover:bg-surface inline-flex items-center gap-1">
                         <Icon name="copy" size={12} /> Copy
                       </button>
                     </div>
-                    <pre className="bg-ink/90 text-white/90 rounded-lg p-4 overflow-x-auto text-xs leading-relaxed">{`<script src="${location.origin}/static/widget.js"></script>
+                    <pre className="bg-ink/90 text-white/90 rounded-lg p-4 overflow-x-auto text-xs leading-relaxed">{`<script src="${location.origin}/static/widget.js"><\/script>
 <script>
   PopularNetworkWidget.init({
     businessId: ${business.id || 1},
@@ -6887,7 +6887,7 @@ fetch('https://amplafai.com/api/chatbot/ingest', {
     title: 'Ask ${(business.name || 'us').replace(/'/g, "\\'")}',
     greeting: 'Hi! How can we help today?'
   });
-</script>`}</pre>
+<\/script>`}</pre>
                     <div className="text-xs text-ink-soft mt-2">
                       The widget floats as a bubble bottom-right; click to expand into a chat panel. Conversations append to Chatbot Preview as <span className="font-mono">source='ingested'</span>. Per-IP rate limit: 50 msgs/hour. Per-business daily token cap: 100k Claude tokens.
                     </div>
