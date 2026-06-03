@@ -1,0 +1,22 @@
+# Cloudflare Worker that serves amplafai.com/privacy + /terms at the edge,
+# in front of the GoDaddy (Airo) homepage. The routes below scope the Worker
+# to ONLY those two paths (and their trailing-slash forms), so the homepage
+# and every other path pass straight through to the GoDaddy origin untouched.
+#
+# Deploy:  cd deploy/cloudflare-worker && wrangler deploy
+#   (requires `wrangler login` once, OR a CLOUDFLARE_API_TOKEN env var with
+#    Workers Scripts:Edit + Workers Routes:Edit on the amplafai.com zone.)
+
+name = "amplafai-legal"
+main = "worker.js"
+compatibility_date = "2025-06-01"
+
+# Zone routes — the apex must be PROXIED (orange cloud) for these to fire.
+# amplafai.com is proxied today, so this works as-is.
+routes = [
+  { pattern = "amplafai.com/privacy*", zone_name = "amplafai.com" },
+  { pattern = "amplafai.com/terms*",   zone_name = "amplafai.com" },
+]
+
+# No KV / assets / vars needed — the two pages are embedded in worker.js
+# (regenerate via build-worker.py whenever the source HTML changes).

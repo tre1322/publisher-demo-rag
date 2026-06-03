@@ -1,0 +1,66 @@
+# Amplafai production stack — DigitalOcean Droplet.
+#
+#   web        : FastAPI app (business + /admin), SQLite on a named volume
+#   voice      : LiveKit voice-interview worker (same image, different cmd)
+#   caddy      : reverse proxy + automatic Let's Encrypt TLS for the domain
+#   dashboard  : popular-network-demo Quadd pilot at dashboard.amplafai.com
+#
+# Secrets come from a local `.env` file next to this one (NOT committed).
+#
+# Bring up:   docker compose up -d --build
+# Update:     git pull && docker compose up -d --build   (volume persists)
+services:
+  web:
+    build: .
+    image: amplafai:latest
+    env_file: .env
+    environment:
+      - PORT=8080
+    volumes:
+      - amplafai-data:/app/data
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  voice:
+    image: amplafai:latest
+    depends_on:
+      - web
+    env_file: .env
+    environment:
+      - PMC_VOICE_CALLBACK_BASE_URL=http://web:8080
+    command: ["uv", "run", "--no-dev", "python", "-m", "src.modules.pmc.voice_agent", "start"]
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    depends_on:
+      - web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+
+  dashboard:
+    build: /opt/publisher-demo-rag/popular-network-demo
+    image: popular-network-demo:latest
+    env_file: /opt/publisher-demo-rag/popular-network-demo/.env
+    environment:
+      - PORT=8080
+      - HOST=0.0.0.0
+      - ENVIRONMENT=production
+    volumes:
+      - dashboard-data:/app/data
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+volumes:
+  amplafai-data:
+  caddy-data:
+  caddy-config:
+  dashboard-data:

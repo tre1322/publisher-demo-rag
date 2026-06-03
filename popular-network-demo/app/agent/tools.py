@@ -665,8 +665,34 @@ def _exec_schedule_boost(
     approved_by = "agent" if is_tier3 else None
     external_id = None
     if is_tier3:
-        from ..routers.ads import _mock_external_id
-        external_id = _mock_external_id(platform)
+        # Mock→real swap point. LinkedIn provisions a real campaign when
+        # live+connected; everything else gets a mock id. If the real call
+        # fails, surface it as a tool error rather than silently mocking —
+        # the campaign row is not written, so nothing is half-created.
+        from ..routers.ads import resolve_external_campaign_id
+
+        try:
+            external_id = resolve_external_campaign_id(
+                db, business_id, platform,
+                name=f"Boost: {post.title}",
+                daily_budget_cents=daily_cents,
+                duration_days=days,
+            )
+        except Exception as e:
+            return ToolResult(
+                text=(
+                    f"Couldn't schedule the {raw_platform} boost — the ad platform "
+                    f"rejected it ({e}). Nothing was created; the owner can retry "
+                    f"or check the {raw_platform} connection in Settings."
+                ),
+                attachment={
+                    "kind": "tool-error",
+                    "tool": "schedule_boost",
+                    "reason": "platform_provisioning_failed",
+                    "platform": raw_platform,
+                },
+                is_error=True,
+            )
 
     campaign = AdCampaign(
         business_id=business_id,
