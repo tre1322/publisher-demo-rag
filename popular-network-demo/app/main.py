@@ -42,6 +42,7 @@ from .routers import (
     chat,
     chatbot,
     compose,
+    integrations,
     inventory,
     invites,
     marketing_plan,
@@ -70,6 +71,16 @@ def _startup() -> None:
     # the table exists but a newer column hasn't been added yet.
     _add_col_if_missing("settings", "notifications_json", "JSON")  # B.4
     _add_col_if_missing("businesses", "allowed_origins_json", "JSON")  # H.2.2 widget CORS
+    # Phase I.1 — real LinkedIn OAuth lifecycle columns on the existing
+    # ad_connections table. NULL for the three mock platforms; populated only
+    # by the live LinkedIn 3-legged handshake. Idempotent on persistent DBs.
+    _add_col_if_missing("ad_connections", "refresh_token", "TEXT")
+    _add_col_if_missing("ad_connections", "token_expires_at", "DATETIME")
+    _add_col_if_missing("ad_connections", "refresh_expires_at", "DATETIME")
+    _add_col_if_missing("ad_connections", "scope", "TEXT")
+    _add_col_if_missing("ad_connections", "oauth_state", "VARCHAR(64)")
+    _add_col_if_missing("ad_connections", "account_urn", "VARCHAR(120)")
+    _add_col_if_missing("ad_connections", "connected_user_name", "VARCHAR(120)")
     inserted = seed_if_empty()
     if inserted:
         log.info("Seeded Quadd.ai (business_id=1) — Day-1 customer w/ voice brief loaded")
@@ -321,6 +332,7 @@ app.include_router(marketing_plan.router, prefix="/api", tags=["marketing-plan"]
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(reach.router, prefix="/api", tags=["reach"])
 app.include_router(ads.router, prefix="/api", tags=["ads"])
+app.include_router(integrations.router, prefix="/api", tags=["integrations"])
 app.include_router(inventory.router, prefix="/api", tags=["inventory"])
 app.include_router(billing.router, prefix="/api", tags=["billing"])
 app.include_router(chatbot.router, prefix="/api", tags=["chatbot"])

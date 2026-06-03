@@ -381,9 +381,19 @@ class AdConnection(Base):
     AdConnection (new)    = ad account auth: Meta Ads Manager, Google Ads,
                             TikTok Ads, LinkedIn Campaign Manager.
 
-    OAuth deferred — `oauth_token` and `external_account_id` are mocked for
-    the demo. status=connected lets schedule_boost actually create campaigns
-    for that platform; status=disconnected blocks it with a clear error.
+    OAuth state per platform:
+      - fb_ig / google_ads / tiktok → still MOCKED. `oauth_token` is a synthetic
+        string; status=connected lets schedule_boost create mock campaigns.
+      - linkedin → REAL 3-legged OAuth (Phase I.1). `oauth_token` holds the
+        live access token, `refresh_token` the long-lived refresh token, and
+        the *_expires_at columns the lifecycle. status=connected + a non-expired
+        token lets schedule_boost hit the real Marketing API. status=disconnected
+        blocks it with a clear error.
+
+    The LinkedIn columns are nullable so the three mock platforms (which never
+    populate them) coexist in the same table. We keep ONE connection record per
+    (business, platform) rather than a separate linkedin_oauth_credentials table
+    so `status=="connected"` stays the single source of truth the gate reads.
     """
 
     __tablename__ = "ad_connections"
@@ -393,9 +403,18 @@ class AdConnection(Base):
     platform: Mapped[str] = mapped_column(String(16))  # fb_ig | google_ads | tiktok | linkedin
     account_label: Mapped[str] = mapped_column(String(160))
     external_account_id: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
-    oauth_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # MOCKED — real OAuth is V2 work
-    status: Mapped[str] = mapped_column(String(20), default="disconnected")  # connected|disconnected|error
+    oauth_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # access token (real for linkedin)
+    status: Mapped[str] = mapped_column(String(20), default="disconnected")  # connected|disconnected|pending|error
     last_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # --- Phase I.1: real LinkedIn OAuth lifecycle (NULL for mock platforms) ---
+    refresh_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    token_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    refresh_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    scope: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # space-delimited granted scopes
+    oauth_state: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)  # transient CSRF state mid-handshake
+    account_urn: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)  # urn:li:sponsoredAccount:123
+    connected_user_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)  # r_basicprofile display name
 
 
 # ---------------------------------------------------------------------------

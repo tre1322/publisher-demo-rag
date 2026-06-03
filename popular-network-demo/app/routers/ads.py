@@ -315,6 +315,21 @@ def create_campaign(
     if body.target_audience:
         audience_json = {"hint": body.target_audience}
 
+    # Provision the external campaign at schedule time. LinkedIn hits the real
+    # API when live+connected; everything else returns a mock id (see
+    # resolve_external_campaign_id). A real-platform failure surfaces as 502.
+    external_id: Optional[str] = None
+    if status == "scheduled":
+        try:
+            external_id = resolve_external_campaign_id(
+                db, business_id, body.platform,
+                name=body.name,
+                daily_budget_cents=body.daily_budget_cents,
+                duration_days=body.duration_days,
+            )
+        except Exception as e:  # LinkedInProvisioningError or transport failure
+            raise HTTPException(status_code=502, detail=f"ad platform error: {e}")
+
     campaign = AdCampaign(
         business_id=business_id,
         post_id=body.post_id,
@@ -328,7 +343,7 @@ def create_campaign(
         status=status,
         origin=body.origin,
         approved_by=approved_by,
-        external_campaign_id=_mock_external_id(body.platform) if status == "scheduled" else None,
+        external_campaign_id=external_id,
         performance_json={"impressions": 0, "clicks": 0, "ctr": 0.0},
         scheduled_for=datetime.utcnow() if status == "scheduled" else None,
         last_ticked_at=None,
@@ -418,7 +433,15 @@ def approve_campaign(
     c.status = "scheduled"
     c.approved_by = "owner"
     c.scheduled_for = datetime.utcnow()
-    c.external_campaign_id = _mock_external_id(c.platform)
+    try:
+        c.external_campaign_id = resolve_external_campaign_id(
+            db, business_id, c.platform,
+            name=c.name,
+            daily_budget_cents=c.daily_budget_cents,
+            duration_days=c.duration_days,
+        )
+    except Exception as e:  # LinkedInProvisioningError or transport failure
+        raise HTTPException(status_code=502, detail=f"ad platform error: {e}")
     # Also resolve the matching Approval row.
     approval = (
         db.query(Approval)
@@ -572,6 +595,15 @@ def disconnect_account(
     row.status = "disconnected"
     row.external_account_id = None
     row.oauth_token = None
+    # Phase I.1: clear the real LinkedIn token lifecycle too (no-op for the
+    # mock platforms, whose columns are already NULL).
+    row.refresh_token = None
+    row.token_expires_at = None
+    row.refresh_expires_at = None
+    row.scope = None
+    row.oauth_state = None
+    row.account_urn = None
+    row.connected_user_name = None
     db.commit()
     return {"ok": True, "id": connection_id, "status": "disconnected"}
 
@@ -590,6 +622,47 @@ def _mock_external_id(platform: str) -> str:
         "linkedin":   "mock_linkedin",
     }
     return f"{prefixes.get(platform, 'mock')}_{suffix}"
+
+
+def resolve_external_campaign_id(
+    db: Session,
+    business_id: int,
+    platform: str,
+    *,
+    name: str,
+    daily_budget_cents: int,
+    duration_days: int,
+) -> str:
+    """The mock→real swap point for campaign provisioning.
+
+    LinkedIn hits the real Marketing API when (a) credentials are configured
+    (`li.is_live()`) AND (b) the business has a live, token-valid connection —
+    returning the real campaign URN. In every other case (LinkedIn unconfigured
+    or not connected, or any non-LinkedIn platform) it returns a synthetic mock
+    id, exactly as Phase E always did.
+
+    Raises LinkedInProvisioningError if the real call is attempted and fails —
+    callers surface that rather than masking the failure with a mock id.
+
+    Used by all three campaign-scheduling paths: the manual New-Campaign modal,
+    the Tier-2 approve transition, and the agent's schedule_boost tool. One seam,
+    so going live is a credential drop with no behavioral fork to maintain.
+    """
+    if platform == "linkedin":
+        from ..integrations import linkedin as li
+
+        if li.is_live():
+            from ..integrations import linkedin_store as store
+
+            if store.connection_is_live(store.get_connection(db, business_id)):
+                return store.provision_linkedin_campaign(
+                    db,
+                    business_id,
+                    name=name,
+                    daily_budget_cents=daily_budget_cents,
+                    duration_days=duration_days,
+                )
+    return _mock_external_id(platform)
 
 
 def _default_account_label(platform: str) -> str:
