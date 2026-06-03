@@ -1,0 +1,4 @@
+# Local wrangler/miniflare state from `wrangler dev` — not source.
+.wrangler/
+node_modules/
+*.log

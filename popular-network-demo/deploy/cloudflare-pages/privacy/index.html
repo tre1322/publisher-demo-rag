@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Policy · Amplafai</title>
+  <meta name="description" content="How Amplafai collects, uses, and protects customer data.">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; max-width: 760px; margin: 0 auto; padding: 48px 24px 96px; color: #1a1a1a; line-height: 1.55; }
+    h1 { font-size: 2rem; margin-bottom: 0.25rem; }
+    .meta { color: #666; margin-bottom: 2.5rem; }
+    h2 { font-size: 1.25rem; margin-top: 2.5rem; }
+    h3 { font-size: 1rem; margin-top: 1.5rem; }
+    p, li { color: #2a2a2a; }
+    ul { padding-left: 1.5rem; }
+    li { margin-bottom: 0.5rem; }
+    a { color: #1e6fdb; }
+    code { background: #f4f4f5; padding: 1px 6px; border-radius: 3px; font-size: 0.9em; }
+    footer { margin-top: 4rem; padding-top: 2rem; border-top: 1px solid #e5e5e5; color: #666; font-size: 0.875rem; }
+  </style>
+</head>
+<body>
+
+<h1>Privacy Policy</h1>
+<p class="meta">Effective date: June 1, 2026</p>
+
+<p>This Privacy Policy explains how Amplify Media Group LLC ("Amplafai," "we," "us," "our") collects, uses, and protects personal information when you use the Amplafai marketing automation platform (the "Service"), including the website at <a href="https://amplafai.com">amplafai.com</a> and the application at <a href="https://dashboard.amplafai.com">dashboard.amplafai.com</a>.</p>
+
+<p>Amplafai is a multi-tenant software-as-a-service ("SaaS") platform that helps small and mid-size businesses ("Customers") manage marketing content, schedule social posts, allocate paid-ad spend across connected ad platforms, and operate a customer-facing AI chatbot. Each Customer organization has its own isolated workspace within the Service.</p>
+
+<h2>1. Information we collect</h2>
+
+<h3>1.1 Account information</h3>
+<p>When you create an account, we collect your name, email address, password (hashed using bcrypt — we never store passwords in cleartext), and the business name associated with your account.</p>
+
+<h3>1.2 Content you provide</h3>
+<p>The Service stores the marketing content you create or upload — including draft posts, voice-interview transcripts, ad campaign settings, customer review responses, and chatbot training data — for the purpose of delivering the Service to you.</p>
+
+<h3>1.3 Connected accounts</h3>
+<p>If you choose to connect external advertising or social-media accounts (such as LinkedIn, Google Ads, Meta, or TikTok), we store the OAuth tokens required to access those accounts on your behalf. We use these tokens only to perform actions you explicitly authorize through the Service. You can revoke access at any time from the connected platform's settings, which immediately disables our access.</p>
+
+<h3>1.4 Usage data</h3>
+<p>We collect standard server logs including IP address, browser type, pages requested, and timestamps. These logs are used for security monitoring, debugging, and aggregate usage analytics. We do not use third-party analytics products that track individual users across the open web.</p>
+
+<h3>1.5 Cookies</h3>
+<p>The Service uses a single first-party session cookie (<code>cp_session</code>) to keep you signed in. We do not use third-party advertising cookies on our marketing site or in the application.</p>
+
+<h2>2. How we use information</h2>
+
+<ul>
+  <li>To provide, maintain, and improve the Service</li>
+  <li>To process AI-assisted content generation by submitting your prompts to our AI subprocessor (currently Anthropic / Claude) and returning the result to you</li>
+  <li>To send transactional emails (account invitations, password resets, billing notifications) via our email subprocessor (currently Postmark)</li>
+  <li>To execute the advertising and social-media actions you authorize on your connected accounts</li>
+  <li>To respond to security incidents and prevent fraud or abuse</li>
+  <li>To comply with legal obligations</li>
+</ul>
+
+<p>We do not sell personal information, and we do not share Customer Content with third parties for their own marketing purposes.</p>
+
+<h2>3. Subprocessors</h2>
+
+<p>Amplafai uses the following service providers to deliver the Service. Each subprocessor is contractually bound to handle data only on our instructions and to implement appropriate security measures.</p>
+
+<ul>
+  <li><strong>Anthropic, PBC</strong> — AI model inference (Claude API). U.S.-based. Prompts and completions are processed by Anthropic only to return a response; Anthropic does not train models on Customer prompts under its commercial API terms.</li>
+  <li><strong>Postmark (Wildbit, LLC)</strong> — Transactional email delivery. U.S.-based.</li>
+  <li><strong>DigitalOcean, LLC</strong> — Application hosting (compute, storage, networking). U.S.-based.</li>
+  <li><strong>Cloudflare, Inc.</strong> — DNS, TLS termination, CDN, and DDoS protection for our marketing site. U.S.-based.</li>
+  <li><strong>Stripe, Inc.</strong> — Billing and payment processing, when billing is enabled. U.S.-based.</li>
+  <li><strong>LinkedIn, Google, Meta, TikTok</strong> — Ad-platform APIs, only when you explicitly connect those accounts to your workspace.</li>
+</ul>
+
+<h2>4. Data retention</h2>
+
+<p>We retain Customer Content for the duration of your active subscription. If you cancel your account, we retain Customer Content for <strong>30 days following cancellation</strong> to allow for reactivation or data export, after which we delete it from active systems. Backup copies are purged in the normal backup-retention cycle within 90 days.</p>
+
+<p>You may request earlier deletion at any time by emailing <a href="mailto:privacy@amplafai.com">privacy@amplafai.com</a>.</p>
+
+<h2>5. Security</h2>
+
+<p>We use industry-standard security practices including: TLS 1.2+ for all data in transit, password hashing with bcrypt (cost factor 12), database-backed session tokens with revocation support, per-tenant database scoping enforced at both the middleware and ORM layers, and least-privilege access controls for our team. No system is perfectly secure, and we cannot guarantee absolute protection.</p>
+
+<h2>6. California residents — CCPA</h2>
+
+<p>If you are a California resident, you have the right to:</p>
+<ul>
+  <li>Know what personal information we collect about you and how we use it (this Policy fulfills that disclosure)</li>
+  <li>Request deletion of your personal information, subject to legal-obligation exceptions</li>
+  <li>Opt out of any "sale" of personal information — Amplafai does not sell personal information</li>
+  <li>Be free from discrimination for exercising these rights</li>
+</ul>
+
+<p>To exercise any of these rights, contact <a href="mailto:privacy@amplafai.com">privacy@amplafai.com</a>.</p>
+
+<h2>7. Children</h2>
+
+<p>The Service is not directed to individuals under the age of 13. We do not knowingly collect personal information from children under 13. If we learn that we have collected such information, we will delete it.</p>
+
+<h2>8. Changes to this Policy</h2>
+
+<p>We may update this Policy from time to time. If we make a material change, we will notify you by email and update the "Effective date" above. Continued use of the Service after a material change constitutes acceptance of the updated Policy.</p>
+
+<h2>9. Contact</h2>
+
+<p>Questions about this Policy or our data practices:</p>
+<ul>
+  <li>Email: <a href="mailto:privacy@amplafai.com">privacy@amplafai.com</a></li>
+  <li>Mail: Amplify Media Group LLC, Windom, MN, USA</li>
+</ul>
+
+<footer>
+  &copy; 2026 Amplify Media Group LLC. <a href="/terms">Terms of Service</a>
+</footer>
+
+</body>
+</html>
