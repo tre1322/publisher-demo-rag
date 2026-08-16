@@ -118,7 +118,13 @@
 
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Babel MUST stay pinned to major 7. Babel 8 flipped preset-react's default
+       JSX runtime from "classic" to "automatic", which emits
+       `import { jsx } from "react/jsx-runtime"` — a bare ESM import that a
+       classic <script> block can't resolve. The whole app silently fails to
+       mount and #root:empty::before shows "Loading…" forever.
+       This was unpinned and broke in prod when unpkg rolled 7.x -> 8.0.4. -->
+  <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
 
   <script type="text/babel" data-presets="react">
   /* eslint-disable */
@@ -126,7 +132,7 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-06-02 · v47 — Phase I.1 LinkedIn real OAuth (first real ad platform). Settings → Ad accounts: LinkedIn row shows Live OAuth / Demo badge, real 3-legged OAuth connect (/api/integrations/linkedin/connect → callback → token store on AdConnection), status + token-expiry surfaced. Dormant behind is_live() until LINKEDIN_CLIENT_ID/SECRET land post-MDP-approval; mock fallback keeps the demo clickable. schedule_boost + manual create + Tier-2 approve all route campaign provisioning through resolve_external_campaign_id (real LinkedIn URN when live+connected, mock id otherwise). · Prior: v46 — Phase H.1.6 invite flow + H.2 publisher embed. Invite mint/list/revoke at /api/auth/invites (owner-only); public claim at /invite?token=... New embeddable chat widget (/static/widget.js, vanilla JS ~8KB) targets POST /api/widget/chat (anonymous, per-IP rate limit, per-business daily Claude token cap). Per-business CORS allowlist via Business.allowed_origins_json. Integrations tab adds "Chat widget embed" snippet card. 20/20 smokes green (smoke_invite + smoke_widget added).';
+  const BUILD_VERSION = '2026-08-15 · v48 — HOTFIX: pin @babel/standalone to major 7. unpkg silently rolled the unpinned URL from Babel 7 to 8.0.4; Babel 8 flipped preset-react default runtime classic->automatic, emitting a bare `react/jsx-runtime` ESM import that a classic <script> cannot resolve. App never mounted; #root stayed empty and showed "Loading…" forever. No app code changed — pure CDN supply-chain drift. · Prior: v47 — Phase I.1 LinkedIn real OAuth (first real ad platform). Settings → Ad accounts: LinkedIn row shows Live OAuth / Demo badge, real 3-legged OAuth connect (/api/integrations/linkedin/connect → callback → token store on AdConnection), status + token-expiry surfaced. Dormant behind is_live() until LINKEDIN_CLIENT_ID/SECRET land post-MDP-approval; mock fallback keeps the demo clickable. schedule_boost + manual create + Tier-2 approve all route campaign provisioning through resolve_external_campaign_id (real LinkedIn URN when live+connected, mock id otherwise). · Prior: v46 — Phase H.1.6 invite flow + H.2 publisher embed. Invite mint/list/revoke at /api/auth/invites (owner-only); public claim at /invite?token=... New embeddable chat widget (/static/widget.js, vanilla JS ~8KB) targets POST /api/widget/chat (anonymous, per-IP rate limit, per-business daily Claude token cap). Per-business CORS allowlist via Business.allowed_origins_json. Integrations tab adds "Chat widget embed" snippet card. 20/20 smokes green (smoke_invite + smoke_widget added).';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
