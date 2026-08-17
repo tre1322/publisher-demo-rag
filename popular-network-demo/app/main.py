@@ -26,14 +26,19 @@ from fastapi import FastAPI, HTTPException
 # set" and refuses to overwrite. The result: load_dotenv returns True but the
 # value stays empty. Override=True ensures the .env value wins.
 load_dotenv(find_dotenv(usecwd=True), override=True)
-from fastapi.responses import FileResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
-from starlette.requests import Request
-from starlette.responses import Response
 
-from .auth.middleware import RequireBusinessMiddleware
-from .db import _add_col_if_missing, init_db
-from .routers import (
+# E402 below is deliberate, not an oversight: every import from here down must
+# run AFTER load_dotenv so the SDK clients pick up the keys. Silenced per-line
+# (matching the convention in app/scripts/smoke_*.py) so that a genuinely
+# misplaced import elsewhere in this file still gets flagged.
+from fastapi.responses import FileResponse, RedirectResponse  # noqa: E402
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+from starlette.requests import Request  # noqa: E402
+from starlette.responses import Response  # noqa: E402
+
+from .auth.middleware import RequireBusinessMiddleware  # noqa: E402
+from .db import _add_col_if_missing, init_db  # noqa: E402
+from .routers import (  # noqa: E402
     ads,
     approvals,
     auth,
@@ -53,7 +58,7 @@ from .routers import (
     settings,
     widget,
 )
-from .seed import seed_if_empty
+from .seed import seed_if_empty  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 

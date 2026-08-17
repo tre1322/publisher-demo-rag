@@ -40,7 +40,12 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet" />
 
-  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Pinned to the exact version that was already being served. Unpinned CDN
+       URLs silently roll majors: the unpinned @babel/standalone below rolled
+       7 -> 8 and took this whole page down. Tailwind 4 rewrote the config
+       model, so an unpinned bump would break the tailwind.config block below
+       the same way. See smoke_cdn_pins.py, which enforces this. -->
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <script>
     // Tailwind Play CDN expects `tailwind.config` to be set AFTER its script
     // has loaded — earlier ordering caused a race where the brand color

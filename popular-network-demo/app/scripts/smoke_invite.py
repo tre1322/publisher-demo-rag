@@ -39,6 +39,21 @@ from app.main import app  # noqa: E402
 from app.models import BusinessUser, User  # noqa: E402
 from app.scripts._auth_helper import bootstrap_login  # noqa: E402
 
+# Keep this smoke hermetic — it must never touch the Postmark API.
+#
+# This pop MUST come after `import app.main` above, not before it: app.main
+# calls load_dotenv(find_dotenv(usecwd=True), override=True), which walks UP
+# out of this repo into the parent publisher-demo-rag/.env — and that file
+# sets POSTMARK_API_KEY. override=True means anything we unset beforehand
+# gets restored at import time.
+#
+# Without this, the smoke made a LIVE Postmark send attempt on every run and
+# failed with postmark_422 (Postmark rejects the reserved example.com domain),
+# which reads as a broken invite flow when the flow is actually fine.
+# app/email.py reads the key via os.getenv at call time, so popping it here
+# is enough to force the no_api_key branch.
+os.environ.pop("POSTMARK_API_KEY", None)
+
 
 PASSED: list[str] = []
 FAILED: list[tuple[str, str]] = []
