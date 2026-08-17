@@ -34,6 +34,11 @@ class Business(Base):
     monthly_price: Mapped[int] = mapped_column(Integer)
     joined_days_ago: Mapped[int] = mapped_column(Integer)
     joined_date: Mapped[str] = mapped_column(String(40))
+    # Anchor timestamp for live Day-N rendering. Nullable because prod rows
+    # pre-date it — _backfill_enrolled_at fills them at startup, and
+    # bootstrap._business_payload falls back to the legacy joined_* columns
+    # for any row that still lacks it (e.g. smoke-created businesses).
+    enrolled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     voice_interview: Mapped[str] = mapped_column(String(40))
     tech_name: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     years_in_town: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

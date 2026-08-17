@@ -172,6 +172,43 @@ def _run_assertions(client, SessionLocal, Approval, Post, Review) -> None:
         )
     _ok(f"/api/bootstrap → 0 pending approvals, posts grew {posts_before} → {len(boot2['posts'])}")
 
+    # --- v49 security rider: decide is tenant-scoped ---
+    # A user of business B must get 404 on business A's approval ids — and the
+    # 404 must win over the already-decided 409, proving the tenant filter runs
+    # before the idempotency check (no cross-tenant existence oracle).
+    from app.models import Business, BusinessUser, User
+    from app.pwhash import hash_password as _hp
+
+    with SessionLocal() as db:
+        biz_b = Business(
+            id=2, slug="other_biz", name="Other Biz", owner="Other Owner",
+            owner_initials="OO", location="Elsewhere, MN", publisher="Other Paper",
+            phone="(000) 000-0000", tier=2, tier_label="Tier 2 — Starter",
+            monthly_price=75, joined_days_ago=0, joined_date="Today",
+            voice_interview="pending",
+        )
+        db.add(biz_b)
+        db.flush()
+        user_b = User(email="tenant-b@example.com", password_hash=_hp("tenantbpass1234"), is_superuser=False)
+        db.add(user_b)
+        db.flush()
+        db.add(BusinessUser(user_id=user_b.id, business_id=biz_b.id, role="owner"))
+        db.commit()
+
+    from app.routers.auth import _FAILS
+    _FAILS.clear()
+    client.cookies.clear()
+    r = client.post("/api/auth/login", json={"email": "tenant-b@example.com", "password": "tenantbpass1234"})
+    if r.status_code != 200:
+        _fail(f"tenant-b login → HTTP {r.status_code} {r.text}")
+    r = client.post(f"/api/approvals/{by_ext['a1']}/decide", json={"decision": "approve"})
+    if r.status_code != 404:
+        _fail(
+            f"cross-tenant decide expected 404, got {r.status_code} — "
+            "tenant filter must run before the already-decided 409"
+        )
+    _ok("cross-tenant decide → 404 (tenant-scoped, no existence oracle)")
+
 
 if __name__ == "__main__":
     main()

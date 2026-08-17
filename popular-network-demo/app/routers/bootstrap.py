@@ -9,6 +9,7 @@ ordering).
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -70,7 +71,52 @@ def _load_voice_brief(slug: str | None) -> Optional[dict[str, Any]]:
         return None
 
 
+def _format_absolute_date(dt: datetime) -> str:
+    # No %-d — not portable to Windows strftime. "Jun 2, 2026".
+    return f"{dt.strftime('%b')} {dt.day}, {dt.year}"
+
+
+def _format_when_label(when_iso: str, *, now: Optional[datetime] = None) -> str:
+    """Render a week-recap timestamp honestly relative to now.
+
+    today → "Today, 9:33am" · this year → "Jun 2" · older → "Jun 2, 2026".
+    Unparseable input passes through verbatim (legacy rows the backfill
+    didn't recognize keep their original label).
+    """
+    try:
+        dt = datetime.fromisoformat(when_iso)
+    except (TypeError, ValueError):
+        return when_iso or ""
+    now = now or datetime.utcnow()
+    if dt.date() == now.date():
+        h12 = dt.hour % 12 or 12
+        ampm = "am" if dt.hour < 12 else "pm"
+        return f"Today, {h12}:{dt.minute:02d}{ampm}"
+    if dt.year == now.year:
+        return f"{dt.strftime('%b')} {dt.day}"
+    return _format_absolute_date(dt)
+
+
+def _week_recap_payload(items: Optional[list]) -> list[dict[str, Any]]:
+    """Format stored week-recap items for display. `when_iso` is a storage
+    key only — the payload keeps emitting the `when` label the frontend has
+    always read."""
+    out = []
+    for item in items or []:
+        when = _format_when_label(item["when_iso"]) if item.get("when_iso") else item.get("when", "")
+        out.append({"when": when, "text": item.get("text", "")})
+    return out
+
+
 def _business_payload(biz: Business) -> dict[str, Any]:
+    # Live Day-N: computed from enrolled_at at request time so the dashboard
+    # ages honestly. Rows without enrolled_at (created before the column, or
+    # by tests) fall back to the frozen legacy columns.
+    if biz.enrolled_at is not None:
+        days = max(0, (datetime.utcnow().date() - biz.enrolled_at.date()).days)
+        joined_date = "Today" if days == 0 else _format_absolute_date(biz.enrolled_at)
+    else:
+        days, joined_date = biz.joined_days_ago, biz.joined_date
     return {
         "name": biz.name,
         "owner": biz.owner,
@@ -81,8 +127,8 @@ def _business_payload(biz: Business) -> dict[str, Any]:
         "tier": biz.tier,
         "tierLabel": biz.tier_label,
         "monthlyPrice": biz.monthly_price,
-        "joinedDaysAgo": biz.joined_days_ago,
-        "joinedDate": biz.joined_date,
+        "joinedDaysAgo": days,
+        "joinedDate": joined_date,
         "voiceInterview": biz.voice_interview,
         "techName": biz.tech_name,
         "yearsInTown": biz.years_in_town,
@@ -209,7 +255,7 @@ def _stats_payload(
         "helper": f"{agg.aggregate if agg else 4.8} ★ avg",
     }
     if tier < 3:
-        chatbot_stat = {"value": 0, "helper": "Tier 3+ preview"}
+        chatbot_stat = {"value": 0, "helper": "included in higher plans"}
     elif chatbot_count == 0:
         chatbot_stat = {"value": 0, "helper": "not yet configured"}
     else:
@@ -361,7 +407,7 @@ def get_bootstrap(business_id: int = Depends(get_tenant_id), db: Session = Depen
         "business": _business_payload(biz),
         "stats": _stats_payload(notices, agg, tier=biz.tier, chatbot_count=chatbot_total_count),
         "attention": notices.attention_json if notices else [],
-        "weekRecap": notices.week_recap_json if notices else [],
+        "weekRecap": _week_recap_payload(notices.week_recap_json if notices else []),
         "posts": [_post_payload(p) for p in posts],
         "approvals": [_approval_payload(a) for a in approvals],
         "performance": _performance_payload(perf) if perf else {},

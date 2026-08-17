@@ -35,6 +35,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from ..auth.deps import get_tenant_id
 from ..db import get_db
 from ..models import AdCampaign, Approval, Post, Review
 
@@ -74,8 +75,20 @@ def _find_review_for_approval(db: Session, a: Approval) -> Review | None:
 
 
 @router.post("/approvals/{approval_id}/decide")
-def decide(approval_id: int, body: DecideRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
-    a = db.get(Approval, approval_id)
+def decide(
+    approval_id: int,
+    body: DecideRequest,
+    business_id: int = Depends(get_tenant_id),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    # Tenant-scoped lookup: an approval belonging to another business is
+    # indistinguishable from a nonexistent one (404 before the 409 check —
+    # no cross-tenant existence oracle).
+    a = (
+        db.query(Approval)
+        .filter(Approval.id == approval_id, Approval.business_id == business_id)
+        .first()
+    )
     if a is None:
         raise HTTPException(status_code=404, detail=f"approval {approval_id} not found")
     if a.decision is not None:

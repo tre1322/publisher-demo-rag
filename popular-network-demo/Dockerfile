@@ -30,6 +30,10 @@ RUN uv sync --frozen --no-dev
 COPY app/ ./app/
 COPY static/ ./static/
 COPY dashboard.html login.html invite.html widget-test.html ./
+# Voice briefs are load-bearing: bootstrap.voiceBrief + the agent system prompt
+# both read <repo-root>/voice-briefs/<slug>.json and FAIL SILENTLY to None/""
+# when absent. Omitting this line shipped a voiceless agent to prod for weeks.
+COPY voice-briefs/ ./voice-briefs/
 
 # Ensure the SQLite volume mount-point exists on first boot before
 # the named volume is populated.

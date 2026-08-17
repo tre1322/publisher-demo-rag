@@ -105,6 +105,15 @@ def _run_assertions(client) -> None:
         _fail(f"business.name = {biz['name']!r}, expected Quadd.ai")
     _ok(f"business → {biz['name']} ({biz['tierLabel']})")
 
+    # v49 trust pass: Day-N is computed live from enrolled_at. A fresh seed
+    # enrolled moments ago must render Day 0 / "Today" — if this fails, either
+    # enrolled_at didn't seed or the live computation regressed.
+    if biz.get("joinedDaysAgo") != 0:
+        _fail(f"fresh seed joinedDaysAgo = {biz.get('joinedDaysAgo')!r}, expected 0")
+    if biz.get("joinedDate") != "Today":
+        _fail(f"fresh seed joinedDate = {biz.get('joinedDate')!r}, expected 'Today'")
+    _ok("business Day-N → joinedDaysAgo=0 joinedDate='Today' (live-computed)")
+
     # Quadd Day-1 seed: 3 posts (1 published + 1 draft + 1 pending).
     if len(data["posts"]) < 3:
         _fail(f"posts: {len(data['posts'])} (expected >= 3)")
@@ -151,6 +160,16 @@ def _run_assertions(client) -> None:
         _fail(f"weekRecap days: {len(data['weekRecap'])} (expected >= 5)")
     _ok(f"attention={len(data['attention'])} weekRecap={len(data['weekRecap'])}")
 
+    # v49 trust pass: weekRecap stores when_iso but the payload emits only the
+    # formatted `when` label. On a fresh seed (events stamped moments ago) the
+    # first label must be "Today, …"; on an aged DB it would be a dated label.
+    wr0 = data["weekRecap"][0]
+    if not wr0.get("when", "").startswith("Today"):
+        _fail(f"fresh-seed weekRecap[0].when = {wr0.get('when')!r}, expected 'Today, …'")
+    if "when_iso" in wr0:
+        _fail("weekRecap payload leaks the when_iso storage key — should emit formatted `when` only")
+    _ok(f"weekRecap[0].when → {wr0['when']!r} (formatted, no when_iso leak)")
+
     # voiceBrief: should load for the Quadd seed (file at voice-briefs/quadd_ai.json)
     vb = data.get("voiceBrief")
     if vb is None:
@@ -176,6 +195,13 @@ def _run_assertions(client) -> None:
     if b"Popular Network" not in html_resp.content:
         _fail("dashboard.html does not look like the demo")
     _ok(f"dashboard.html served ({len(html_resp.content)} bytes)")
+
+    # v49 trust pass: voice briefs are baked into the image for the API/agent
+    # to read but must never be served raw through the root StaticFiles mount.
+    vb_resp = client.get("/voice-briefs/quadd_ai.json")
+    if vb_resp.status_code != 404:
+        _fail(f"/voice-briefs/quadd_ai.json returned {vb_resp.status_code}, expected 404 (guard route)")
+    _ok("/voice-briefs/* blocked (404 guard beats static mount)")
 
     print("\nPASS  Phase A smoke green ✓")
 

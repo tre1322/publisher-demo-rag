@@ -17,7 +17,7 @@ uv run python -m app.main
 
 Then open <http://localhost:8765>.
 
-The DB seeds **Quadd.ai** (Trevor Slette's real business, with a voice brief synthesized from a 23-minute interview — see `data/voice-brief/quadd_ai.json`) on first boot. The seed lives in `app/seed.py` and only runs if the `businesses` table is empty — it's safe to restart the server repeatedly. If you want to switch back to the original Westbrook Auto seed, the prior version is preserved in git history (last on master before the C.1 + Quadd pivot commit).
+The DB seeds **Quadd.ai** (Trevor Slette's real business, with a voice brief synthesized from a 23-minute interview — see `voice-briefs/quadd_ai.json`) on first boot. The seed lives in `app/seed.py` and only runs if the `businesses` table is empty — it's safe to restart the server repeatedly. If you want to switch back to the original Westbrook Auto seed, the prior version is preserved in git history (last on master before the C.1 + Quadd pivot commit).
 
 ## Repo layout
 
@@ -28,7 +28,7 @@ popular-network-demo/
 │   ├── main.py             ← FastAPI app + uvicorn entry point
 │   ├── db.py               ← SQLAlchemy engine + session factory
 │   ├── models.py           ← ORM models (Business, Post, Approval, …)
-│   ├── seed.py             ← Quadd.ai Day-1 seed (voice brief in data/voice-brief/)
+│   ├── seed.py             ← Quadd.ai Day-1 seed (voice brief in voice-briefs/)
 │   └── agent/
 │       └── system_prompt.py ← assembles role + voice brief + DB context for Claude
 │   ├── routers/            ← bootstrap, posts, approvals, reviews, …

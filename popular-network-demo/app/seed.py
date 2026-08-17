@@ -1,7 +1,7 @@
 """Seed the SQLite DB with Quadd.ai — Trevor Slette's real business.
 
 This seed reflects a Day-1 customer: enrolled today, voice interview complete
-(see data/voice-brief/quadd_ai.json), but no marketing has been published yet.
+(see voice-briefs/quadd_ai.json), but no marketing has been published yet.
 Posts/approvals/reviews/performance are intentionally minimal — the dashboard
 shows an honest "you just joined" state rather than 47 days of fabricated
 history.
@@ -46,9 +46,13 @@ def seed_if_empty() -> bool:
         if db.query(Business).first() is not None:
             return False
 
+        # Single anchor for enrolled_at + the week-recap event timestamps so
+        # Day-1 renders coherently ("Day 0", "Today, 9:33am").
+        _seed_now = datetime.utcnow().replace(second=0, microsecond=0)
+
         biz = Business(
             id=1,
-            slug="quadd_ai",  # matches data/voice-brief/quadd_ai.json filename
+            slug="quadd_ai",  # matches voice-briefs/quadd_ai.json filename
             name="Quadd.ai",
             owner="Trevor Slette",
             owner_initials="TS",
@@ -65,6 +69,10 @@ def seed_if_empty() -> bool:
             monthly_price=799,
             joined_days_ago=0,
             joined_date="Today",
+            # Anchor timestamp for live Day-N / "joined" rendering. Legacy
+            # joined_days_ago / joined_date above stay as the fallback for
+            # rows created without it (see bootstrap._business_payload).
+            enrolled_at=_seed_now,
             voice_interview="complete",
             tech_name=None,
             years_in_town=None,
@@ -257,7 +265,7 @@ def seed_if_empty() -> bool:
                  "cta": "View brief", "icon": "sparkles", "tone": "teal",
                  "target": "plan"},
                 {"kind": "inventory", "title": "Connect your first inventory feed",
-                 "detail": "Tier 4 unlocks live inventory sync — DealerCenter / vAuto / MLS / TractorHouse. Listings show up in your publisher's chatbot search within an hour.",
+                 "detail": "Your plan includes live inventory sync — DealerCenter / vAuto / MLS / TractorHouse. Listings show up in your publisher's chatbot search within an hour.",
                  "cta": "Open Inventory", "icon": "box", "tone": "teal",
                  "target": "inventory"},
                 {"kind": "spend", "title": "First post not published yet",
@@ -269,12 +277,16 @@ def seed_if_empty() -> bool:
                  "cta": "Edit marketing plan", "icon": "alert", "tone": "red",
                  "target": "plan"},
             ],
+            # week_recap stores when_iso timestamps; bootstrap formats display
+            # labels at request time ("Today, 9:33am" only when actually today,
+            # else "Jun 2"). Legacy rows with literal `when` strings are
+            # converted by _backfill_week_recap_timestamps at startup.
             week_recap_json=[
-                {"when": "Today, 9:33am", "text": "Quadd.ai enrolled — inventory tier, Cottonwood County Citizen publisher"},
-                {"when": "Today, 9:37am", "text": "Voice interview started over LiveKit — 23 minutes captured"},
-                {"when": "Today, 10:01am", "text": "Voice brief synthesized — AMPLIFY/MAINTAIN/MUTE buckets populated from your actual words"},
-                {"when": "Today, 10:15am", "text": "Two posts drafted from the brief — one queued for your approval"},
-                {"when": "Today, ongoing", "text": "AI Agent loaded with your voice brief — try the chat tab"},
+                {"when_iso": _seed_now.isoformat(), "text": "Quadd.ai enrolled — inventory tier, Cottonwood County Citizen publisher"},
+                {"when_iso": (_seed_now + timedelta(minutes=4)).isoformat(), "text": "Voice interview started over LiveKit — 23 minutes captured"},
+                {"when_iso": (_seed_now + timedelta(minutes=28)).isoformat(), "text": "Voice brief synthesized — AMPLIFY/MAINTAIN/MUTE buckets populated from your actual words"},
+                {"when_iso": (_seed_now + timedelta(minutes=42)).isoformat(), "text": "Two posts drafted from the brief — one queued for your approval"},
+                {"when_iso": (_seed_now + timedelta(minutes=45)).isoformat(), "text": "AI Agent loaded with your voice brief — try the chat tab"},
             ],
             stats_overrides_json={
                 "posts":      {"value": 0,  "prev": 0, "delta": "—", "helper": "first post pending approval"},

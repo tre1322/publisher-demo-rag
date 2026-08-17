@@ -137,7 +137,9 @@
 
   // BUILD VERSION — bump this every meaningful edit so you can verify which
   // version your browser is showing (rendered in the sidebar footer).
-  const BUILD_VERSION = '2026-08-15 · v48 — HOTFIX: pin @babel/standalone to major 7. unpkg silently rolled the unpinned URL from Babel 7 to 8.0.4; Babel 8 flipped preset-react default runtime classic->automatic, emitting a bare `react/jsx-runtime` ESM import that a classic <script> cannot resolve. App never mounted; #root stayed empty and showed "Loading…" forever. No app code changed — pure CDN supply-chain drift. · Prior: v47 — Phase I.1 LinkedIn real OAuth (first real ad platform). Settings → Ad accounts: LinkedIn row shows Live OAuth / Demo badge, real 3-legged OAuth connect (/api/integrations/linkedin/connect → callback → token store on AdConnection), status + token-expiry surfaced. Dormant behind is_live() until LINKEDIN_CLIENT_ID/SECRET land post-MDP-approval; mock fallback keeps the demo clickable. schedule_boost + manual create + Tier-2 approve all route campaign provisioning through resolve_external_campaign_id (real LinkedIn URN when live+connected, mock id otherwise). · Prior: v46 — Phase H.1.6 invite flow + H.2 publisher embed. Invite mint/list/revoke at /api/auth/invites (owner-only); public claim at /invite?token=... New embeddable chat widget (/static/widget.js, vanilla JS ~8KB) targets POST /api/widget/chat (anonymous, per-IP rate limit, per-business daily Claude token cap). Per-business CORS allowlist via Business.allowed_origins_json. Integrations tab adds "Chat widget embed" snippet card. 20/20 smokes green (smoke_invite + smoke_widget added).';
+  // Keep it ONE concise line: it renders in the sidebar, so a changelog here
+  // leaks internal roadmap language to customers. History lives in git.
+  const BUILD_VERSION = '2026-08-17 · v49 — trust pass: voice brief ships to prod, live dates, voice-derived chat suggestions, copy-post buttons.';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -220,9 +222,21 @@
   /* ============================================================
      MOCK DATA
      ============================================================ */
-  const today = new Date(2026, 4, 5); // May 5, 2026 (anchor)
+  const today = new Date(); // fallback anchor — always "now", never a frozen date
   const fmtDate = (d, opts = {}) =>
     d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...opts });
+
+  // Shared clipboard helper — callbacks instead of baked-in toast wiring so
+  // each view confirms with its own affordance (toast ribbon, label swap).
+  // Needs no backend; safe to call in offline/FALLBACK mode.
+  const copyTextToClipboard = async (text, onSuccess, onFailure) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      if (onSuccess) onSuccess();
+    } catch {
+      if (onFailure) onFailure();
+    }
+  };
 
   const business = {
     name: 'Quadd.ai',
@@ -258,7 +272,7 @@
       detail: '23 minutes of interview synthesized into AMPLIFY/MAINTAIN/MUTE buckets. The AI Agent is using it to draft every post.',
       cta: 'View brief', icon: 'sparkles', tone: 'teal', target: 'plan' },
     { kind: 'inventory', title: 'Connect your first inventory feed',
-      detail: 'Tier 4 unlocks live inventory sync — DealerCenter / vAuto / MLS / TractorHouse. Listings show up in your publisher\'s chatbot search within an hour.',
+      detail: 'Your plan includes live inventory sync — DealerCenter / vAuto / MLS / TractorHouse. Listings show up in your publisher\'s chatbot search within an hour.',
       cta: 'Open Inventory', icon: 'box', tone: 'teal', target: 'inventory' },
     { kind: 'spend',    title: 'First post not published yet',
       detail: 'Approve the founder-credibility FB post to start the feedback loop. Once it\'s live we\'ll start measuring reach.',
@@ -268,12 +282,14 @@
       cta: 'Edit marketing plan', icon: 'alert', tone: 'red', target: 'plan' }
   ];
 
+  // Fallback recap labels claim no specific time — the live backend formats
+  // real timestamps ("Today, 9:33am" only when actually today, else "Jun 2").
   const weekRecap = [
-    { when: 'Today, 9:33am',  text: 'Quadd.ai enrolled — inventory tier, Cottonwood County Citizen publisher' },
-    { when: 'Today, 9:37am',  text: 'Voice interview started over LiveKit — 23 minutes captured' },
-    { when: 'Today, 10:01am', text: 'Voice brief synthesized — AMPLIFY/MAINTAIN/MUTE buckets populated from your actual words' },
-    { when: 'Today, 10:15am', text: 'Three posts drafted from the brief — one queued for your approval' },
-    { when: 'Today, ongoing', text: 'AI Agent loaded with your voice brief — try the chat tab' }
+    { when: 'Enrollment',  text: 'Quadd.ai enrolled — inventory tier, Cottonwood County Citizen publisher' },
+    { when: 'Enrollment',  text: 'Voice interview started over LiveKit — 23 minutes captured' },
+    { when: 'Enrollment',  text: 'Voice brief synthesized — AMPLIFY/MAINTAIN/MUTE buckets populated from your actual words' },
+    { when: 'Enrollment',  text: 'Three posts drafted from the brief — one queued for your approval' },
+    { when: 'Since then',  text: 'AI Agent loaded with your voice brief — try the chat tab' }
   ];
 
   const PLATFORMS = {
@@ -631,7 +647,9 @@
      ============================================================ */
 
   const LineChart = ({ current, prev, width = 640, height = 200, padding = 28 }) => {
-    const max = Math.max(...current, ...prev) * 1.10;
+    // || 1 guards the Day-1 all-zero series: max=0 made stepY divide by zero
+    // and emit NaN path coordinates (4 console errors per render, blank paths).
+    const max = (Math.max(...current, ...prev) || 1) * 1.10;
     const w = width - padding * 2, h = height - padding * 2;
     const stepX = (i, n) => padding + (i / (n - 1)) * w;
     const stepY = (v) => padding + h - (v / max) * h;
@@ -650,12 +668,23 @@
         {/* current */}
         <path d={fill(current)} fill="rgba(14, 94, 111, 0.08)" />
         <path d={path(current)} fill="none" stroke="#0E5E6F" strokeWidth="2.5" />
-        {/* x-axis dates */}
-        {[0, Math.floor(current.length / 2), current.length - 1].map((i) => (
-          <text key={i} x={stepX(i, current.length)} y={height - 6} fontSize="10" fill="#8B9CA0" textAnchor="middle">
-            {i === 0 ? 'Apr 6' : i === current.length - 1 ? 'May 5' : 'Apr 20'}
-          </text>
-        ))}
+        {/* x-axis dates — computed from today (series = trailing 30 days),
+            never hardcoded: frozen labels are how an August dashboard ends up
+            captioned "Apr 6". */}
+        {(() => {
+          const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          const end = new Date();
+          const labels = [
+            fmt(new Date(end.getTime() - 29 * 86400000)),
+            fmt(new Date(end.getTime() - 15 * 86400000)),
+            fmt(end),
+          ];
+          return [0, Math.floor(current.length / 2), current.length - 1].map((i, k) => (
+            <text key={i} x={stepX(i, current.length)} y={height - 6} fontSize="10" fill="#8B9CA0" textAnchor="middle">
+              {labels[k]}
+            </text>
+          ));
+        })()}
         {/* legend */}
         <g transform={`translate(${padding + 4}, ${padding + 4})`}>
           <circle cx="4" cy="4" r="4" fill="#0E5E6F" />
@@ -1349,7 +1378,7 @@
                     </div>
                     <div>
                       <div className="font-semibold text-ink text-sm">Reach amplification</div>
-                      <div className="text-[11px] text-ink-faint">Phase 1.5 · Network reach add-on</div>
+                      <div className="text-[11px] text-ink-faint">Network reach add-on</div>
                     </div>
                   </div>
                   {reachEstimating && <Pill color="violet">Updating…</Pill>}
@@ -1471,7 +1500,7 @@
                     </div>
                     <div>
                       <div className="font-semibold text-ink text-sm">Boost on launch</div>
-                      <div className="text-[11px] text-ink-faint">Phase 2 · Pay Meta / Google / TikTok / LinkedIn directly</div>
+                      <div className="text-[11px] text-ink-faint">Pay Meta / Google / TikTok / LinkedIn directly</div>
                     </div>
                   </div>
                   <button onClick={() => setBoostEnabled(b => !b)}
@@ -1957,7 +1986,7 @@
       ? [{
           kind: 'chatbot-key',
           title: 'Connect your publisher chatbot',
-          detail: 'Tier ' + (business.tier || 3) + ' unlocks the consumer chatbot preview, but no ingestion key is configured yet. Mint a key in Settings → Integrations and paste it into your publisher\'s chatbot config — sessions stream into this dashboard within seconds.',
+          detail: 'Your plan includes the consumer chatbot preview, but no ingestion key is configured yet. Mint a key in Settings → Integrations and paste it into your publisher\'s chatbot config — sessions stream into this dashboard within seconds.',
           cta: 'Open Integrations', icon: 'key', tone: 'teal',
           target: 'settings',
         }, ...attention]
@@ -2025,7 +2054,7 @@
                 </div>
               )}
             </button>
-            <StatTile label="Chatbot conversations" value={stats.chatbot.value} helper={stats.chatbot.helper || 'Tier 3+ preview'} />
+            <StatTile label="Chatbot conversations" value={stats.chatbot.value} helper={stats.chatbot.helper || 'included in higher plans'} />
           </div>
 
           {/* Hero: Needs your attention — full width */}
@@ -2203,6 +2232,7 @@
     const [form, setForm] = useState({ title: '', draft: '', date: '' });
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
+    const [copied, setCopied] = useState(false);  // transient "Copied ✓" label swap
 
     useEffect(() => {
       if (post) {
@@ -2300,6 +2330,11 @@
         onClose={saving ? () => {} : onClose}
         title={`Edit "${post.title}"`}
         footer={<>
+          {/* Copy needs no backend — stays enabled offline (isOffline). */}
+          <Button icon="copy" variant="ghost" disabled={saving}
+            onClick={() => copyTextToClipboard(form.draft, () => { setCopied(true); setTimeout(() => setCopied(false), 2000); })}>
+            {copied ? 'Copied ✓' : 'Copy text'}
+          </Button>
           <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
           <Button icon="check" variant="ok" onClick={save} disabled={!dirty || saving}>
             {saving ? 'Saving…' : 'Save changes'}
@@ -2597,6 +2632,13 @@
                   <Button icon="edit" variant="secondary"
                     disabled={busy}
                     onClick={() => setEditing({ item, draft: item.draft })}>Edit</Button>
+                  {/* Copy bridge: real publishing is still mocked/dormant, so
+                      the honest path to "post this" is approve → copy → paste
+                      into the platform. Needs no backend — never disabled by busy. */}
+                  <Button icon="copy" variant="ghost"
+                    onClick={() => copyTextToClipboard(item.draft,
+                      () => setToast(`Post text copied — paste into ${(PLATFORMS[item.platform] || {}).label || 'your platform'}.`),
+                      () => setToast("Couldn't copy — select the draft text and copy manually."))}>Copy</Button>
                   <Button icon="x" variant="ghost"
                     disabled={busy}
                     onClick={() => decide(item, 'reject')}>Reject</Button>
@@ -2672,7 +2714,7 @@
           <div className="flex items-start justify-between mb-4">
             <div>
               <div className="text-xs uppercase tracking-wider font-semibold text-violet-700 mb-1 inline-flex items-center gap-1.5">
-                <Icon name="globe" size={11} strokeWidth={2.4} /> Phase 1.5
+                <Icon name="globe" size={11} strokeWidth={2.4} /> Network add-on
               </div>
               <h3 className="font-semibold text-ink text-base">Cross-Territory Revenue</h3>
               <p className="text-xs text-ink-soft mt-0.5">Where your amplified ads surface across the publisher network.</p>
@@ -2898,7 +2940,7 @@
     const titles = {
       overview: { title: 'Performance', subtitle: 'Headline numbers and the daily-reach trend.' },
       channels: { title: 'Channels',     subtitle: 'Organic vs paid by platform — where the lift is coming from.' },
-      network:  { title: 'Network reach', subtitle: 'Cross-territory ad amplification + Local-First Algorithm transparency. Phase 1.5 surfaces.' },
+      network:  { title: 'Network reach', subtitle: 'Cross-territory ad amplification + Local-First Algorithm transparency.' },
       insights: { title: 'Insights',     subtitle: 'What\'s working and what\'s not, generated from the last 30 days of your data.' }
     };
     const insightTabs = [
@@ -2989,7 +3031,7 @@
                   ))}
                 </ol>
                 <div className="mt-5 pt-4 border-t border-surface-edge text-xs text-ink-faint">
-                  Next batch posts Thursday morning.
+                  New drafts land in your Approvals queue as the agent finishes them.
                 </div>
               </Card>
             </div>
@@ -3381,7 +3423,7 @@
                       </p>
                       {business.tier >= 3 && (
                         <p className="text-[11px] text-violet-700 mt-3 italic">
-                          On Tier 3, your AI Agent can autonomously schedule campaigns within your caps — just ask.
+                          Your AI Agent can autonomously schedule campaigns within your caps — just ask.
                         </p>
                       )}
                     </div>
@@ -3453,8 +3495,8 @@
                     subtitle={business.tier >= 3 ? "Your AI agent allocates within caps." : "Upgrade to Tier 3 to enable autonomous boosts."} />
                   <p className="text-sm text-ink-soft leading-relaxed">
                     {business.tier >= 3
-                      ? "On your Tier 3 plan, Quadd's AI Agent can autonomously allocate spend within the caps you set. Each campaign it schedules shows up in the Campaigns tab tagged as auto-scheduled."
-                      : "On Tier 2, the agent can propose boosts but you'll always be the one to click 'Approve' before any money moves."}
+                      ? "Your AI Agent can autonomously allocate spend within the caps you set. Each campaign it schedules shows up in the Campaigns tab tagged as auto-scheduled."
+                      : "On your current plan, the agent can propose boosts but you'll always be the one to click 'Approve' before any money moves."}
                   </p>
                   <button onClick={() => onNavigate('chat')}
                     className="mt-3 w-full px-3 py-2 rounded-lg bg-brand-50 text-brand-700 text-sm font-medium hover:bg-brand-100 transition-all">
@@ -4683,6 +4725,34 @@
   /* ============================================================
      VIEW: AI AGENT CHAT
      ============================================================ */
+  // Suggestion chips derive from the business's voice brief so they always
+  // speak THIS business's language. Hardcoded chips rot: the original set
+  // ("farm-tire field service") outlived the tire-shop seed it was written
+  // for and surfaced in front of a B2B SaaS customer.
+  const GENERIC_SUGGESTIONS = [
+    "What should I post this week?",
+    "Draft my next post",
+    "Which approval should I look at first?",
+    "How is my marketing plan looking?",
+  ];
+  const deriveSuggestions = (vb) => {
+    if (!vb) return GENERIC_SUGGESTIONS;
+    const chips = [];
+    const amplify = vb.amplify || [];
+    const phrases = vb.customer_language || [];
+    if (amplify.length >= 1 && amplify[0].label) chips.push(`Draft a post about "${amplify[0].label}"`);
+    if (amplify.length >= 2 && amplify[1].label) chips.push(`What's a good angle on "${amplify[1].label}"?`);
+    // Keep quoted customer phrases chip-sized — long ones wrap into paragraphs.
+    if (phrases.length >= 1 && phrases[0] && phrases[0].length <= 60) {
+      chips.push(`Write a post that uses the phrase "${phrases[0]}"`);
+    }
+    for (const g of GENERIC_SUGGESTIONS) {
+      if (chips.length >= 4) break;
+      chips.push(g);
+    }
+    return chips.slice(0, 4);
+  };
+
   const ChatView = ({ onNavigate }) => {
     const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings, voiceBrief } = useDashboard();
     const mutate = useDashboardMutate();
@@ -4835,12 +4905,7 @@
       }
     };
 
-    const suggestions = [
-      "What's the right time to post on Saturdays?",
-      "Draft a post about our farm-tire field service",
-      "Which review should I respond to first?",
-      "What should my July marketing look like?",
-    ];
+    const suggestions = deriveSuggestions(voiceBrief);
 
     return (
       <div className="fade-in flex flex-col" style={{ minHeight: 'calc(100vh - 0px)' }}>
@@ -4851,7 +4916,7 @@
           right={
             <div className="flex items-center gap-2">
               <Pill color="emerald" icon="check">Online</Pill>
-              <Pill color="violet" icon="sparkles">Tier 3 preview</Pill>
+              {voiceBrief && <Pill color="violet" icon="sparkles">Writing in your voice</Pill>}
             </div>
           }
         />
@@ -4864,7 +4929,7 @@
                 return (
                   <div key={i} className={`flex gap-3 ${isOwner ? 'flex-row-reverse' : ''}`}>
                     <div className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold ${isOwner ? 'bg-brand-500 text-white' : 'bg-accent text-brand-800'}`}>
-                      {isOwner ? (business?.ownerInitials || 'DH') : <Icon name="sparkles" size={16} strokeWidth={2.2} />}
+                      {isOwner ? (business?.ownerInitials || '—') : <Icon name="sparkles" size={16} strokeWidth={2.2} />}
                     </div>
                     <div className={`max-w-[68%] ${isOwner ? 'items-end' : 'items-start'} flex flex-col`}>
                       <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${isOwner ? 'bg-brand-500 text-white rounded-tr-md' : 'bg-surface border border-surface-edge text-ink rounded-tl-md'}`}>
@@ -4931,7 +4996,7 @@
                 </button>
               </div>
               <div className="text-[11px] text-ink-faint mt-2 flex items-center gap-1.5">
-                <Icon name="sparkles" size={11} className="text-brand-500" /> Live agent chat is part of Tier 3.
+                <Icon name="sparkles" size={11} className="text-brand-500" /> Drafts and answers come from your voice brief — the agent writes in your voice.
                 <a className="text-brand-600 font-medium hover:underline cursor-pointer ml-1">Talk to your rep →</a>
               </div>
             </div>
@@ -5326,7 +5391,7 @@
     if (loading) {
       return (
         <div className="px-8 py-7">
-          <TopBar breadcrumb="Inventory" title="Inventory" subtitle="Tier 4 inventory feeds." />
+          <TopBar breadcrumb="Inventory" title="Inventory" subtitle="Live inventory feeds." />
           <div className="text-ink-soft text-sm mt-6">Loading inventory data…</div>
         </div>
       );
@@ -5334,7 +5399,7 @@
     if (!invState) {
       return (
         <div className="px-8 py-7">
-          <TopBar breadcrumb="Inventory" title="Inventory" subtitle="Tier 4 inventory feeds." />
+          <TopBar breadcrumb="Inventory" title="Inventory" subtitle="Live inventory feeds." />
           <Card className="mt-6">
             <div className="text-rose-700 text-sm">{error || 'Inventory endpoint returned no data.'}</div>
           </Card>
@@ -5365,11 +5430,11 @@
           title="Inventory"
           subtitle={invState.tierEligible
             ? "Sync listings from your DMS / MLS / marketplace feeds — see what's working in chatbot search."
-            : "Tier 4 unlocks live inventory sync, faceted-search visibility, and stale-listing alerts."}
+            : "The Inventory plan unlocks live sync, faceted-search visibility, and stale-listing alerts."}
           right={
             <div className="flex items-center gap-2">
               <Pill color={invState.tierEligible ? 'emerald' : 'slate'}>
-                Tier {invState.tier} — {invState.tierEligible ? 'Inventory eligible' : 'Upgrade required'}
+                Tier {invState.tier} — {invState.tierEligible ? 'Inventory included' : 'Upgrade required'}
               </Pill>
               {invState.tierEligible && (
                 <button
@@ -5398,7 +5463,7 @@
                   <Icon name="box" size={22} />
                 </div>
                 <div className="flex-1">
-                  <div className="font-serif text-lg font-semibold text-ink">Tier 4 — Inventory unlocks this view</div>
+                  <div className="font-serif text-lg font-semibold text-ink">The Inventory plan unlocks this view</div>
                   <p className="text-sm text-ink-soft mt-1">
                     Connect inventory feeds from DealerCenter, vAuto, TractorHouse, MLS, BoatTrader, or generic CSV.
                     Listings sync into your publisher's chatbot so consumer searches surface your stock directly.
@@ -5877,7 +5942,7 @@
           right={
             <div className="flex items-center gap-2">
               <Pill color={state.tierEligible ? 'emerald' : 'slate'}>
-                Tier {state.tier} — {state.tierEligible ? 'Chatbot eligible' : 'Tier 3 required'}
+                Tier {state.tier} — {state.tierEligible ? 'Chatbot included' : 'Upgrade required'}
               </Pill>
               {state.tierEligible && (state.hasAnyConversation ? (
                 <button onClick={handleClear} className="px-3 py-2 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-sm">
@@ -6184,16 +6249,11 @@
         setSettingsError(`Couldn't revoke: ${e.message || e}`);
       }
     };
-    const copyToClipboard = async (text, kind = 'value') => {
-      try {
-        await navigator.clipboard.writeText(text);
-        setCopyToast(`${kind} copied to clipboard.`);
-        setTimeout(() => setCopyToast(null), 2200);
-      } catch {
-        setCopyToast(`Couldn't copy — select + ⌘C manually.`);
-        setTimeout(() => setCopyToast(null), 2200);
-      }
-    };
+    const copyToClipboard = (text, kind = 'value') => copyTextToClipboard(
+      text,
+      () => { setCopyToast(`${kind} copied to clipboard.`); setTimeout(() => setCopyToast(null), 2200); },
+      () => { setCopyToast(`Couldn't copy — select + ⌘C manually.`); setTimeout(() => setCopyToast(null), 2200); },
+    );
     const handleTierChange = async (to_tier) => {
       setTierRequestBusy(to_tier);
       try {
@@ -6337,7 +6397,7 @@
       const next = !autoSpendEnabled;
       setAutoSpendEnabled(next);
       try { localStorage.setItem('amplora.autoSpend', next ? 'true' : 'false'); } catch {}
-      setSettingsToast(`Tier 3 autonomous spend ${next ? 'enabled' : 'disabled'}.`);
+      setSettingsToast(`Autonomous spend ${next ? 'enabled' : 'disabled'}.`);
     };
 
     // Dirty tracking: any difference between local state and server-of-record
@@ -6446,8 +6506,10 @@
                       <Milestone done label="Voice brief synthesized" sub={business.joinedDaysAgo === 0 ? 'Today' : `${business.joinedDate}`} />
                       <Milestone {...(business.joinedDaysAgo === 0 ? { current: true } : { done: true })} label="First post published" sub={business.joinedDaysAgo === 0 ? 'in your Approvals queue' : `${business.joinedDate}`} />
                       <Milestone current label="Day 90 — full pilot milestone"
-                        sub={business.joinedDaysAgo === 0 ? `90 days from today` : `${90 - business.joinedDaysAgo} days from today`}
-                        progress={business.joinedDaysAgo / 90}
+                        sub={business.joinedDaysAgo >= 90 ? 'milestone reached'
+                          : business.joinedDaysAgo === 0 ? `90 days from today`
+                          : `${90 - business.joinedDaysAgo} days from today`}
+                        progress={Math.min(1, business.joinedDaysAgo / 90)}
                         progressLabel={`Day ${business.joinedDaysAgo} of 90`} />
                     </div>
                   </div>
@@ -6482,12 +6544,15 @@
                     </div>
                   )}
                   <p className="text-xs text-ink-soft mt-4 leading-relaxed pt-3 border-t border-surface-edge">
-                    Your publisher partner is your direct human line for anything you'd rather not handle online. Tier 2 includes monthly check-ins; Tier 3 adds a quarterly business review.
+                    Your publisher partner is your direct human line for anything you'd rather not handle online. Your plan includes regular check-ins; higher tiers add a quarterly business review.
                   </p>
                 </Card>
               </div>
 
-              {/* Tier 3 preview */}
+              {/* Tier 3 upsell — only for businesses BELOW tier 3. A Tier 4
+                  customer must never see a pitch to "upgrade" to a cheaper
+                  plan (this card was previously unconditioned). */}
+              {business.tier < 3 && (
               <Card>
                 <SectionHeader title="What's in Tier 3"
                   subtitle="The full Marketing Agent + Business Concierge experience."
@@ -6522,6 +6587,7 @@
                   <a className="text-brand-600 font-medium hover:underline cursor-pointer">Full feature comparison →</a>
                 </div>
               </Card>
+              )}
 
               {/* Talk to a human — always-visible footer */}
               <Card className="bg-gradient-to-r from-accent/15 to-brand-50">
@@ -6789,11 +6855,11 @@
                     <span>
                       <span className={`font-medium ${business.tier >= 3 ? 'text-ink' : 'text-ink-soft'}`}>Spend</span> on ads —
                       {business.tier >= 3
-                        ? ' Tier 3 autonomous boosts within your monthly caps.'
-                        : ' Tier 2 surfaces proposals only; upgrade to Tier 3 for autonomous.'}
+                        ? ' Autonomous boosts within your monthly caps.'
+                        : ' Your plan surfaces proposals only — upgrade to enable autonomous boosts.'}
                     </span>
                   </li>
-                  <li className="flex items-start gap-3"><span className="text-ink-faint shrink-0 mt-0.5"><Icon name="x" size={14} strokeWidth={2.4} /></span><span><span className="font-medium text-ink-soft">Send</span> messages on your behalf — chatbot escalations only at Tier 3.</span></li>
+                  <li className="flex items-start gap-3"><span className="text-ink-faint shrink-0 mt-0.5"><Icon name="x" size={14} strokeWidth={2.4} /></span><span><span className="font-medium text-ink-soft">Send</span> messages on your behalf — chatbot escalations only, on eligible plans.</span></li>
                 </ul>
 
                 {business.tier >= 3 && (

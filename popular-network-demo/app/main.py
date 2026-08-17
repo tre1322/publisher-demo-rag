@@ -86,6 +86,9 @@ def _startup() -> None:
     _add_col_if_missing("ad_connections", "oauth_state", "VARCHAR(64)")
     _add_col_if_missing("ad_connections", "account_urn", "VARCHAR(120)")
     _add_col_if_missing("ad_connections", "connected_user_name", "VARCHAR(120)")
+    # Trust pass (v49): anchor timestamp for live Day-N rendering. Nullable;
+    # _backfill_enrolled_at below fills pre-existing rows.
+    _add_col_if_missing("businesses", "enrolled_at", "DATETIME")
     inserted = seed_if_empty()
     if inserted:
         log.info("Seeded Quadd.ai (business_id=1) — Day-1 customer w/ voice brief loaded")
@@ -111,6 +114,11 @@ def _startup() -> None:
     # Demo chip. Idempotent — column is added only when absent; UPDATE only
     # touches NULL rows.
     _backfill_phase_g()
+    # Trust pass (v49). Order matters: enrolled_at must exist before the
+    # week-recap backfill derives event timestamps from it.
+    _backfill_enrolled_at()
+    _backfill_week_recap_timestamps()
+    _backfill_attention_copy()
 
 
 def _backfill_reach_tiers() -> None:
@@ -238,7 +246,7 @@ def _backfill_phase_f() -> None:
                             inv_item = {
                                 "kind": "inventory",
                                 "title": "Connect your first inventory feed",
-                                "detail": "Tier 4 unlocks live inventory sync — DealerCenter / vAuto / MLS / TractorHouse. Listings show up in your publisher's chatbot search within an hour.",
+                                "detail": "Your plan includes live inventory sync — DealerCenter / vAuto / MLS / TractorHouse. Listings show up in your publisher's chatbot search within an hour.",
                                 "cta": "Open Inventory", "icon": "box", "tone": "teal",
                                 "target": "inventory",
                             }
@@ -250,6 +258,118 @@ def _backfill_phase_f() -> None:
                             changed = True
                     if changed:
                         log.info(f"Backfilled dashboard_notices tier copy for business_id={biz.id}")
+        db.commit()
+
+
+def _backfill_enrolled_at() -> None:
+    """Populate Business.enrolled_at for rows that pre-date the column.
+
+    Source: earliest seeded Approval/Post created_at for the business (the
+    closest surviving record of when the row was actually created), else
+    utcnow(). Idempotent — rows that already have enrolled_at are skipped.
+    """
+    from datetime import datetime
+
+    from sqlalchemy import func
+
+    from .db import SessionLocal
+    from .models import Approval, Business, Post
+
+    with SessionLocal() as db:
+        for biz in db.query(Business).all():
+            if biz.enrolled_at is not None:
+                continue
+            a = db.query(func.min(Approval.created_at)).filter(Approval.business_id == biz.id).scalar()
+            p = db.query(func.min(Post.created_at)).filter(Post.business_id == biz.id).scalar()
+            cands = [d for d in (a, p) if d is not None]
+            biz.enrolled_at = min(cands) if cands else datetime.utcnow()
+            log.info(f"Backfilled enrolled_at={biz.enrolled_at} for business_id={biz.id} ({biz.slug})")
+        db.commit()
+
+
+def _backfill_week_recap_timestamps() -> None:
+    """Convert legacy literal week-recap `when` strings ("Today, 9:33am") into
+    when_iso timestamps derived from Business.enrolled_at, so bootstrap can
+    render honest labels ("Jun 2") instead of a frozen "Today".
+
+    Idempotent — items that already carry when_iso are skipped; strings that
+    don't match the legacy shape are left verbatim (bootstrap passes them
+    through unchanged).
+    """
+    import re
+    from datetime import datetime
+
+    from .db import SessionLocal
+    from .models import Business, DashboardNotices
+
+    time_re = re.compile(r"^Today,\s*(\d{1,2}):(\d{2})\s*(am|pm)$", re.IGNORECASE)
+
+    with SessionLocal() as db:
+        for biz in db.query(Business).all():
+            notices = db.get(DashboardNotices, biz.id)
+            if notices is None or not notices.week_recap_json:
+                continue
+            base = biz.enrolled_at or datetime.utcnow()
+            changed, new_items = False, []
+            for item in notices.week_recap_json:
+                if item.get("when_iso"):
+                    new_items.append(item)
+                    continue
+                when = (item.get("when") or "").strip()
+                m = time_re.match(when)
+                if m:
+                    hour = int(m.group(1)) % 12 + (12 if m.group(3).lower() == "pm" else 0)
+                    iso = base.replace(hour=hour, minute=int(m.group(2)), second=0, microsecond=0).isoformat()
+                elif when.lower().startswith("today"):
+                    # "Today, ongoing" and friends — anchor to enrollment.
+                    iso = base.replace(second=0, microsecond=0).isoformat()
+                else:
+                    new_items.append(item)
+                    continue
+                new_items.append({**item, "when_iso": iso})
+                changed = True
+            if changed:
+                # Reassign, never mutate in place — SQLAlchemy JSON change
+                # detection only fires on attribute assignment.
+                notices.week_recap_json = new_items
+                log.info(f"Backfilled week_recap when_iso for business_id={biz.id}")
+        db.commit()
+
+
+def _backfill_attention_copy() -> None:
+    """Repaint roadmap jargon in stored attention_json rows ("Tier 4 unlocks…"
+    → plan-benefit language). The frontend sweep can't reach DB-stored copy.
+    Idempotent — matches on the exact legacy phrase only.
+    """
+    from .db import SessionLocal
+    from .models import Business, DashboardNotices
+
+    _REPAINTS = [
+        ("Tier 4 unlocks live inventory sync", "Your plan includes live inventory sync"),
+        ("Tier 3 unlocks the consumer chatbot preview", "Your plan includes the consumer chatbot preview"),
+        ("Tier 4 unlocks the consumer chatbot preview", "Your plan includes the consumer chatbot preview"),
+    ]
+
+    with SessionLocal() as db:
+        for biz in db.query(Business).all():
+            notices = db.get(DashboardNotices, biz.id)
+            if notices is None or not notices.attention_json:
+                continue
+            changed, new_items = False, []
+            for item in notices.attention_json:
+                detail = item.get("detail", "")
+                new_detail = detail
+                for old, new in _REPAINTS:
+                    if old in new_detail:
+                        new_detail = new_detail.replace(old, new)
+                if new_detail != detail:
+                    new_items.append({**item, "detail": new_detail})
+                    changed = True
+                else:
+                    new_items.append(item)
+            if changed:
+                notices.attention_json = new_items  # reassign — JSON change detection
+                log.info(f"Repainted attention copy for business_id={biz.id}")
         db.commit()
 
 
@@ -401,6 +521,15 @@ def widget_test(request: Request):
     if _IS_PRODUCTION:
         raise HTTPException(status_code=404)
     return FileResponse(ROOT / "widget-test.html")
+
+
+@app.get("/voice-briefs/{_path:path}", include_in_schema=False)
+def _voice_briefs_blocked(_path: str):
+    # Voice briefs are baked into the image for the API/agent to read
+    # (bootstrap.voiceBrief, agent system prompt). They are business-strategy
+    # content and must never be served raw through the root StaticFiles mount
+    # below — this route wins because routes match before the mount.
+    raise HTTPException(status_code=404)
 
 
 # Static files: served unauthenticated (assets, favicon, etc).
