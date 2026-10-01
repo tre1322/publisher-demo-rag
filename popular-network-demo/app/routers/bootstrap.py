@@ -157,9 +157,12 @@ def _approval_payload(a: Approval) -> dict[str, Any]:
         "title": a.title,
         "draft": a.draft,
         "note": a.note,
+        # Always send kind. Until 2026-10-01 only reviews carried it, so after
+        # a reload every spend proposal (kind='boost') rendered as a plain post
+        # AND got swept up by the queue's "Approve all".
+        "kind": a.kind or "post",
     }
     if a.kind == "review":
-        payload["kind"] = "review"
         payload["original"] = a.original_review_text
     return payload
 
@@ -424,6 +427,8 @@ def get_bootstrap(business_id: int = Depends(get_tenant_id), db: Session = Depen
         "settings": {
             "cadence": settings_row.cadence if settings_row else "weekly",
             "notifications": (settings_row.notifications_json if settings_row else None) or [],
+            # Server-side "Autonomous ad spend" switch (NULL = never chosen = off).
+            "adAutonomyEnabled": bool(settings_row.ad_autonomy_enabled) if settings_row else False,
             "connections": [
                 {
                     "platform": c.platform,

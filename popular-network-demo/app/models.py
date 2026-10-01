@@ -86,6 +86,11 @@ class Approval(Base):
     decision: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)  # approved|edited|rejected
     decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # Phase 0 (money path): machine-readable proposal details, so approving an
+    # agent's ad proposal applies exactly what was proposed instead of parsing
+    # the human-readable draft. e.g. {"action": "allocate", "platform": "fb_ig",
+    # "monthly_cents": 20000}. NULL for post/review approvals and legacy rows.
+    payload_json: Mapped[Any] = mapped_column(JSON, nullable=True)
 
 
 class Review(Base):
@@ -171,6 +176,10 @@ class SettingsRow(Base):
     # Notification preferences — list[{key, label, on, via, muted?}].
     # Added 2026-05-21 in B.4; nullable so existing DBs survive.
     notifications_json: Mapped[Any] = mapped_column(JSON, nullable=True)
+    # Phase 0 (money path): the owner's "Autonomous ad spend" switch. Was
+    # browser localStorage only, which the server never read. NULL = never
+    # chosen = OFF — the agent proposes every ad change until the owner opts in.
+    ad_autonomy_enabled: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
 
 
 class Connection(Base):
@@ -345,6 +354,12 @@ class AdPlatformBudget(Base):
     spend_cents: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(16), default="active")  # active|paused
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # Phase 0 (money path): the ceiling the OWNER authorized for this
+    # platform-month. Set only by owner actions (the cap input in Ads & Spend,
+    # or approving an agent's budget proposal). The agent may set
+    # monthly_cap_cents at or below this on its own, never above it.
+    # NULL = owner hasn't authorized anything this month.
+    owner_cap_cents: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
 
 class AdCampaign(Base):

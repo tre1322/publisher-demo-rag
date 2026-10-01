@@ -120,6 +120,7 @@ def budget_payload(b: AdPlatformBudget) -> dict[str, Any]:
         "remainingCents":  remaining,
         "pctUsed":         pct_used,
         "status":          b.status,
+        "ownerCapCents":   b.owner_cap_cents,
     }
 
 
@@ -243,6 +244,9 @@ def update_budget(
         )
         .one_or_none()
     )
+    # This endpoint is the owner's cap input, so the value is also the ceiling
+    # the agent may never raise above (see app/agent/spend_policy.py). The
+    # agent changes caps through its allocate tool, never through here.
     if row is None:
         # First budget set for this platform/month — insert.
         row = AdPlatformBudget(
@@ -250,12 +254,14 @@ def update_budget(
             platform=platform,
             month_year=month,
             monthly_cap_cents=body.monthly_cap_cents,
+            owner_cap_cents=body.monthly_cap_cents,
             spend_cents=0,
             status=body.status or "active",
         )
         db.add(row)
     else:
         row.monthly_cap_cents = body.monthly_cap_cents
+        row.owner_cap_cents = body.monthly_cap_cents
         if body.status:
             row.status = body.status
         row.updated_at = datetime.utcnow()
@@ -363,7 +369,8 @@ def create_campaign(
             title=f"Boost: {body.name}",
             draft=f"${body.daily_budget_cents / 100:.0f}/day × {body.duration_days} days "
                   f"(${planned / 100:.0f} total) on {body.platform}.",
-            note=f"Proposed by Quadd's AI agent. Click Approve to schedule.",
+            note="Proposed by your AI agent. Click Approve to schedule.",
+            payload_json={"action": "boost", "campaign_id": campaign.id},
         ))
 
     db.commit()
@@ -430,18 +437,7 @@ def approve_campaign(
         raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
     if c.status != "pending_approval":
         raise HTTPException(status_code=409, detail=f"campaign is {c.status}, not pending_approval")
-    c.status = "scheduled"
-    c.approved_by = "owner"
-    c.scheduled_for = datetime.utcnow()
-    try:
-        c.external_campaign_id = resolve_external_campaign_id(
-            db, business_id, c.platform,
-            name=c.name,
-            daily_budget_cents=c.daily_budget_cents,
-            duration_days=c.duration_days,
-        )
-    except Exception as e:  # LinkedInProvisioningError or transport failure
-        raise HTTPException(status_code=502, detail=f"ad platform error: {e}")
+    schedule_approved_campaign(db, business_id, c)
     # Also resolve the matching Approval row.
     approval = (
         db.query(Approval)
@@ -492,7 +488,14 @@ def tick_simulator(
 
     advanced = 0
     completed = 0
+    skipped_real = 0
     for c in campaigns:
+        # Never write simulated spend onto a campaign that exists on a real
+        # ad platform — its numbers must come from the platform, and fake
+        # spend would also eat into the cap that guards real money.
+        if not is_simulated_campaign(c):
+            skipped_real += 1
+            continue
         # Scheduled campaigns become active on first tick.
         if c.status == "scheduled":
             c.status = "active"
@@ -545,6 +548,7 @@ def tick_simulator(
         "hours":      hours,
         "advanced":   advanced,
         "completed":  completed,
+        "skippedReal": skipped_real,
     }
 
 
@@ -663,6 +667,41 @@ def resolve_external_campaign_id(
                     duration_days=duration_days,
                 )
     return _mock_external_id(platform)
+
+
+def is_simulated_campaign(c: AdCampaign) -> bool:
+    """True for demo campaigns the tick simulator may advance.
+
+    No platform id yet, or a mock_* id. Anything else (e.g. a LinkedIn
+    urn:li:sponsoredCampaign:...) exists on a real ad platform.
+    """
+    return not c.external_campaign_id or c.external_campaign_id.startswith("mock_")
+
+
+def schedule_approved_campaign(db: Session, business_id: int, c: AdCampaign) -> None:
+    """Owner approved a pending campaign: provision it, then mark it scheduled.
+
+    The ONE path for owner approval — used by POST /ads/campaigns/{id}/approve
+    and by the Approvals queue (approvals.decide). Before 2026-10-01 the queue
+    path skipped resolve_external_campaign_id and always minted a mock id.
+
+    Provisioning runs BEFORE any mutation: the LinkedIn token refresh can
+    commit mid-request, so a failed platform call must leave the campaign
+    (and the caller's approval row) untouched. Raises HTTPException(502).
+    """
+    try:
+        external_id = resolve_external_campaign_id(
+            db, business_id, c.platform,
+            name=c.name,
+            daily_budget_cents=c.daily_budget_cents,
+            duration_days=c.duration_days,
+        )
+    except Exception as e:  # LinkedInProvisioningError or transport failure
+        raise HTTPException(status_code=502, detail=f"ad platform error: {e}")
+    c.status = "scheduled"
+    c.approved_by = "owner"
+    c.scheduled_for = datetime.utcnow()
+    c.external_campaign_id = external_id
 
 
 def _default_account_label(platform: str) -> str:

@@ -22,6 +22,13 @@ Cascade rules (decided 2026-05-21):
              review (if any) stays in 'draft' so the owner can craft a
              different response later. Recoverable, not destructive.
 
+- boost-kind (agent ad proposals) → _decide_ad_proposal. Approving applies
+             exactly what was proposed: boost-* launches the campaign through
+             the same real-platform path as /ads/campaigns/{id}/approve,
+             pause-* pauses it, allocate-* sets the cap (and the owner
+             ceiling) from payload_json. A platform failure returns 502 with
+             the approval left undecided. Pause/budget proposals can't be edited.
+
 Idempotency: a row whose decision is already non-null returns 409 Conflict.
 That keeps optimistic-UI rollback honest — a double-click can't silently
 duplicate a Post.
@@ -35,9 +42,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from ..agent.spend_policy import budget_row, current_month_year
 from ..auth.deps import get_tenant_id
 from ..db import get_db
-from ..models import AdCampaign, Approval, Post, Review
+from ..models import AdCampaign, AdPlatformBudget, Approval, Post, Review
+from .ads import AD_PLATFORMS, budget_payload, schedule_approved_campaign
 
 router = APIRouter()
 
@@ -99,18 +108,17 @@ def decide(
     if body.decision == "edit" and not (body.edited_draft and body.edited_draft.strip()):
         raise HTTPException(status_code=422, detail="edit requires a non-empty edited_draft")
 
+    # Ad proposals (boost / pause / budget) have their own path: each one must
+    # actually DO what the owner approved, and a failed platform call must
+    # leave the approval undecided.
+    if a.kind == "boost":
+        return _decide_ad_proposal(db, a, body)
+
     now = datetime.utcnow()
     a.decided_at = now
 
     if body.decision == "reject":
         a.decision = "rejected"
-        # For boost-kind, cancel the linked AdCampaign so we don't leave
-        # a zombie pending_approval row.
-        if a.kind == "boost":
-            campaign = _find_campaign_for_boost_approval(db, a)
-            if campaign is not None and campaign.status == "pending_approval":
-                campaign.status = "cancelled"
-                campaign.ended_at = now
         db.commit()
         return {"ok": True, "approval": _approval_to_payload(a)}
 
@@ -169,40 +177,121 @@ def decide(
             } if review else None,
         }
 
-    # kind == "boost" — advance the linked AdCampaign to scheduled
-    # (the campaign was already created with status='pending_approval' by
-    # /api/ads/campaigns when origin=agent_proposed).
-    campaign = _find_campaign_for_boost_approval(db, a)
-    if campaign is not None and campaign.status == "pending_approval":
-        campaign.status = "scheduled"
-        campaign.approved_by = "owner"
-        campaign.scheduled_for = now
-        if not campaign.external_campaign_id:
-            from .ads import _mock_external_id
-            campaign.external_campaign_id = _mock_external_id(campaign.platform)
     db.commit()
-    return {
-        "ok": True,
-        "approval": _approval_to_payload(a),
-        "campaign": {
-            "id":                 campaign.id if campaign else None,
-            "status":             campaign.status if campaign else None,
-            "externalCampaignId": campaign.external_campaign_id if campaign else None,
-        } if campaign else None,
-    }
+    return {"ok": True, "approval": _approval_to_payload(a)}
 
 
-def _find_campaign_for_boost_approval(db: Session, a: Approval) -> AdCampaign | None:
-    """Find the AdCampaign matching a boost-kind approval.
+# --------------------------------------------------------------------------- #
+# Ad proposals — kind='boost' rows carry three different agent actions:
+#   boost-{campaign_id}         launch a pending campaign
+#   pause-{campaign_id}         pause a running campaign
+#   allocate-{platform}-{ts}    set a platform's monthly cap
+# Before 2026-10-01 only boost-* did anything when approved; pause and
+# allocate approvals were recorded and silently ignored.
+# --------------------------------------------------------------------------- #
 
-    Boost approvals are created by POST /api/ads/campaigns w/
-    origin=agent_proposed; the Approval's external_id is set to
-    'boost-{campaign_id}'. Parse that suffix back out to find the row.
-    """
-    if a.kind != "boost" or not a.external_id or not a.external_id.startswith("boost-"):
+_AD_ACTIONS = ("boost", "pause", "allocate")
+
+
+def _ad_proposal_action(a: Approval) -> str:
+    action = (a.payload_json or {}).get("action")
+    if action in _AD_ACTIONS:
+        return action
+    ext = a.external_id or ""
+    for prefix in _AD_ACTIONS:  # legacy rows that pre-date payload_json
+        if ext.startswith(prefix + "-"):
+            return prefix
+    return "unknown"
+
+
+def _campaign_for_proposal(db: Session, a: Approval) -> AdCampaign | None:
+    """The campaign a boost-/pause- proposal points at, same business only."""
+    campaign_id = (a.payload_json or {}).get("campaign_id")
+    if campaign_id is None and a.external_id and "-" in a.external_id:
+        try:
+            campaign_id = int(a.external_id.split("-", 1)[1])
+        except ValueError:
+            return None
+    if campaign_id is None:
         return None
-    try:
-        campaign_id = int(a.external_id.split("-", 1)[1])
-    except (ValueError, IndexError):
+    c = db.get(AdCampaign, int(campaign_id))
+    if c is None or c.business_id != a.business_id:
         return None
-    return db.get(AdCampaign, campaign_id)
+    return c
+
+
+def _campaign_brief(c: AdCampaign | None) -> dict[str, Any] | None:
+    if c is None:
+        return None
+    return {"id": c.id, "status": c.status, "externalCampaignId": c.external_campaign_id}
+
+
+def _decide_ad_proposal(db: Session, a: Approval, body: DecideRequest) -> dict[str, Any]:
+    action = _ad_proposal_action(a)
+    now = datetime.utcnow()
+
+    if body.decision == "edit" and action in ("pause", "allocate"):
+        raise HTTPException(
+            status_code=422,
+            detail="This proposal can't be edited. Approve or reject it, or ask the agent for a different amount.",
+        )
+
+    if body.decision == "reject":
+        campaign = _campaign_for_proposal(db, a) if action == "boost" else None
+        # Cancel the pending campaign so it doesn't linger as a zombie.
+        if campaign is not None and campaign.status == "pending_approval":
+            campaign.status = "cancelled"
+            campaign.ended_at = now
+        a.decision = "rejected"
+        a.decided_at = now
+        db.commit()
+        return {"ok": True, "approval": _approval_to_payload(a), "campaign": _campaign_brief(campaign)}
+
+    result: dict[str, Any] = {}
+    if action == "boost":
+        campaign = _campaign_for_proposal(db, a)
+        if campaign is not None and campaign.status == "pending_approval":
+            # Same path as POST /ads/campaigns/{id}/approve. Raises 502 on a
+            # platform failure BEFORE anything below is mutated.
+            schedule_approved_campaign(db, a.business_id, campaign)
+        result["campaign"] = _campaign_brief(campaign)
+    elif action == "pause":
+        campaign = _campaign_for_proposal(db, a)
+        if campaign is not None and campaign.status in ("active", "scheduled"):
+            campaign.status = "paused"
+        result["campaign"] = _campaign_brief(campaign)
+    elif action == "allocate":
+        payload = a.payload_json or {}
+        platform = payload.get("platform")
+        cents = payload.get("monthly_cents")
+        if platform not in AD_PLATFORMS or not isinstance(cents, int) or cents < 0:
+            raise HTTPException(
+                status_code=409,
+                detail="This older budget proposal has no amount attached, so it can't be applied. Reject it and ask the agent again.",
+            )
+        row = budget_row(db, a.business_id, platform)
+        if row is None:
+            row = AdPlatformBudget(
+                business_id=a.business_id, platform=platform, month_year=current_month_year(),
+                monthly_cap_cents=cents, owner_cap_cents=cents, spend_cents=0, status="active",
+            )
+            db.add(row)
+        else:
+            # Approving IS the owner's authorization, so it moves the ceiling too.
+            row.monthly_cap_cents = cents
+            row.owner_cap_cents = cents
+            row.updated_at = now
+        db.flush()
+        result["budget"] = budget_payload(row)
+    else:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Unrecognized ad proposal '{a.external_id}'. Reject it and ask the agent again.",
+        )
+
+    if body.decision == "edit":
+        a.draft = body.edited_draft.strip()
+    a.decision = "edited" if body.decision == "edit" else "approved"
+    a.decided_at = now
+    db.commit()
+    return {"ok": True, "approval": _approval_to_payload(a), **result}
