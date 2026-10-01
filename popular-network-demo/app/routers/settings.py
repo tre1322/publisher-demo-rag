@@ -4,6 +4,16 @@ PUT /api/settings/notifications
   body: { cadence: 'each'|'weekly'|'auto',
           notifications: [{key, label, on, via, muted?}] }
 
+PUT /api/settings/ad-autonomy
+  body: { enabled: bool }
+  Owner-only switch that lets the AI agent spend within owner-set caps on its
+  own (app/agent/spend_policy.py). Was browser localStorage until 2026-10-01,
+  which the server never read.
+
+Every route here is scoped to the signed-in session's business. Until
+2026-10-01 the business came from the request body (default 1), so any
+signed-in user could edit any business's settings.
+
 POST /api/escalations
   body: { message: str, business_id?: int }
   Records a "Talk to a human" submission. Actual notification routing (email
@@ -18,10 +28,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
+from ..auth.deps import get_tenant_id
+from ..auth.permissions import can
 from ..db import get_db
 from ..models import Escalation, SettingsRow
 
@@ -37,18 +49,44 @@ class NotificationPref(BaseModel):
 
 
 class UpdateNotificationsRequest(BaseModel):
+    # A business_id sent by older clients is ignored (pydantic drops unknown
+    # fields); the business always comes from the session.
     cadence: Optional[Literal["each", "weekly", "auto"]] = None
     notifications: Optional[list[NotificationPref]] = None
-    business_id: int = Field(default=1, ge=1)
 
     def has_any_change(self) -> bool:
         return self.cadence is not None or self.notifications is not None
+
+
+class AdAutonomyRequest(BaseModel):
+    enabled: bool
+
+
+# Registered BEFORE /settings/{section} so that route doesn't swallow it.
+@router.put("/settings/ad-autonomy")
+def update_ad_autonomy(
+    body: AdAutonomyRequest,
+    request: Request,
+    business_id: int = Depends(get_tenant_id),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    is_super = bool(getattr(request.state, "is_superuser", False))
+    role = getattr(request.state, "user_role", None) or ""
+    if not is_super and not can(role, "authorize_ad_autonomy"):
+        raise HTTPException(status_code=403, detail="Only the business owner can change autonomous ad spend.")
+    row = db.get(SettingsRow, business_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="settings not found for this business")
+    row.ad_autonomy_enabled = body.enabled
+    db.commit()
+    return {"ok": True, "adAutonomyEnabled": bool(row.ad_autonomy_enabled)}
 
 
 @router.put("/settings/{section}")
 def update_settings(
     section: str,
     body: UpdateNotificationsRequest,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     if section != "notifications":
@@ -59,9 +97,9 @@ def update_settings(
     if not body.has_any_change():
         raise HTTPException(status_code=422, detail="request must include cadence or notifications")
 
-    row = db.get(SettingsRow, body.business_id)
+    row = db.get(SettingsRow, business_id)
     if row is None:
-        raise HTTPException(status_code=404, detail=f"settings for business {body.business_id} not found")
+        raise HTTPException(status_code=404, detail="settings not found for this business")
 
     if body.cadence is not None:
         row.cadence = body.cadence
@@ -85,7 +123,6 @@ def update_settings(
 
 class CreateEscalationRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
-    business_id: int = Field(default=1, ge=1)
 
     @field_validator("message")
     @classmethod
@@ -99,10 +136,11 @@ class CreateEscalationRequest(BaseModel):
 @router.post("/escalations")
 def create_escalation(
     body: CreateEscalationRequest,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     esc = Escalation(
-        business_id=body.business_id,
+        business_id=business_id,
         message=body.message,
         created_at=datetime.utcnow(),
     )

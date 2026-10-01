@@ -31,6 +31,7 @@ Capability = Literal[
     "manage_billing",     # Settings → Billing → tier change
     "manage_invites",     # invite teammates
     "manage_settings",    # cadence + notifications
+    "authorize_ad_autonomy",  # let the AI agent spend within caps on its own
 ]
 
 # Rows = roles, columns = capabilities. The "default tightest" rule: when in
@@ -48,6 +49,7 @@ _CAPABILITY_MATRIX: dict[Role, dict[Capability, bool]] = {
         "manage_billing": True,
         "manage_invites": True,
         "manage_settings": True,
+        "authorize_ad_autonomy": True,
     },
     "editor": {
         "view_dashboard": True,
@@ -60,6 +62,7 @@ _CAPABILITY_MATRIX: dict[Role, dict[Capability, bool]] = {
         "manage_billing": False,
         "manage_invites": False,
         "manage_settings": False,
+        "authorize_ad_autonomy": False,
     },
     "viewer": {
         "view_dashboard": True,
@@ -72,6 +75,7 @@ _CAPABILITY_MATRIX: dict[Role, dict[Capability, bool]] = {
         "manage_billing": False,
         "manage_invites": False,
         "manage_settings": False,
+        "authorize_ad_autonomy": False,
     },
 }
 

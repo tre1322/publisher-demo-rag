@@ -139,7 +139,7 @@
   // version your browser is showing (rendered in the sidebar footer).
   // Keep it ONE concise line: it renders in the sidebar, so a changelog here
   // leaks internal roadmap language to customers. History lives in git.
-  const BUILD_VERSION = '2026-08-17 · v49 — trust pass: voice brief ships to prod, live dates, voice-derived chat suggestions, copy-post buttons.';
+  const BUILD_VERSION = '2026-10-01 · v50 — money-path safety: spend policy, server-side autonomy switch, working pause/budget approvals.';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -2382,6 +2382,16 @@
   /* ============================================================
      VIEW: APPROVALS QUEUE — Phase B.1 wired to /api/approvals/:id/decide
      ============================================================ */
+  // kind='boost' approvals carry three agent actions, told apart by their id
+  // prefix: boost-{campaign}, pause-{campaign}, allocate-{platform}-{ts}.
+  const adProposalAction = (item) => {
+    if (item.kind !== 'boost') return null;
+    const id = String(item.id || '');
+    if (id.startsWith('pause-')) return 'pause';
+    if (id.startsWith('allocate-')) return 'allocate';
+    return 'boost';
+  };
+
   const ApprovalsView = ({ scrollToId, onScrollHandled }) => {
     const { approvals } = useDashboard();
     const mutate = useDashboardMutate();
@@ -2493,11 +2503,19 @@
     // skipped and surfaced in the toast so owner still eyeballs them.
     const approveAll = async () => {
       if (batching) return;
-      const posts   = approvals.filter(a => a.kind !== 'review');
+      // Batch-approve posts only. Review replies and anything that spends or
+      // changes ad money (kind 'boost': launches, pauses, budget changes) each
+      // need the owner's individual sign-off.
+      const posts   = approvals.filter(a => !a.kind || a.kind === 'post');
       const reviews = approvals.filter(a => a.kind === 'review');
+      const spend   = approvals.filter(a => a.kind === 'boost');
+      const heldNote = [
+        reviews.length ? `${reviews.length} review repl${reviews.length === 1 ? 'y' : 'ies'}` : null,
+        spend.length ? `${spend.length} ad spend proposal${spend.length === 1 ? '' : 's'}` : null,
+      ].filter(Boolean).join(' and ');
       if (posts.length === 0) {
-        setToast(reviews.length
-          ? `Nothing to batch-approve — the ${reviews.length} review repl${reviews.length === 1 ? 'y needs' : 'ies need'} your eye individually.`
+        setToast(heldNote
+          ? `Nothing to batch-approve — ${heldNote} need${reviews.length + spend.length === 1 ? 's' : ''} your eye individually.`
           : "Queue is already clear.");
         return;
       }
@@ -2511,9 +2529,8 @@
       }
       setBatching(false);
       if (approved === posts.length) {
-        const skipped = reviews.length;
         setToast(`Approved ${approved} post${approved === 1 ? '' : 's'}.${
-          skipped ? ` ${skipped} review repl${skipped === 1 ? 'y' : 'ies'} still need${skipped === 1 ? 's' : ''} your eye.` : ''
+          heldNote ? ` ${heldNote} still need${reviews.length + spend.length === 1 ? 's' : ''} your eye.` : ''
         }`);
       }
       // If approved < posts.length, decide() already set the error banner.
@@ -2537,7 +2554,7 @@
               <Button variant="secondary" size="sm" icon="check"
                 onClick={approveAll}
                 disabled={pendingCount === 0 || batching}>
-                {batching ? 'Approving…' : 'Approve all'}
+                {batching ? 'Approving…' : 'Approve all posts'}
               </Button>
             </div>
           }
@@ -2610,7 +2627,11 @@
                   <div className="bg-violet-50 border border-violet-100 rounded-lg p-3">
                     <div className="text-xs uppercase tracking-wider text-violet-700 font-semibold mb-1 flex items-center gap-1">
                       <Icon name="dollar" size={11} strokeWidth={2.4} />
-                      Paid spend — your AI agent is proposing this campaign
+                      {adProposalAction(item) === 'pause'
+                        ? 'Pause request — approving stops this campaign'
+                        : adProposalAction(item) === 'allocate'
+                          ? 'Budget change — approving sets this monthly cap'
+                          : 'Paid spend — your AI agent is proposing this campaign'}
                     </div>
                     <p className="text-sm text-ink leading-relaxed">{item.draft}</p>
                   </div>
@@ -2629,16 +2650,23 @@
                   <Button icon="check" variant="ok" className="flex-1"
                     disabled={busy}
                     onClick={() => decide(item, 'approve')}>Approve</Button>
-                  <Button icon="edit" variant="secondary"
-                    disabled={busy}
-                    onClick={() => setEditing({ item, draft: item.draft })}>Edit</Button>
+                  {/* Pause and budget proposals apply exact values, so there's
+                      nothing meaningful to edit — approve or reject only. */}
+                  {!['pause', 'allocate'].includes(adProposalAction(item)) && (
+                    <Button icon="edit" variant="secondary"
+                      disabled={busy}
+                      onClick={() => setEditing({ item, draft: item.draft })}>Edit</Button>
+                  )}
                   {/* Copy bridge: real publishing is still mocked/dormant, so
                       the honest path to "post this" is approve → copy → paste
-                      into the platform. Needs no backend — never disabled by busy. */}
-                  <Button icon="copy" variant="ghost"
-                    onClick={() => copyTextToClipboard(item.draft,
-                      () => setToast(`Post text copied — paste into ${(PLATFORMS[item.platform] || {}).label || 'your platform'}.`),
-                      () => setToast("Couldn't copy — select the draft text and copy manually."))}>Copy</Button>
+                      into the platform. Needs no backend — never disabled by busy.
+                      Not for spend proposals: there's no post text to paste. */}
+                  {item.kind !== 'boost' && (
+                    <Button icon="copy" variant="ghost"
+                      onClick={() => copyTextToClipboard(item.draft,
+                        () => setToast(`Post text copied — paste into ${(PLATFORMS[item.platform] || {}).label || 'your platform'}.`),
+                        () => setToast("Couldn't copy — select the draft text and copy manually."))}>Copy</Button>
+                  )}
                   <Button icon="x" variant="ghost"
                     disabled={busy}
                     onClick={() => decide(item, 'reject')}>Reject</Button>
@@ -5133,6 +5161,12 @@
     ? <Pill color="emerald" icon="check">Auto-scheduled</Pill>
     : <Pill color="amber">Awaiting your approval</Pill>;
 
+  // Why a spend change went to Approvals instead of happening (from
+  // app/agent/spend_policy.py). Only shown on proposals.
+  const ProposalReason = ({ attachment }) => attachment.tierMode === 'proposal' && attachment.reasonText
+    ? <div className="text-[11px] text-amber-800 bg-amber-50 rounded px-2 py-1 mb-2">{attachment.reasonText}</div>
+    : null;
+
   const AllocateBudgetCard = ({ attachment, onNavigate }) => (
     <div className="bg-white text-ink rounded-lg border border-amber-200 p-3">
       <div className="text-[11px] uppercase tracking-wider font-semibold text-amber-700 mb-2 flex items-center gap-1.5">
@@ -5142,10 +5176,13 @@
         {attachment.monthlyDollars}/month on {attachment.platform}
       </div>
       <div className="text-[11px] text-ink-soft italic mb-2">{attachment.reasoning}</div>
+      <ProposalReason attachment={attachment} />
       <div className="flex items-center justify-between pt-2 border-t border-surface-edge">
         <TierBadge mode={attachment.tierMode} />
-        <button onClick={() => onNavigate?.('ads')}
-          className="text-[11px] text-brand-600 hover:underline font-medium">Open Ads & Spend →</button>
+        <button onClick={() => onNavigate?.(attachment.tierMode === 'proposal' ? 'approvals' : 'ads')}
+          className="text-[11px] text-brand-600 hover:underline font-medium">
+          {attachment.tierMode === 'proposal' ? 'Open Approvals →' : 'Open Ads & Spend →'}
+        </button>
       </div>
     </div>
   );
@@ -5161,6 +5198,7 @@
         <dt className="text-ink-faint">Total</dt><dd className="font-medium">{attachment.totalDollars} ({attachment.days} days)</dd>
         <dt className="text-ink-faint col-span-2">Audience: <span className="text-ink-soft normal-case font-normal italic">{attachment.audience}</span></dt>
       </dl>
+      <ProposalReason attachment={attachment} />
       <div className="flex items-center justify-between pt-2 border-t border-surface-edge">
         <TierBadge mode={attachment.tierMode} />
         <button onClick={() => onNavigate?.(attachment.tierMode === 'proposal' ? 'approvals' : 'ads')}
@@ -6388,16 +6426,47 @@
       } catch {}
     }, [linkedinReturn, refreshLinkedinStatus]);
 
-    // Tier 3 spend-behavior toggle. Stored in localStorage for the demo;
-    // production would persist via settings router.
-    const [autoSpendEnabled, setAutoSpendEnabled] = useState(() => {
-      try { return localStorage.getItem('amplora.autoSpend') !== 'false'; } catch { return true; }
-    });
-    const toggleAutoSpend = () => {
+    // "Autonomous ad spend" switch. Server-side since v50 (it used to live in
+    // localStorage, which the backend never read, so switching it off did
+    // nothing). Optimistic flip; rolls back with a visible error on failure.
+    const autoSpendEnabled = !!settings.adAutonomyEnabled;
+    const [savingAutoSpend, setSavingAutoSpend] = useState(false);
+    // Shown right under the switch: the shared settings toast only renders on
+    // the Notifications sub-tab, and this switch lives on Connections.
+    const [autoSpendNote, setAutoSpendNote] = useState(null);  // { kind: 'ok'|'error', text }
+    useEffect(() => {
+      if (autoSpendNote?.kind !== 'ok') return;
+      const t = setTimeout(() => setAutoSpendNote(null), 4000);
+      return () => clearTimeout(t);
+    }, [autoSpendNote]);
+    const toggleAutoSpend = async () => {
+      if (savingAutoSpend) return;
       const next = !autoSpendEnabled;
-      setAutoSpendEnabled(next);
-      try { localStorage.setItem('amplora.autoSpend', next ? 'true' : 'false'); } catch {}
-      setSettingsToast(`Autonomous spend ${next ? 'enabled' : 'disabled'}.`);
+      setSavingAutoSpend(true);
+      setAutoSpendNote(null);
+      mutate(prev => prev ? ({ ...prev, settings: { ...prev.settings, adAutonomyEnabled: next } }) : prev);
+      try {
+        const resp = await fetch('/api/settings/ad-autonomy', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: next }),
+        });
+        if (!resp.ok) {
+          const detail = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
+          throw new Error(detail.detail || `HTTP ${resp.status}`);
+        }
+        const json = await resp.json();
+        mutate(prev => prev ? ({ ...prev, settings: { ...prev.settings, adAutonomyEnabled: !!json.adAutonomyEnabled } }) : prev);
+        setAutoSpendNote({ kind: 'ok', text: next
+          ? 'Autonomous ad spend is on. The agent can act within the caps you set.'
+          : 'Autonomous ad spend is off. Every ad change comes to Approvals first.' });
+      } catch (e) {
+        console.error('[settings.adAutonomy] failed', e);
+        mutate(prev => prev ? ({ ...prev, settings: { ...prev.settings, adAutonomyEnabled: !next } }) : prev);
+        setAutoSpendNote({ kind: 'error', text: `Couldn't change autonomous ad spend — ${e.message || e}` });
+      } finally {
+        setSavingAutoSpend(false);
+      }
     };
 
     // Dirty tracking: any difference between local state and server-of-record
@@ -6854,9 +6923,11 @@
                     </span>
                     <span>
                       <span className={`font-medium ${business.tier >= 3 ? 'text-ink' : 'text-ink-soft'}`}>Spend</span> on ads —
-                      {business.tier >= 3
-                        ? ' Autonomous boosts within your monthly caps.'
-                        : ' Your plan surfaces proposals only — upgrade to enable autonomous boosts.'}
+                      {business.tier < 3
+                        ? ' Your plan surfaces proposals only — upgrade to enable autonomous boosts.'
+                        : autoSpendEnabled
+                          ? ' Autonomous boosts within the monthly caps you set.'
+                          : ' Proposals only. Turn on autonomous ad spend below to let the agent act within your caps.'}
                     </span>
                   </li>
                   <li className="flex items-start gap-3"><span className="text-ink-faint shrink-0 mt-0.5"><Icon name="x" size={14} strokeWidth={2.4} /></span><span><span className="font-medium text-ink-soft">Send</span> messages on your behalf — chatbot escalations only, on eligible plans.</span></li>
@@ -6868,14 +6939,21 @@
                       <div className="flex-1 pr-3">
                         <div className="text-sm font-medium text-ink">Autonomous ad spend</div>
                         <div className="text-[11px] text-ink-faint mt-0.5 leading-relaxed">
-                          When on, your AI Agent can allocate budget and schedule boosts within the monthly caps you set. When off, it falls back to proposal-only.
+                          When on, your AI Agent can set budgets and schedule boosts on its own, but never above the monthly caps you set in Ads &amp; Spend. Anything above a cap, or on a platform with no cap, comes to Approvals. When off, every ad change comes to Approvals.
                         </div>
                       </div>
-                      <button onClick={toggleAutoSpend}
-                        className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${autoSpendEnabled ? 'bg-emerald-500' : 'bg-surface-edge'}`}>
+                      <button onClick={toggleAutoSpend} disabled={savingAutoSpend}
+                        role="switch" aria-checked={autoSpendEnabled} aria-label="Autonomous ad spend"
+                        className={`relative w-10 h-5 rounded-full transition-colors shrink-0 disabled:opacity-60 ${autoSpendEnabled ? 'bg-emerald-500' : 'bg-surface-edge'}`}>
                         <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${autoSpendEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
                       </button>
                     </div>
+                    {autoSpendNote && (
+                      <div role={autoSpendNote.kind === 'error' ? 'alert' : 'status'}
+                        className={`mt-2 text-[11px] rounded px-2 py-1 ${autoSpendNote.kind === 'error' ? 'bg-rose-50 text-rose-800 border border-rose-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
+                        {autoSpendNote.text}
+                      </div>
+                    )}
                   </div>
                 )}
               </Card>

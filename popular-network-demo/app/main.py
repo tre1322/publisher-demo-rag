@@ -89,6 +89,12 @@ def _startup() -> None:
     # Trust pass (v49): anchor timestamp for live Day-N rendering. Nullable;
     # _backfill_enrolled_at below fills pre-existing rows.
     _add_col_if_missing("businesses", "enrolled_at", "DATETIME")
+    # Phase 0 (money path): owner-authorized spend ceiling, server-side
+    # autonomy switch, and machine-readable proposal payloads. All nullable;
+    # NULL means "owner hasn't authorized" / "autonomy off" / "legacy row".
+    _add_col_if_missing("ad_platform_budgets", "owner_cap_cents", "INTEGER")
+    _add_col_if_missing("settings", "ad_autonomy_enabled", "BOOLEAN")
+    _add_col_if_missing("approvals", "payload_json", "JSON")
     inserted = seed_if_empty()
     if inserted:
         log.info("Seeded Quadd.ai (business_id=1) — Day-1 customer w/ voice brief loaded")

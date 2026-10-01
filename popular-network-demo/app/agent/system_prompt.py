@@ -310,12 +310,19 @@ def _ads_budget_section(db: Session, business_id: int, biz: Business | None) -> 
         .all()
     )
 
-    tier = (biz.tier or 0) if biz else 0
-    tier_note = (
-        "Tier 3 (Concierge) — your spend tools mutate state directly within the owner's caps."
-        if tier >= 3
-        else f"Tier {tier} — your spend tools queue proposals for the owner's approval (no direct mutation)."
-    )
+    from .spend_policy import autonomy_enabled
+
+    if autonomy_enabled(db, business_id):
+        tier_note = (
+            "Autonomous spend is ON: your spend tools act directly, but only within the "
+            "monthly caps the owner set. Anything above a cap, or on a platform with no "
+            "cap, goes to the owner's Approvals queue instead."
+        )
+    else:
+        tier_note = (
+            "Autonomous spend is OFF: every spend tool call becomes a proposal in the "
+            "owner's Approvals queue. Nothing is spent or changed until they approve."
+        )
 
     if not any(b.monthly_cap_cents > 0 for b in budgets) and not active_campaigns:
         return (

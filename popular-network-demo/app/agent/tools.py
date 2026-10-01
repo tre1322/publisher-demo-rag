@@ -22,12 +22,11 @@ from typing import Any, Callable
 
 from sqlalchemy.orm import Session
 
+from . import spend_policy
 from ..models import (
     AdCampaign,
     AdConnection,
-    AdPlatformBudget,
     Approval,
-    Business,
     MarketingPlan,
     Post,
     Review,
@@ -111,18 +110,19 @@ _REGENERATE_INSIGHTS_DESCRIPTION = (
     "this on every turn — the underlying data only changes daily."
 )
 
-# Phase E.4 — Ad-spend tools. Tier 2 → these queue approvals; Tier 3 → they
-# mutate state autonomously within owner-set caps. Tier logic enforced in
-# code (see _check_tier and the branching in each executor), NOT in the
-# prompt — same anti-prompt-yelling discipline as draft_post's regex
-# trigger. The agent doesn't need to know about tiers.
+# Phase E.4 — Ad-spend tools. Each executor asks app/agent/spend_policy.py
+# whether to act on its own or queue an approval (Tier 3+ AND the owner's
+# autonomy switch AND within owner-authorized caps). Enforced in code, NOT in
+# the prompt — same anti-prompt-yelling discipline as draft_post's regex
+# trigger. The agent doesn't need to know the rules.
 _ALLOCATE_BUDGET_DESCRIPTION = (
     "Set or adjust the monthly spend cap for a specific ad platform "
     "(meta / google / tiktok / linkedin). Fire this when the owner says "
     "something like 'put $200 on Meta this month,' 'set my Google budget "
     "to $150,' 'I want to spend $300 on LinkedIn,' or 'cap TikTok at "
-    "zero — pause it.' One platform per call. On Tier 3 plans the cap "
-    "is set immediately; on Tier 2 it queues for the owner's approval."
+    "zero — pause it.' One platform per call. The tool result says whether "
+    "the cap was set or queued for the owner's approval; relay that "
+    "exactly and never claim a queued change already happened."
 )
 
 _SCHEDULE_BOOST_DESCRIPTION = (
@@ -132,15 +132,16 @@ _SCHEDULE_BOOST_DESCRIPTION = (
     "campaign in the dashboard's Ads & Spend tab. Fire this when the "
     "owner says 'boost that post for $30/day on Facebook,' 'run that "
     "for a week on Google,' or after they've explicitly approved a "
-    "propose_boost. On Tier 3 the campaign goes live; on Tier 2 it "
-    "queues for explicit owner approval."
+    "propose_boost. The tool result says whether the campaign was "
+    "scheduled or queued for the owner's approval; relay that exactly "
+    "and never claim a queued boost is running."
 )
 
 _PAUSE_CAMPAIGN_DESCRIPTION = (
     "Pause an active or scheduled paid-ad campaign by campaign_id. Use "
     "this when the owner says 'pause that campaign,' 'stop spending on "
     "X,' or you notice a campaign is significantly underperforming. "
-    "Tier 3 pauses immediately; Tier 2 queues the pause request for "
+    "The tool result says whether it paused or queued the request for "
     "owner approval. Restart is owner-only — agent never re-activates."
 )
 
@@ -491,20 +492,10 @@ def _exec_regenerate_insights(
 
 
 # --------------------------------------------------------------------------- #
-# Phase E.4 — ad-spend tool executors with tier gating.
+# Phase E.4 — ad-spend tool executors. Whether each one acts on its own or
+# queues a proposal is decided by app/agent/spend_policy.py (Phase 0,
+# 2026-10-01), not by tier alone.
 # --------------------------------------------------------------------------- #
-
-
-def _business_is_tier3(db: Session, business_id: int) -> bool:
-    """Tier 3 (Concierge) = autonomous spend allocation within owner caps.
-    Tier 2 (everyone else) = proposal-only path through Approvals queue.
-    """
-    biz = db.get(Business, business_id)
-    return biz is not None and (biz.tier or 0) >= 3
-
-
-def _current_month_year() -> str:
-    return datetime.utcnow().strftime("%Y-%m")
 
 
 def _exec_allocate_platform_budget(
@@ -528,51 +519,38 @@ def _exec_allocate_platform_budget(
             is_error=True,
         )
 
-    is_tier3 = _business_is_tier3(db, business_id)
-    month = _current_month_year()
     dollars = cents / 100
+    row = spend_policy.budget_row(db, business_id, platform)
+    decision, reason = spend_policy.cap_change_decision(
+        requested_cents=cents,
+        owner_cap_cents=row.owner_cap_cents if row is not None else None,
+        autonomy_enabled=spend_policy.autonomy_enabled(db, business_id),
+    )
+    attachment = {
+        "kind": "allocate-budget-card",
+        "platform": raw_platform,
+        "platformKey": platform,
+        "monthlyCents": cents,
+        "monthlyDollars": f"${dollars:,.0f}",
+        "reasoning": reasoning,
+        "tierMode": "autonomous" if decision == "apply" else "proposal",
+        "reason": reason,
+        "reasonText": spend_policy.REASON_TEXT[reason],
+    }
 
-    if is_tier3:
-        # Mutate the budget row directly.
-        row = (
-            db.query(AdPlatformBudget)
-            .filter(
-                AdPlatformBudget.business_id == business_id,
-                AdPlatformBudget.platform == platform,
-                AdPlatformBudget.month_year == month,
-            )
-            .one_or_none()
-        )
-        if row is None:
-            row = AdPlatformBudget(
-                business_id=business_id,
-                platform=platform,
-                month_year=month,
-                monthly_cap_cents=cents,
-                spend_cents=0,
-                status="active",
-            )
-            db.add(row)
-        else:
-            row.monthly_cap_cents = cents
-            row.updated_at = datetime.utcnow()
+    if decision == "apply":
+        # The policy only returns apply when the owner authorized a cap this
+        # month, so the row exists and cents <= row.owner_cap_cents.
+        row.monthly_cap_cents = cents
+        row.updated_at = datetime.utcnow()
         return ToolResult(
             text=(
-                f"Tier 3 autonomous allocation: set {raw_platform} monthly cap to "
-                f"${dollars:,.0f} ({reasoning})."
+                f"Set the {raw_platform} monthly cap to ${dollars:,.0f}, within the owner's "
+                f"${row.owner_cap_cents / 100:,.0f} limit ({reasoning})."
             ),
-            attachment={
-                "kind": "allocate-budget-card",
-                "platform": raw_platform,
-                "platformKey": platform,
-                "monthlyCents": cents,
-                "monthlyDollars": f"${dollars:,.0f}",
-                "reasoning": reasoning,
-                "tierMode": "autonomous",
-            },
+            attachment=attachment,
         )
 
-    # Tier 2 — queue a proposal-style Approval row.
     db.add(Approval(
         business_id=business_id,
         external_id=f"allocate-{platform}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
@@ -580,22 +558,15 @@ def _exec_allocate_platform_budget(
         platform=platform,
         title=f"Allocate ${dollars:,.0f}/mo to {raw_platform}",
         draft=f"Set monthly cap to ${dollars:,.0f} on {raw_platform}. {reasoning}",
-        note="Agent-proposed budget allocation. On Tier 3 this would have executed automatically.",
+        note=f"Agent-proposed budget change. {spend_policy.REASON_TEXT[reason]}",
+        payload_json={"action": "allocate", "platform": platform, "monthly_cents": cents},
     ))
     return ToolResult(
         text=(
-            f"Tier 2 proposal queued: allocate ${dollars:,.0f}/mo to {raw_platform}. "
-            f"Owner sees it in Approvals. ({reasoning})"
+            f"Proposal queued for the owner's approval: ${dollars:,.0f}/mo on {raw_platform}. "
+            f"{spend_policy.REASON_TEXT[reason]} ({reasoning})"
         ),
-        attachment={
-            "kind": "allocate-budget-card",
-            "platform": raw_platform,
-            "platformKey": platform,
-            "monthlyCents": cents,
-            "monthlyDollars": f"${dollars:,.0f}",
-            "reasoning": reasoning,
-            "tierMode": "proposal",
-        },
+        attachment=attachment,
     )
 
 
@@ -636,35 +607,25 @@ def _exec_schedule_boost(
             is_error=True,
         )
 
-    is_tier3 = _business_is_tier3(db, business_id)
     planned_total = daily_cents * days
     daily_dollars = daily_cents / 100
     total_dollars = planned_total / 100
 
-    # On Tier 3, also check that the cap has headroom. If exceeded, fall
-    # back to Tier 2 behavior so we never auto-blow past the owner's cap.
-    if is_tier3:
-        month = _current_month_year()
-        budget = (
-            db.query(AdPlatformBudget)
-            .filter(
-                AdPlatformBudget.business_id == business_id,
-                AdPlatformBudget.platform == platform,
-                AdPlatformBudget.month_year == month,
-            )
-            .one_or_none()
-        )
-        if budget is not None and budget.monthly_cap_cents > 0:
-            remaining = budget.monthly_cap_cents - budget.spend_cents
-            if planned_total > remaining:
-                # Soft-fall to proposal so the owner sees and decides.
-                is_tier3 = False
+    # Autonomous only with autonomy on AND a cap with room for the whole
+    # boost after money already committed to other campaigns. No cap, or not
+    # enough room → soft-fall to a proposal the owner decides on.
+    decision, reason = spend_policy.boost_decision(
+        planned_total_cents=planned_total,
+        headroom_cents=spend_policy.platform_headroom_cents(db, business_id, platform),
+        autonomy_enabled=spend_policy.autonomy_enabled(db, business_id),
+    )
+    autonomous = decision == "apply"
 
-    status = "scheduled" if is_tier3 else "pending_approval"
-    origin = "agent_autonomous" if is_tier3 else "agent_proposed"
-    approved_by = "agent" if is_tier3 else None
+    status = "scheduled" if autonomous else "pending_approval"
+    origin = "agent_autonomous" if autonomous else "agent_proposed"
+    approved_by = "agent" if autonomous else None
     external_id = None
-    if is_tier3:
+    if autonomous:
         # Mock→real swap point. LinkedIn provisions a real campaign when
         # live+connected; everything else gets a mock id. If the real call
         # fails, surface it as a tool error rather than silently mocking —
@@ -708,12 +669,12 @@ def _exec_schedule_boost(
         approved_by=approved_by,
         external_campaign_id=external_id,
         performance_json={"impressions": 0, "clicks": 0, "ctr": 0.0},
-        scheduled_for=datetime.utcnow() if is_tier3 else None,
+        scheduled_for=datetime.utcnow() if autonomous else None,
     )
     db.add(campaign)
     db.flush()
 
-    if not is_tier3:
+    if not autonomous:
         db.add(Approval(
             business_id=business_id,
             external_id=f"boost-{campaign.id}",
@@ -725,15 +686,16 @@ def _exec_schedule_boost(
                 f"${daily_dollars:.0f}/day × {days} days "
                 f"(${total_dollars:.0f} total) on {raw_platform}. Targeting: {audience}."
             ),
-            note="Proposed by your AI Agent. Click Approve to schedule.",
+            note=f"Proposed by your AI Agent. {spend_policy.REASON_TEXT[reason]}",
+            payload_json={"action": "boost", "campaign_id": campaign.id},
         ))
 
     text = (
-        f"Tier 3 autonomous: scheduled ${total_dollars:.0f} boost on {raw_platform} "
-        f"(${daily_dollars:.0f}/day × {days} days), campaign #{campaign.id}."
-        if is_tier3
-        else f"Tier 2 proposal queued: ${total_dollars:.0f} boost on {raw_platform}. "
-             f"Owner approves it in the Approvals queue."
+        f"Scheduled ${total_dollars:.0f} boost on {raw_platform} "
+        f"(${daily_dollars:.0f}/day × {days} days), campaign #{campaign.id}, within the owner's cap."
+        if autonomous
+        else f"Proposal queued: ${total_dollars:.0f} boost on {raw_platform}. "
+             f"Owner approves it in the Approvals queue. {spend_policy.REASON_TEXT[reason]}"
     )
 
     return ToolResult(
@@ -751,8 +713,10 @@ def _exec_schedule_boost(
             "totalCents": planned_total,
             "totalDollars": f"${total_dollars:.0f}",
             "audience": audience,
-            "tierMode": "autonomous" if is_tier3 else "proposal",
+            "tierMode": "autonomous" if autonomous else "proposal",
             "status": status,
+            "reason": reason,
+            "reasonText": spend_policy.REASON_TEXT[reason],
         },
     )
 
@@ -777,11 +741,13 @@ def _exec_pause_campaign(
             is_error=True,
         )
 
-    is_tier3 = _business_is_tier3(db, business_id)
-    if is_tier3:
+    decision, policy_reason = spend_policy.pause_decision(
+        autonomy_enabled=spend_policy.autonomy_enabled(db, business_id),
+    )
+    if decision == "apply":
         campaign.status = "paused"
         return ToolResult(
-            text=f"Tier 3 autonomous: paused campaign #{campaign_id} ({reason}).",
+            text=f"Paused campaign #{campaign_id} ({reason}).",
             attachment={
                 "kind": "pause-campaign-card",
                 "campaignId": campaign_id,
@@ -792,7 +758,6 @@ def _exec_pause_campaign(
             },
         )
 
-    # Tier 2 — queue a proposal
     db.add(Approval(
         business_id=business_id,
         external_id=f"pause-{campaign_id}",
@@ -800,10 +765,11 @@ def _exec_pause_campaign(
         platform=campaign.platform,
         title=f"Pause campaign: {campaign.name}",
         draft=f"Pause active campaign #{campaign_id} on {campaign.platform}. Reason: {reason}",
-        note="Agent-proposed pause. Approve to halt the campaign.",
+        note=f"Agent-proposed pause. Approve to halt the campaign. {spend_policy.REASON_TEXT[policy_reason]}",
+        payload_json={"action": "pause", "campaign_id": campaign_id},
     ))
     return ToolResult(
-        text=f"Tier 2 proposal queued: pause campaign #{campaign_id}. ({reason})",
+        text=f"Proposal queued: pause campaign #{campaign_id}. Owner approves it in Approvals. ({reason})",
         attachment={
             "kind": "pause-campaign-card",
             "campaignId": campaign_id,
