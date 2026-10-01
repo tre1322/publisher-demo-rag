@@ -65,6 +65,12 @@ def main() -> None:
     from app.main import app
     from app.scripts._auth_helper import bootstrap_login
 
+    # Hermetic: section B mints an invite, which would otherwise make a LIVE
+    # Postmark send attempt. Must run AFTER importing app.main — its
+    # load_dotenv(override=True) restores the key from the parent .env.
+    # (Same reasoning as smoke_invite.py.)
+    os.environ.pop("POSTMARK_API_KEY", None)
+
     with TestClient(app, follow_redirects=False) as client:
         bootstrap_login(client)
         _run(client, app)
