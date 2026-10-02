@@ -38,6 +38,7 @@ EXEMPT_PREFIXES: tuple[str, ...] = (
     "/api/auth/logout",            # both /logout and /logout-all match — see AUTH_NO_BIZ to require auth for -all
     "/api/auth/invites/lookup",    # public — preview invite for the claim page
     "/api/auth/invites/claim",     # public — accept invite + mint session
+    "/api/auth/password-reset/",   # public — forgot-password request/lookup/confirm
     "/api/widget/",                # public widget chat (H.2)
     "/api/chatbot/ingest",         # a client's chatbot relay; authed by X-Amplafai-Key, never a cookie
     "/static/",
@@ -123,6 +124,20 @@ class RequireBusinessMiddleware(BaseHTTPMiddleware):
                     # they aren't a member of. Act as its owner.
                     request.state.business_id = session.active_business_id
                     request.state.user_role = "owner"
+
+            # Member fallback: no business chosen yet, or the chosen one was
+            # deleted (data_lifecycle clears it) → the user's first remaining
+            # membership, so they land on a working dashboard, not a 409.
+            if request.state.business_id is None and not user.is_superuser:
+                bu = (
+                    db.query(BusinessUser)
+                    .filter(BusinessUser.user_id == user.id)
+                    .order_by(BusinessUser.business_id.asc())
+                    .first()
+                )
+                if bu is not None:
+                    request.state.business_id = bu.business_id
+                    request.state.user_role = bu.role
 
             # Superuser fallback: if no business is set yet, default to the
             # first business in the DB so the platform operator lands on a

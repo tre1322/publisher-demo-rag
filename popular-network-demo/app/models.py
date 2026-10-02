@@ -56,6 +56,11 @@ class Business(Base):
     voice_brief_json: Mapped[Any] = mapped_column(JSON, nullable=True)
     # Phase 1. The business's own website, e.g. "https://example.com".
     website: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    # Phase 1. Deletion clock (privacy policy: deleted 30 days after
+    # cancelling). Set by the admin console; data_lifecycle.purge_due runs
+    # the deletion once deletion_due_at passes. NULL = not scheduled.
+    deletion_requested_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    deletion_due_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     # Phase H.2.2 — widget CORS allowlist. JSON list of allowed origins
     # (e.g. ["https://cottonwoodcountycitizen.com", "https://staging.example.com"]).
     # When null/empty, /api/widget/chat accepts any Origin (v1 default — most
@@ -796,3 +801,22 @@ class BusinessUser(Base):
     role: Mapped[str] = mapped_column(String(16), default="owner")
     invited_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     accepted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PasswordReset(Base):
+    """One-time "forgot password" link (Phase 1).
+
+    The emailed token is shown once; only its sha256 is stored, same as
+    sessions and invites. A reset is good for one use within RESET_TTL and
+    signs the user out everywhere when it's used.
+    """
+
+    __tablename__ = "password_resets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    requested_ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
