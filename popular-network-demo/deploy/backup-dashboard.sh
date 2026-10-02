@@ -40,6 +40,7 @@ PY
 docker cp "$CONTAINER:/tmp/nightly-backup.db" "$OUT"
 docker exec "$CONTAINER" rm -f /tmp/nightly-backup.db
 gzip -9 "$OUT"
+chmod 600 "$OUT.gz"  # docker cp sets its own mode; umask doesn't reach it
 echo "kept $OUT.gz ($(du -h "$OUT.gz" | cut -f1))"
 
 find "$BACKUP_DIR" -name 'popular_network-*.db.gz' -mtime +"$KEEP_DAYS" -print -delete
