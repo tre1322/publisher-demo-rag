@@ -39,6 +39,7 @@ from starlette.responses import Response  # noqa: E402
 from .auth.middleware import RequireBusinessMiddleware  # noqa: E402
 from .db import _add_col_if_missing, init_db  # noqa: E402
 from .routers import (  # noqa: E402
+    admin,
     ads,
     approvals,
     auth,
@@ -104,11 +105,19 @@ def _startup() -> None:
     _add_col_if_missing("ad_platform_budgets", "owner_cap_cents", "INTEGER")
     _add_col_if_missing("settings", "ad_autonomy_enabled", "BOOLEAN")
     _add_col_if_missing("approvals", "payload_json", "JSON")
+    # Phase 1: demo-vs-real flag, voice brief in the DB, client website.
+    _add_col_if_missing("businesses", "is_demo", "BOOLEAN")
+    _add_col_if_missing("businesses", "voice_brief_json", "JSON")
+    _add_col_if_missing("businesses", "website", "VARCHAR(200)")
     inserted = seed_if_empty()
     if inserted:
         log.info("Seeded Quadd.ai (business_id=1) — Day-1 customer w/ voice brief loaded")
     else:
         log.info("DB already seeded — skipping")
+    # Phase 1: Quadd is the demo account (must run before anything that
+    # branches on is_demo), and file-based voice briefs move into the DB.
+    _backfill_demo_flag()
+    _backfill_voice_briefs()
     # One-time backfill: settings rows that pre-date notifications_json have
     # NULL there. Populate with sensible defaults so the Notifications tab
     # renders something. Safe to re-run on every startup (no-op once filled).
@@ -136,6 +145,35 @@ def _startup() -> None:
     _backfill_attention_copy()
 
 
+def _backfill_demo_flag() -> None:
+    """Quadd (slug quadd_ai) is the sales-demo account. Every other business
+    stays NULL = real. Only fills NULL, so an admin's later choice sticks."""
+    from .db import SessionLocal
+    from .models import Business
+
+    with SessionLocal() as db:
+        biz = db.query(Business).filter(Business.slug == "quadd_ai", Business.is_demo.is_(None)).first()
+        if biz is not None:
+            biz.is_demo = True
+            log.info(f"Marked business_id={biz.id} ({biz.slug}) as the demo account")
+        db.commit()
+
+
+def _backfill_voice_briefs() -> None:
+    """Copy a legacy voice-briefs/{slug}.json into the DB once."""
+    from .db import SessionLocal
+    from .models import Business
+    from .voice_brief import brief_from_file
+
+    with SessionLocal() as db:
+        for biz in db.query(Business).filter(Business.voice_brief_json.is_(None)).all():
+            brief = brief_from_file(biz.slug)
+            if brief:
+                biz.voice_brief_json = brief
+                log.info(f"Moved voice brief for business_id={biz.id} ({biz.slug}) into the DB")
+        db.commit()
+
+
 def _backfill_reach_tiers() -> None:
     """Insert the Phase D reach-tier ladder for any business that doesn't have it."""
     from .db import SessionLocal
@@ -146,7 +184,8 @@ def _backfill_reach_tiers() -> None:
         for biz in db.query(Business).all():
             has_any = db.query(ReachTier).filter(ReachTier.business_id == biz.id).first()
             if has_any is None:
-                _seed_reach_tiers(db, business_id=biz.id)
+                _seed_reach_tiers(db, business_id=biz.id, publisher=biz.publisher or None,
+                                  location=biz.location or None)
                 log.info(f"Backfilled reach tier ladder for business_id={biz.id} ({biz.slug})")
         db.commit()
 
@@ -223,8 +262,9 @@ def _backfill_phase_f() -> None:
 
             # Dashboard notices fixup — only for Tier 4 customers whose
             # notices still say "concierge". Tier 3 customers should keep
-            # their concierge wording.
-            if biz.tier >= 4:
+            # their concierge wording. Demo accounts only: this rewrites the
+            # old Quadd seed copy and must never inject it into a real client.
+            if biz.tier >= 4 and biz.is_demo:
                 notices = db.get(DashboardNotices, biz.id)
                 if notices is not None:
                     changed = False
@@ -406,7 +446,7 @@ def _backfill_phase_g() -> None:
 
 def _backfill_notification_defaults() -> None:
     from .db import SessionLocal
-    from .models import DashboardNotices, SettingsRow
+    from .models import Business, DashboardNotices, SettingsRow
 
     defaults = [
         {"key": "neg_review",        "label": "New negative review (2★ or below)", "on": True,  "via": "Email + push"},
@@ -425,8 +465,11 @@ def _backfill_notification_defaults() -> None:
         # nav. Patch them in place — only mutate items that don't already carry it,
         # so a future edited attention feed isn't clobbered.
         target_id_map = {"approvals": "a1", "reviews": "r3"}
+        # Legacy seed ids ("a1", "r3") only exist in the demo seed; never
+        # point a real client's attention items at them.
+        demo_ids = {b.id for b in db.query(Business).filter(Business.is_demo.is_(True)).all()}
         for notices in db.query(DashboardNotices).all():
-            if not notices.attention_json:
+            if not notices.attention_json or notices.business_id not in demo_ids:
                 continue
             changed = False
             patched = []
@@ -460,6 +503,7 @@ async def _no_cache(request: Request, call_next: Callable[[Request], Awaitable[R
 app.add_middleware(RequireBusinessMiddleware)
 
 app.include_router(auth.router, prefix="/api", tags=["auth"])
+app.include_router(admin.router, prefix="/api", tags=["admin"])
 app.include_router(invites.router, prefix="/api", tags=["invites"])
 app.include_router(widget.router, prefix="/api", tags=["widget"])
 app.include_router(bootstrap.router, prefix="/api", tags=["bootstrap"])
@@ -515,6 +559,17 @@ def login_page(request: Request):
     if _is_authed(request):
         return RedirectResponse(url="/", status_code=302)
     return FileResponse(ROOT / "login.html")
+
+
+@app.get("/admin", include_in_schema=False)
+def admin_page(request: Request):
+    # Amplafai operators only. Everyone else is sent to their dashboard; the
+    # /api/admin/* endpoints enforce the same rule on their own.
+    if not _is_authed(request):
+        return RedirectResponse(url="/login", status_code=302)
+    if not getattr(request.state, "is_superuser", False):
+        return RedirectResponse(url="/", status_code=302)
+    return FileResponse(ROOT / "admin.html")
 
 
 @app.get("/invite", include_in_schema=False)

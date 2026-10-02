@@ -14,6 +14,8 @@ Earlier Westbrook seed is preserved in git history if we want to switch back.
 """
 from __future__ import annotations
 
+import re
+
 from .db import SessionLocal
 from datetime import datetime, timedelta
 
@@ -77,6 +79,8 @@ def seed_if_empty() -> bool:
             tech_name=None,
             years_in_town=None,
             ase_certified=False,
+            # Quadd is the sales-demo account: simulator + sample imports allowed.
+            is_demo=True,
         )
         db.add(biz)
         db.flush()
@@ -305,7 +309,7 @@ def seed_if_empty() -> bool:
         # The territory list is the SW Peach pilot footprint described in §4.2.
         # Multipliers anchor on the worked example ($200 → $300/$400/$500–600);
         # the Maximum tier picks the midpoint of the +150–200% range (175%).
-        _seed_reach_tiers(db, business_id=1)
+        _seed_reach_tiers(db, business_id=1, publisher=biz.publisher, location=biz.location)
 
         # Phase E — paid-ad spend management. Quadd is Day-1: no caps set,
         # no platforms connected. The dashboard's empty state will explain
@@ -404,14 +408,32 @@ def _seed_billing_usage(db, business_id: int, tier: int) -> None:
         ))
 
 
-def _seed_reach_tiers(db, business_id: int) -> None:
+def _tier_territories(tier_key: str, home: str | None) -> list[str]:
+    """Local = the business's own town only; wider tiers = home first, then
+    the rest of the network footprint. Without a town, Local is empty."""
+    if tier_key == "local":
+        return [home] if home else []
+    rest = [t for t in _SW_PEACH_TERRITORIES[tier_key] if t != home]
+    return ([home] if home else []) + rest
+
+
+def _seed_reach_tiers(db, business_id: int, *, publisher: str | None = None, location: str | None = None) -> None:
+    """The reach-tier ladder. Copy names the business's own publisher + town
+    (Quadd's seed passes Cottonwood County Citizen / New Ulm, which yields
+    the original wording); other businesses never inherit Quadd's."""
+    paper = publisher or "local publisher's"
+    town = (location or "").split(",")[0].strip() or "your area"
+    # Territory codes are the network's slugified town names. The business's
+    # own town is its Local tier and leads every wider tier; for New Ulm
+    # (Quadd) this reproduces the original SW Peach lists exactly.
+    home = re.sub(r"[^a-z0-9]+", "_", town.lower()).strip("_") if location else None
     ladder = [
         {
             "tier_key": "local",
             "label": "Local Reach",
             "multiplier_pct": 0,
             "radius_miles": None,
-            "description": "Included in your base ad rate. Your publication + the Cottonwood County Citizen chatbot in New Ulm.",
+            "description": f"Included in your base ad rate. Your publication + the {paper} chatbot in {town}.",
         },
         {
             "tier_key": "regional",
@@ -425,7 +447,7 @@ def _seed_reach_tiers(db, business_id: int) -> None:
             "label": "Network Reach (+100%)",
             "multiplier_pct": 100,
             "radius_miles": 100,
-            "description": "Full network reach across every territory within 100 miles of New Ulm. Built for advertisers happy to drive customers in from an hour away.",
+            "description": f"Full network reach across every territory within 100 miles of {town}. Built for advertisers happy to drive customers in from an hour away.",
         },
         {
             "tier_key": "maximum",
@@ -442,6 +464,6 @@ def _seed_reach_tiers(db, business_id: int) -> None:
             label=row["label"],
             multiplier_pct=row["multiplier_pct"],
             radius_miles=row["radius_miles"],
-            territories_json=_SW_PEACH_TERRITORIES[row["tier_key"]],
+            territories_json=_tier_territories(row["tier_key"], home),
             description=row["description"],
         ))

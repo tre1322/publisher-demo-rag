@@ -118,6 +118,11 @@ class RequireBusinessMiddleware(BaseHTTPMiddleware):
                 if bu is not None:
                     request.state.business_id = bu.business_id
                     request.state.user_role = bu.role
+                elif user.is_superuser and db.get(Business, session.active_business_id) is not None:
+                    # Phase 1 admin console: the operator opened a business
+                    # they aren't a member of. Act as its owner.
+                    request.state.business_id = session.active_business_id
+                    request.state.user_role = "owner"
 
             # Superuser fallback: if no business is set yet, default to the
             # first business in the DB so the platform operator lands on a

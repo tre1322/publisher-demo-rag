@@ -325,6 +325,8 @@ def switch_business(
         is_superuser = getattr(request.state, "is_superuser", False)
         if not is_superuser:
             raise HTTPException(403, detail="not_a_member_of_business")
+        if db.get(Business, body.business_id) is None:
+            raise HTTPException(404, detail="business_not_found")
 
     s.active_business_id = body.business_id
     db.commit()

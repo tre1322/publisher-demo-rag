@@ -35,7 +35,7 @@
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>Popular Network — Quadd.ai</title>
+  <title>Marketing dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet" />
@@ -139,7 +139,7 @@
   // version your browser is showing (rendered in the sidebar footer).
   // Keep it ONE concise line: it renders in the sidebar, so a changelog here
   // leaks internal roadmap language to customers. History lives in git.
-  const BUILD_VERSION = '2026-10-02 · v51 — tenant isolation: posts/reviews/plan scoped to the signed-in business, roles enforced, view-only notice.';
+  const BUILD_VERSION = '2026-10-02 · v52 — real clients: admin console, clean Day 1, demo-only simulator, honest empty states.';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -530,7 +530,7 @@
         <div className="text-xs font-medium text-ink-faint uppercase tracking-wider">{label}</div>
         <div className="mt-2 flex items-baseline gap-2">
           <div className="text-2xl font-semibold text-ink">{value}</div>
-          {delta && (
+          {delta && delta !== '—' && (
             <span className={`text-xs font-semibold ${positive ? 'text-ok' : 'text-bad'}`}>
               {positive ? '▲' : '▼'} {delta}
             </span>
@@ -540,6 +540,17 @@
         {accent && <div className="mt-3">{accent}</div>}
       </div>
     </Card>
+  );
+
+  // Honest empty state: says what will fill this space, never fakes it.
+  const EmptyNote = ({ icon = 'sparkles', title, children }) => (
+    <div className="border-2 border-dashed border-surface-edge rounded-xl px-6 py-10 text-center bg-white">
+      <div className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-brand-50 text-brand-600 mb-3">
+        <Icon name={icon} size={20} strokeWidth={1.8} />
+      </div>
+      <h4 className="font-semibold text-ink text-sm mb-1">{title}</h4>
+      <p className="text-sm text-ink-soft max-w-md mx-auto leading-relaxed">{children}</p>
+    </div>
   );
 
   const ProgressBar = ({ value, max, color = '#0E5E6F', label, height = 6 }) => {
@@ -740,6 +751,9 @@
   };
 
   const PieChart = ({ slices, size = 200 }) => {
+    if (!slices || !slices.length) {
+      return <div className="text-sm text-ink-faint italic py-8 text-center">No channel mix set yet.</div>;
+    }
     const total = slices.reduce((s, x) => s + x.pct, 0);
     const cx = size / 2, cy = size / 2, r = size / 2 - 4, rInner = r * 0.55;
     let angle = -Math.PI / 2;
@@ -764,6 +778,7 @@
   };
 
   const Sparkline = ({ values, width = 100, height = 28, color = '#0E5E6F' }) => {
+    if (!values || values.length < 2) return null;  // nothing to draw yet
     const min = Math.min(...values) - 0.05;
     const max = Math.max(...values) + 0.05;
     const stepX = (i) => (i / (values.length - 1)) * (width - 4) + 2;
@@ -822,7 +837,7 @@
   ];
 
   const Sidebar = ({ current, onNavigate }) => {
-    const { business, approvals, chatbot } = useDashboard();
+    const { business, approvals, chatbot, access } = useDashboard();
     // Phase B.7: derive Approvals badge from the live queue length so it
     // shrinks/grows as the owner works through it.
     // Phase F: filter out tabs whose minTier > current tier (Inventory =
@@ -854,7 +869,7 @@
             onClick={() => onNavigate(n.id)}>
             <Icon name={n.icon} size={17} strokeWidth={1.8} />
             <span className="flex-1">{n.label}</span>
-            {n.count !== undefined && (
+            {n.count > 0 && (
               <span className="bg-accent text-brand-800 text-[10px] font-semibold rounded-full px-1.5 py-0.5">{n.count}</span>
             )}
           </button>
@@ -874,6 +889,12 @@
             <Icon name="chevR" size={12} />
           </div>
         </div>
+        {access?.isSuperuser && (
+          <a href="/admin" className="mt-2 flex items-center justify-between px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-[12px] text-white">
+            <span>Amplafai admin — all businesses</span>
+            <Icon name="chevR" size={12} />
+          </a>
+        )}
         <div className="mt-2 px-3 py-1.5 text-[10px] text-white/50 font-mono leading-tight" title={BUILD_VERSION}>
           BUILD<br />{BUILD_VERSION}
         </div>
@@ -912,11 +933,53 @@
   /* ============================================================
      VIEW: COMPOSE — brief + per-platform editor + live preview
      ============================================================ */
+  // Compose starting points. The sample is Quadd's worked example for sales
+  // demos (business.isDemo); real clients never see it.
+  const COMPOSE_DEMO_SAMPLE = {
+    topic: 'Why publishers love the universal document extractor',
+    notes: 'Lead with the Citizen Publishing time-savings testimonial — 2–3 hours/week. Founder credibility (28 years as a publisher) is the wedge. End with the 7-day free trial.',
+    drafts: {
+      fb: {
+        text: 'A writer at Citizen Publishing is saving 2-3 hours every week with Quadd.ai. No question.\n\nThat\'s back-to-back interviews she\'s not re-typing. Council meetings she\'s not slogging through before she writes the first word. Actual journalism time, returned.\n\n7-day free trial. See what your newsroom gets back: quadd.ai',
+        cta: 'Learn more'
+      },
+      ig: {
+        caption: 'Re-typing court documents? Slogging through transcripts before you can write a single word? Built by a publisher with 28 years in. Quadd.ai gives your staff back 2-3 hours every week. 🗞️\n\nLink in bio.',
+        hashtags: '#NewsroomTools #JournalismLife #LocalNews #PublishingTech #SmallTownNews'
+      },
+      gbp: {
+        headline: 'Quadd.ai · 7-day free trial',
+        text: 'AI tools built for newspaper publishers, by a publisher. Document extraction, AP-style checking, interview transcription.',
+        cta: 'Learn more'
+      },
+      web: {
+        title: 'Why publishers love the Universal Document Extractor',
+        subtitle: 'Built by a 28-year publisher who got tired of re-typing court documents by hand.',
+        body: 'Most newsroom staff are spending hours every week on work that has nothing to do with journalism. Re-typing court filings. Reformatting press releases. Slogging through interview audio before they write a single word.\n\nA writer at Citizen Publishing was doing all of that. Then they put Quadd.ai\'s Universal Document Extractor to work. The result: 2-3 hours saved every week. No question. They\'re now rolling it to the rest of the newsroom.\n\nThe tool learns your publication\'s own template and returns formatted, ready-to-use content in minutes. The court document problem — that 38-page filing you used to dread — becomes a non-event.\n\nQuadd.ai includes three tools in one bundle: Universal Document Extractor, AP-Style Checker, and Interview Transcription. The 7-day free trial is exactly that. Free. No card required. Load in your actual documents and see what happens.\n\nIf your staff is still grinding through documents and transcripts before they can write the first word, there\'s a better way.',
+        slug: '/blog/universal-document-extractor-publishers',
+        readTime: '3 min'
+      }
+    },
+  };
+  const COMPOSE_EMPTY = {
+    topic: '',
+    notes: '',
+    drafts: {
+      fb:  { text: '', cta: 'Learn more' },
+      ig:  { caption: '', hashtags: '' },
+      gbp: { headline: '', text: '', cta: 'Learn more' },
+      web: { title: '', subtitle: '', body: '', slug: '', readTime: '' },
+    },
+  };
+
   const ComposeView = ({ onNavigate }) => {
     const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings, reach } = useDashboard();
     const mutate = useDashboardMutate();
-    const [topic, setTopic] = useState('Why publishers love the universal document extractor');
-    const [notes, setNotes] = useState('Lead with the Citizen Publishing time-savings testimonial — 2–3 hours/week. Founder credibility (28 years as a publisher) is the wedge. End with the 7-day free trial.');
+    // Demo accounts open on a worked example; real clients start blank and
+    // use "Draft with AI" (needs only a topic).
+    const composeStart = business?.isDemo ? COMPOSE_DEMO_SAMPLE : COMPOSE_EMPTY;
+    const [topic, setTopic] = useState(composeStart.topic);
+    const [notes, setNotes] = useState(composeStart.notes);
     const [chosen, setChosen] = useState(['fb', 'ig', 'gbp', 'web']);
     const [imageMode, setImageMode] = useState('owner');
     const [tone, setTone] = useState('friendly');
@@ -991,28 +1054,7 @@
       const t = setTimeout(() => setSaveToast(null), 5000);
       return () => clearTimeout(t);
     }, [saveToast]);
-    const [drafts, setDrafts] = useState({
-      fb: {
-        text: 'A writer at Citizen Publishing is saving 2-3 hours every week with Quadd.ai. No question.\n\nThat\'s back-to-back interviews she\'s not re-typing. Council meetings she\'s not slogging through before she writes the first word. Actual journalism time, returned.\n\n7-day free trial. See what your newsroom gets back: quadd.ai',
-        cta: 'Learn more'
-      },
-      ig: {
-        caption: 'Re-typing court documents? Slogging through transcripts before you can write a single word? Built by a publisher with 28 years in. Quadd.ai gives your staff back 2-3 hours every week. 🗞️\n\nLink in bio.',
-        hashtags: '#NewsroomTools #JournalismLife #LocalNews #PublishingTech #SmallTownNews'
-      },
-      gbp: {
-        headline: 'Quadd.ai · 7-day free trial',
-        text: 'AI tools built for newspaper publishers, by a publisher. Document extraction, AP-style checking, interview transcription.',
-        cta: 'Learn more'
-      },
-      web: {
-        title: 'Why publishers love the Universal Document Extractor',
-        subtitle: 'Built by a 28-year publisher who got tired of re-typing court documents by hand.',
-        body: 'Most newsroom staff are spending hours every week on work that has nothing to do with journalism. Re-typing court filings. Reformatting press releases. Slogging through interview audio before they write a single word.\n\nA writer at Citizen Publishing was doing all of that. Then they put Quadd.ai\'s Universal Document Extractor to work. The result: 2-3 hours saved every week. No question. They\'re now rolling it to the rest of the newsroom.\n\nThe tool learns your publication\'s own template and returns formatted, ready-to-use content in minutes. The court document problem — that 38-page filing you used to dread — becomes a non-event.\n\nQuadd.ai includes three tools in one bundle: Universal Document Extractor, AP-Style Checker, and Interview Transcription. The 7-day free trial is exactly that. Free. No card required. Load in your actual documents and see what happens.\n\nIf your staff is still grinding through documents and transcripts before they can write the first word, there\'s a better way.',
-        slug: '/blog/universal-document-extractor-publishers',
-        readTime: '3 min'
-      }
-    });
+    const [drafts, setDrafts] = useState(() => composeStart.drafts);
 
     const updateDraft = (platform, field, value) =>
       setDrafts(d => ({ ...d, [platform]: { ...d[platform], [field]: value } }));
@@ -1996,7 +2038,9 @@
         <TopBar
           breadcrumb={`Day ${business.joinedDaysAgo} · ${business.location}`}
           title={`Welcome back, ${business.owner.split(' ')[0]}`}
-          right={<Pill color="emerald" icon="check">Voice interview complete</Pill>}
+          right={business.voiceInterview === 'complete'
+            ? <Pill color="emerald" icon="check">Voice interview complete</Pill>
+            : <Pill color="amber" icon="clock">Voice interview not done yet</Pill>}
         />
         <div className="px-8 py-7 space-y-6 max-w-6xl">
           {/* Compose hero — the demo's primary CTA on Home */}
@@ -2019,8 +2063,10 @@
 
           {/* Stat tiles */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            <StatTile label="Posts this month" value={stats.posts.value} delta={stats.posts.delta} positive helper={stats.posts.helper} />
-            <StatTile label="Engagement" value={stats.engagement.value} positive delta="MoM" helper={stats.engagement.helper} />
+            <StatTile label="Posts this month" value={stats.posts.value} delta={stats.posts.delta}
+              positive={!String(stats.posts.delta || '').startsWith('-')} helper={stats.posts.helper} />
+            <StatTile label="Engagement" value={stats.engagement.value} positive={stats.engagement.positive !== false}
+              delta={stats.engagement.value === '—' ? null : 'MoM'} helper={stats.engagement.helper} />
             <StatTile label="New reviews" value={stats.reviews.value} helper={stats.reviews.helper}
               accent={<Stars n={Math.round(stats.reviews.rating)} />} />
             {/* Phase E.5 — Ad spend tile sources from /api/bootstrap's ads
@@ -2108,7 +2154,7 @@
     const [tab, setTab] = useState('schedule');
     const draftCount = posts.filter(p => p.status === 'draft').length;
     const titles = {
-      schedule: { title: 'Content Calendar', subtitle: 'May 2026 — when each post lands across your channels.' },
+      schedule: { title: 'Content Calendar', subtitle: 'When each post lands across your channels.' },
       drafts:   { title: 'Drafts',           subtitle: `${draftCount} drafts you haven't sent for approval yet.` }
     };
     const tabs = [
@@ -2140,12 +2186,21 @@
     const { posts } = useDashboard();
     // Track selection by ID so PostDetail re-renders against the latest post
     // data even after an edit-in-place lands.
-    const [selectedId, setSelectedId] = useState(() => posts[3]?.id || null);
+    const [selectedId, setSelectedId] = useState(null);
     const [editing, setEditing] = useState(null);  // post being edited
     const selected = posts.find(p => p.id === selectedId) || null;
-    const monthLabel = 'May 2026';
-    const firstWeekday = new Date(2026, 4, 1).getDay();
-    const daysInMonth = 31;
+    // Real calendar month (was hardcoded to May 2026, and every post landed on
+    // its day-of-month regardless of month).
+    const today = new Date();
+    const [cursor, setCursor] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
+    const year = cursor.getFullYear();
+    const month = cursor.getMonth();
+    const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
+    const monthLabel = cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    const firstWeekday = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const isThisMonth = year === today.getFullYear() && month === today.getMonth();
+    const shiftMonth = (n) => setCursor(c => new Date(c.getFullYear(), c.getMonth() + n, 1));
     const cells = [];
     for (let i = 0; i < firstWeekday; i++) cells.push(null);
     for (let d = 1; d <= daysInMonth; d++) cells.push(d);
@@ -2154,19 +2209,29 @@
     const postsByDay = useMemo(() => {
       const map = {};
       posts.forEach(p => {
+        if (!(p.date || '').startsWith(monthKey)) return;
         const d = parseInt(p.date.split('-')[2], 10);
         (map[d] = map[d] || []).push(p);
       });
       return map;
-    }, [posts]);
+    }, [posts, monthKey]);
 
     return (
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_400px] gap-6">
         <Card padded={false}>
           <div className="px-6 py-4 border-b border-surface-edge flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <h2 className="font-serif text-lg font-semibold">{monthLabel}</h2>
-              <Pill color="slate">Today: May 5</Pill>
+              <button onClick={() => shiftMonth(-1)} aria-label="Previous month"
+                className="w-7 h-7 rounded-md border border-surface-edge text-ink-soft hover:text-ink">‹</button>
+              <h2 className="font-serif text-lg font-semibold min-w-[9rem] text-center">{monthLabel}</h2>
+              <button onClick={() => shiftMonth(1)} aria-label="Next month"
+                className="w-7 h-7 rounded-md border border-surface-edge text-ink-soft hover:text-ink">›</button>
+              {isThisMonth ? (
+                <Pill color="slate">Today: {today.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</Pill>
+              ) : (
+                <button onClick={() => setCursor(new Date(today.getFullYear(), today.getMonth(), 1))}
+                  className="text-xs text-brand-600 hover:underline">Back to today</button>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <Pill color="teal"><span className="w-1.5 h-1.5 rounded-full bg-brand-600"></span>Published</Pill>
@@ -2181,7 +2246,7 @@
           <div className="grid grid-cols-7 grid-rows-6 border-l border-surface-edge" style={{ minHeight: 540 }}>
             {cells.map((d, i) => {
               const dayPosts = d ? (postsByDay[d] || []) : [];
-              const isToday = d === 5;
+              const isToday = isThisMonth && d === today.getDate();
               return (
                 <div key={i} className={`border-r border-b border-surface-edge p-1.5 min-h-[88px] ${isToday ? 'bg-brand-50/40' : ''}`}>
                   {d && (
@@ -2723,6 +2788,7 @@
       .replace(/\b\w/g, c => c.toUpperCase());
 
   const NetworkReachTab = ({ reach }) => {
+    const { business } = useDashboard();
     const tr = reach?.territoryRevenue || { hasData: false, byTerritory: [], totalImpressions: 0, totalGrossCents: 0, split: {} };
     const lf = reach?.localFirst       || { hasData: false, queriesTotal: 0, queriesLocalFirst: 0, queriesOutOfTerritoryPaid: 0, localFirstPct: null };
 
@@ -2845,7 +2911,7 @@
               </div>
               <h4 className="font-semibold text-ink text-sm mb-1">Telemetry pending</h4>
               <p className="text-xs text-ink-soft max-w-xs mx-auto leading-relaxed">
-                Once the Cottonwood County chatbot starts answering consumer queries, this card will show how often local results filled the answer vs. how often paid out-of-territory ads were needed.
+                Once the {business.publisher || 'local newspaper'} chatbot starts answering consumer queries, this card will show how often local results filled the answer vs. how often paid out-of-territory ads were needed.
               </p>
               <ul className="mt-4 pt-4 border-t border-emerald-200/60 text-left text-[11px] text-ink-soft space-y-1.5 max-w-sm mx-auto leading-snug">
                 <li className="flex gap-2"><span className="text-emerald-600 font-semibold shrink-0">1.</span> Local results <strong className="text-ink">always</strong> rank above any out-of-territory match.</li>
@@ -3106,16 +3172,25 @@
             <div className="space-y-4 fade-in">
               <div className="flex items-center justify-between">
                 <p className="text-sm text-ink-soft">
-                  Generated from your last 30 days. Refresh to rerun the analysis against the latest data.
+                  {business.isDemo
+                    ? 'Generated from your last 30 days. Refresh to rerun the analysis against the latest data.'
+                    : 'Insights come only from results measured on your own posts and ads.'}
                 </p>
-                <Button variant="secondary" size="sm" icon="refresh"
-                  onClick={regenerateInsights}
-                  disabled={regenerating}>
-                  {regenerating ? 'Regenerating…' : 'Regenerate insights'}
-                </Button>
+                {business.isDemo && (
+                  <Button variant="secondary" size="sm" icon="refresh"
+                    onClick={regenerateInsights}
+                    disabled={regenerating}>
+                    {regenerating ? 'Regenerating…' : 'Regenerate insights'}
+                  </Button>
+                )}
               </div>
+              {(performance.insights || []).length === 0 && (
+                <EmptyNote icon="sparkles" title="No insights yet">
+                  Once your first posts are published and your accounts are connected, the agent points out what's working and what to change here.
+                </EmptyNote>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {performance.insights.map((ins, i) => (
+                {(performance.insights || []).map((ins, i) => (
                   <Card key={`${ins.title}-${i}`} className={ins.kind === 'win' ? 'border-emerald-100' : 'border-amber-100'}>
                     <div className={`text-xs uppercase tracking-wider font-semibold mb-2 inline-flex items-center gap-1 ${ins.kind === 'win' ? 'text-ok' : 'text-warn'}`}>
                       <Icon name={ins.kind === 'win' ? 'check' : 'alert'} size={12} strokeWidth={2.4} /> {ins.kind === 'win' ? 'Working' : 'Worth tweaking'}
@@ -3159,7 +3234,9 @@
   };
 
   const AdsView = ({ onNavigate }) => {
-    const { business } = useDashboard();
+    const { business, settings } = useDashboard();
+    // Server-side switch (Phase 0). Off = the agent proposes every spend change.
+    const autonomyOn = business.tier >= 3 && !!settings?.adAutonomyEnabled;
     const [adsState, setAdsState] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -3319,11 +3396,13 @@
           subtitle={titles[tab].subtitle}
           right={
             <div className="flex items-center gap-2">
-              <Button variant="secondary" size="sm" icon="refresh"
-                onClick={handleTick}
-                disabled={ticking || !a.hasAnyCampaign}>
-                {ticking ? 'Simulating…' : 'Simulate today'}
-              </Button>
+              {business.isDemo && (
+                <Button variant="secondary" size="sm" icon="refresh"
+                  onClick={handleTick}
+                  disabled={ticking || !a.hasAnyCampaign}>
+                  {ticking ? 'Simulating…' : 'Simulate today'}
+                </Button>
+              )}
               <Button variant="primary" size="sm" icon="plus"
                 onClick={() => setNewCampaign({ platform: 'fb_ig', name: '', daily: '20', days: '7', audience: '' })}>
                 New campaign
@@ -3429,7 +3508,9 @@
                           )}
                           {capCents === 0 && !isConnected && (
                             <div className="mt-2 text-[11px] text-ink-faint italic">
-                              Set a cap to start planning. Connect your {p.label} ad account in Settings to schedule live campaigns.
+                              {business.isDemo
+                                ? <>Set a cap to start planning. Connect your {p.label} ad account in Settings to schedule live campaigns.</>
+                                : <>Set a cap to start planning. Amplafai runs {p.label} campaigns for you within it.</>}
                             </div>
                           )}
                         </div>
@@ -3451,7 +3532,9 @@
                       </p>
                       {business.tier >= 3 && (
                         <p className="text-[11px] text-violet-700 mt-3 italic">
-                          Your AI Agent can autonomously schedule campaigns within your caps — just ask.
+                          {autonomyOn
+                            ? 'Your AI Agent can schedule campaigns within your caps on its own — just ask.'
+                            : 'Ask the AI Agent for a campaign; it drafts it for your approval.'}
                         </p>
                       )}
                     </div>
@@ -3489,7 +3572,9 @@
               {/* RIGHT: Platform connections summary + agent note */}
               <div className="space-y-5">
                 <Card>
-                  <SectionHeader title="Platform connections" subtitle="OAuth your ad accounts to schedule live campaigns." />
+                  <SectionHeader title="Platform connections" subtitle={business.isDemo
+                    ? 'OAuth your ad accounts to schedule live campaigns.'
+                    : 'Where your campaigns run.'} />
                   <ul className="divide-y divide-surface-edge">
                     {AD_PLATFORMS.map(p => {
                       const conn = connectionFor(p.key);
@@ -3507,10 +3592,12 @@
                           </div>
                           {isConnected ? (
                             <Pill color="emerald">On</Pill>
-                          ) : (
+                          ) : business.isDemo ? (
                             <button className="text-xs text-brand-600 hover:underline" onClick={() => onNavigate('settings')}>
                               Connect →
                             </button>
+                          ) : (
+                            <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-brand-50 text-brand-700">Managed by Amplafai</span>
                           )}
                         </li>
                       );
@@ -3520,11 +3607,15 @@
 
                 <Card>
                   <SectionHeader title={business.tier >= 3 ? "Autonomous mode" : "Agent recommendations"}
-                    subtitle={business.tier >= 3 ? "Your AI agent allocates within caps." : "Upgrade to Tier 3 to enable autonomous boosts."} />
+                    subtitle={business.tier >= 3
+                      ? (autonomyOn ? 'On — your AI agent spends within your caps.' : 'Off — every spend change waits for your approval.')
+                      : "Upgrade to Tier 3 to enable autonomous boosts."} />
                   <p className="text-sm text-ink-soft leading-relaxed">
-                    {business.tier >= 3
-                      ? "Your AI Agent can autonomously allocate spend within the caps you set. Each campaign it schedules shows up in the Campaigns tab tagged as auto-scheduled."
-                      : "On your current plan, the agent can propose boosts but you'll always be the one to click 'Approve' before any money moves."}
+                    {business.tier < 3
+                      ? "On your current plan, the agent can propose boosts but you'll always be the one to click 'Approve' before any money moves."
+                      : autonomyOn
+                        ? "Your AI Agent can allocate spend within the caps you set, on its own. Each campaign it schedules shows up in the Campaigns tab tagged as auto-scheduled."
+                        : "The agent proposes budgets and campaigns; nothing is spent until you approve it in Approvals. The owner can turn on autonomous spend in Settings → Connections."}
                   </p>
                   <button onClick={() => onNavigate('chat')}
                     className="mt-3 w-full px-3 py-2 rounded-lg bg-brand-50 text-brand-700 text-sm font-medium hover:bg-brand-100 transition-all">
@@ -3645,7 +3736,7 @@
                 <label className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-1.5 block">Campaign name</label>
                 <input value={newCampaign.name}
                   onChange={e => setNewCampaign(nc => ({ ...nc, name: e.target.value }))}
-                  placeholder="e.g. Quadd free-trial — Week 1 push"
+                  placeholder="e.g. Spring sale — week 1 push"
                   className="w-full px-3 py-2 rounded-lg border border-surface-edge text-[15px] focus:outline-none focus:border-brand-500" />
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -3676,13 +3767,15 @@
                 <textarea rows="2"
                   value={newCampaign.audience || ''}
                   onChange={e => setNewCampaign(nc => ({ ...nc, audience: e.target.value }))}
-                  placeholder="e.g. Newspaper publishers + editors, 50-mile radius around New Ulm"
+                  placeholder={`e.g. Homeowners within 25 miles of ${(business.location || 'your town').split(',')[0]}`}
                   className="w-full px-3 py-2 rounded-lg border border-surface-edge text-[14px] focus:outline-none focus:border-brand-500 resize-none" />
               </div>
               <div className="text-[11px] text-ink-soft bg-surface rounded-lg p-3 leading-relaxed">
                 Planned spend: <strong>${((parseFloat(newCampaign.daily || '0') * parseInt(newCampaign.days || '0', 10)) || 0).toLocaleString()}</strong>
-                {' '}over {parseInt(newCampaign.days || '0', 10) || 0} days. The campaign will start immediately as
-                <strong> scheduled</strong> and become <strong>active</strong> on the next 'Simulate today' tick.
+                {' '}over {parseInt(newCampaign.days || '0', 10) || 0} days.
+                {business.isDemo
+                  ? <> The campaign will start immediately as <strong>scheduled</strong> and become <strong>active</strong> on the next 'Simulate today' tick.</>
+                  : <> It's saved as <strong>scheduled</strong>. Your Amplafai team launches it on the platform and reports the real spend here.</>}
               </div>
             </div>
           )}
@@ -3724,7 +3817,9 @@
               </div>
               <h4 className="font-semibold text-ink text-sm mb-1">No spend yet</h4>
               <p className="text-xs text-ink-soft max-w-sm mx-auto leading-relaxed">
-                Schedule a campaign and click 'Simulate today' to see per-platform spend roll up here.
+                {business.isDemo
+                  ? "Schedule a campaign and click 'Simulate today' to see per-platform spend roll up here."
+                  : 'Real spend shows here, per platform, once a campaign is running.'}
               </p>
             </div>
           ) : (
@@ -3925,6 +4020,11 @@
      ============================================================ */
   const ReviewsView = ({ scrollToId, onScrollHandled }) => {
     const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings } = useDashboard();
+    const platformRollup = Object.values((reviews.recent || []).reduce((acc, r) => {
+      const row = acc[r.platform] || (acc[r.platform] = { platform: r.platform, count: 0, sum: 0 });
+      row.count += 1; row.sum += r.stars || 0;
+      return acc;
+    }, {})).map(row => ({ ...row, avg: row.sum / row.count }));
     const mutate = useDashboardMutate();
     const [editing, setEditing] = useState(null);    // {review, text}
     const [inFlight, setInFlight] = useState({});    // { [internalId]: true }
@@ -4043,33 +4143,41 @@
             <SectionHeader title="Rating trend" subtitle="Last six months" />
             <div className="flex items-end gap-4">
               <div>
-                <div className="text-4xl font-serif font-semibold">{reviews.aggregate}</div>
-                <div className="text-xs text-ink-faint">{reviews.total} total reviews</div>
+                <div className="text-4xl font-serif font-semibold">{reviews.total ? reviews.aggregate : '—'}</div>
+                <div className="text-xs text-ink-faint">{reviews.total ? `${reviews.total} total reviews` : 'no reviews yet'}</div>
               </div>
               <div className="flex-1">
                 <Sparkline values={reviews.sparkline} width={180} height={36} />
                 <div className="flex justify-between text-[10px] text-ink-faint mt-1 px-1">
-                  {reviews.sparklineLabels.map(l => <span key={l}>{l}</span>)}
+                  {(reviews.sparklineLabels || []).map(l => <span key={l}>{l}</span>)}
                 </div>
               </div>
             </div>
             <div className="mt-5 pt-4 border-t border-surface-edge space-y-2">
-              <div className="flex items-center justify-between text-sm"><span className="text-ink-soft">Google</span><span className="font-medium">4.8 ★ · 137</span></div>
-              <div className="flex items-center justify-between text-sm"><span className="text-ink-soft">Facebook</span><span className="font-medium">4.9 ★ · 25</span></div>
+              {/* Per-platform rollup of the reviews we actually have. */}
+              {platformRollup.length === 0 ? (
+                <div className="text-sm text-ink-faint">Per-platform ratings appear once reviews come in.</div>
+              ) : platformRollup.map(row => (
+                <div key={row.platform} className="flex items-center justify-between text-sm">
+                  <span className="text-ink-soft">{PLATFORMS[row.platform]?.label || row.platform}</span>
+                  <span className="font-medium">{row.avg.toFixed(1)} ★ · {row.count}</span>
+                </div>
+              ))}
             </div>
           </Card>
 
           {/* Pinned negative + recent list */}
           <div className="lg:col-span-2 space-y-5">
+            {reviews.pinned && (
             <Card padded={false}
               data-scroll-id={reviews.pinned?.id}
               className={`border-l-4 border-bad transition-all ${highlightId === reviews.pinned?.id ? 'ring-2 ring-brand-500 ring-offset-2' : ''}`}>
               <div className="p-5 border-b border-red-100 bg-red-50/40 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Icon name="alert" size={16} className="text-bad" />
-                  <span className="font-semibold text-bad">Flagged for fast response</span>
+                  <span className="font-semibold text-bad">{reviews.pinned.stars <= 2 ? 'Flagged for fast response' : 'Pinned review'}</span>
                 </div>
-                <Pill color="red">2★ · {reviews.pinned.when}</Pill>
+                <Pill color={reviews.pinned.stars <= 2 ? 'red' : 'slate'}>{reviews.pinned.stars}★ · {reviews.pinned.when}</Pill>
               </div>
               <div className="p-5 space-y-4">
                 <div className="flex items-start justify-between gap-3">
@@ -4109,19 +4217,24 @@
                       onClick={() => setEditing({ review: reviews.pinned, text: reviews.pinned.response || '' })}>
                       Edit
                     </Button>
-                    <a href={`tel:${(business.phone || '').replace(/[^\d+]/g, '')}`}>
-                      <Button icon="phone" variant="ghost">Call {reviews.pinned.author.split(' ')[0]}</Button>
-                    </a>
                   </div>
                 )}
               </div>
             </Card>
+            )}
 
             <Card padded={false}>
               <div className="p-5 border-b border-surface-edge flex items-center justify-between">
                 <h3 className="font-semibold">Recent reviews</h3>
-                <Pill color="slate">{reviews.recent.length} this week</Pill>
+                <Pill color="slate">{reviews.recent.length} recent</Pill>
               </div>
+              {reviews.recent.length === 0 && (
+                <div className="p-5">
+                  <EmptyNote icon="star" title="No reviews yet">
+                    New reviews from your Google and Facebook pages show up here with a reply drafted in your voice, ready for your approval.
+                  </EmptyNote>
+                </div>
+              )}
               <div className="divide-y divide-surface-edge">
                 {reviews.recent.map(r => (
                   <div key={r.id} data-scroll-id={r.id}
@@ -4317,8 +4430,9 @@
           subtitle={titles[tab].subtitle}
           right={
             <div className="flex items-center gap-2">
-              <Pill color="emerald" icon="check">Approved by you</Pill>
-              <Button variant="secondary" icon="refresh">Re-interview</Button>
+              {(marketingPlan.audience || marketingPlan.valueProp)
+                ? <Pill color="emerald" icon="check">Approved by you</Pill>
+                : <Pill color="amber" icon="clock">Not filled in yet</Pill>}
             </div>
           }
         />
@@ -4605,7 +4719,9 @@
                     }}
                   />
                 ) : (
-                  <p className="text-sm text-ink-soft leading-relaxed">{marketingPlan.audience}</p>
+                  marketingPlan.audience
+                    ? <p className="text-sm text-ink-soft leading-relaxed">{marketingPlan.audience}</p>
+                    : <p className="text-sm text-ink-faint italic">Not filled in yet. Click Edit to describe who you sell to, or it fills in after your voice interview.</p>
                 )}
               </Card>
               <Card>
@@ -4628,19 +4744,24 @@
                     }}
                   />
                 ) : (
-                  <p className="text-sm text-ink leading-relaxed font-medium italic border-l-2 border-brand-500 pl-3">"{marketingPlan.valueProp}"</p>
+                  marketingPlan.valueProp
+                    ? <p className="text-sm text-ink leading-relaxed font-medium italic border-l-2 border-brand-500 pl-3">"{marketingPlan.valueProp}"</p>
+                    : <p className="text-sm text-ink-faint italic">Not filled in yet. Click Edit to say why customers pick you.</p>
                 )}
               </Card>
               <Card className="lg:col-span-2">
                 <SectionHeader title="Switching forces"
                   subtitle="What pulls customers toward you, and what pushes them away from where they were before." />
+                {!(marketingPlan.switching?.pulls || []).length && !(marketingPlan.switching?.pushes || []).length && (
+                  <p className="text-sm text-ink-faint italic mb-3">Filled in from your voice interview.</p>
+                )}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div>
                     <div className="text-xs uppercase tracking-wider font-semibold text-ok mb-2 inline-flex items-center gap-1">
                       <Icon name="trending" size={12} strokeWidth={2.4} /> Pulling toward you
                     </div>
                     <ul className="space-y-1.5">
-                      {marketingPlan.switching.pulls.map((p, i) => (
+                      {(marketingPlan.switching?.pulls || []).map((p, i) => (
                         <li key={i} className="text-sm text-ink flex items-start gap-2">
                           <span className="text-ok shrink-0 mt-0.5"><Icon name="check" size={13} /></span>{p}
                         </li>
@@ -4652,7 +4773,7 @@
                       <Icon name="alert" size={12} strokeWidth={2.4} /> Pushing from old
                     </div>
                     <ul className="space-y-1.5">
-                      {marketingPlan.switching.pushes.map((p, i) => (
+                      {(marketingPlan.switching?.pushes || []).map((p, i) => (
                         <li key={i} className="text-sm text-ink flex items-start gap-2">
                           <span className="text-bad shrink-0 mt-0.5"><Icon name="x" size={13} /></span>{p}
                         </li>
@@ -4684,7 +4805,10 @@
                   />
                 ) : (
                   <div className="flex flex-wrap gap-2">
-                    {marketingPlan.customerLanguage.map((p, i) => (
+                    {!(marketingPlan.customerLanguage || []).length && (
+                      <p className="text-sm text-ink-faint italic">No phrases yet. They come from your reviews, customer messages, and the interview.</p>
+                    )}
+                    {(marketingPlan.customerLanguage || []).map((p, i) => (
                       <span key={i} className="bg-brand-50 text-brand-700 text-sm px-3 py-1.5 rounded-lg border border-brand-100">{p}</span>
                     ))}
                   </div>
@@ -4693,7 +4817,10 @@
               <Card>
                 <SectionHeader title="Proof points" subtitle="What we lean on in social and ad copy." />
                 <ul className="space-y-3">
-                  {marketingPlan.proofPoints.map((pt, i) => (
+                  {!(marketingPlan.proofPoints || []).length && (
+                    <li className="text-sm text-ink-faint italic">No proof points yet: testimonials, years in business, awards.</li>
+                  )}
+                  {(marketingPlan.proofPoints || []).map((pt, i) => (
                     <li key={i} className="bg-surface border border-surface-edge rounded-lg p-3">
                       <div className="font-semibold text-ink text-sm">{pt.label}</div>
                       <div className="text-xs text-ink-soft mt-0.5">{pt.detail}</div>
@@ -4724,9 +4851,12 @@
                 </ul>
               </Card>
               <Card>
-                <SectionHeader title="Q3 goals" subtitle="Set with you on April 18." />
+                <SectionHeader title="Goals" subtitle="Targets set with you." />
                 <div className="space-y-5">
-                  {marketingPlan.q3Goals.map((g, i) => {
+                  {!(marketingPlan.q3Goals || []).length && (
+                    <p className="text-sm text-ink-faint italic">No goals set yet. Amplafai sets them with you after the interview.</p>
+                  )}
+                  {(marketingPlan.q3Goals || []).map((g, i) => {
                     return (
                       <div key={i}>
                         <div className="flex items-center justify-between text-sm mb-1.5">
@@ -5352,6 +5482,43 @@
     }, []);
     useEffect(() => { refresh(); }, [refresh]);
 
+    // Real clients load listings from their own CSV (one row per item, a
+    // title column required). The server reports bad rows by number.
+    const csvInputRef = useRef(null);
+    const handleCsvUpload = async (file) => {
+      if (!file) return;
+      setImporting('csv');
+      setError(null);
+      try {
+        const csv_text = await file.text();
+        const r = await fetch('/api/inventory/import-fixture', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ feed_type: 'generic_csv', csv_text, location_label: file.name.replace(/\.csv$/i, '') }),
+        });
+        if (!r.ok) {
+          const detail = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
+          throw new Error(typeof detail.detail === 'string' ? detail.detail : `HTTP ${r.status}`);
+        }
+        await refresh();
+      } catch (e) {
+        console.error('[inventory.csvUpload]', e);
+        setError(`Couldn't upload ${file.name}: ${e.message || e}`);
+      } finally {
+        setImporting(null);
+        if (csvInputRef.current) csvInputRef.current.value = '';
+      }
+    };
+    const CsvUploadButton = ({ primary }) => (
+      <label className={`px-3 py-2 rounded-lg text-sm font-medium inline-flex items-center gap-2 cursor-pointer ${
+        primary ? 'bg-brand-700 text-white hover:bg-brand-800' : 'border border-surface-edge bg-white text-ink-soft hover:border-brand-700 hover:text-brand-700'
+      } ${importing === 'csv' ? 'opacity-50 pointer-events-none' : ''}`}>
+        <Icon name="plus" size={14} /> {importing === 'csv' ? 'Uploading…' : 'Upload listings (CSV)'}
+        <input ref={csvInputRef} type="file" accept=".csv,text/csv" className="sr-only"
+          onChange={(e) => handleCsvUpload(e.target.files && e.target.files[0])} />
+      </label>
+    );
+
     const handleImportFixture = async (feed_type) => {
       setImporting(feed_type);
       try {
@@ -5474,13 +5641,13 @@
               <Pill color={invState.tierEligible ? 'emerald' : 'slate'}>
                 Tier {invState.tier} — {invState.tierEligible ? 'Inventory included' : 'Upgrade required'}
               </Pill>
-              {invState.tierEligible && (
+              {invState.tierEligible && (business.isDemo ? (
                 <button
                   onClick={() => setShowConnect(true)}
                   className="px-3 py-2 rounded-lg bg-brand-700 text-white text-sm font-medium hover:bg-brand-800 inline-flex items-center gap-2">
                   <Icon name="plus" size={14} /> Connect feed
                 </button>
-              )}
+              ) : <CsvUploadButton primary />)}
             </div>
           }
         />
@@ -5553,11 +5720,14 @@
                     </div>
                     <div className="font-serif text-lg font-semibold text-ink">No feeds connected yet</div>
                     <p className="text-sm text-ink-soft mt-1 max-w-2xl mx-auto">
-                      Connect a feed from your DMS, MLS, or marketplace and your listings start showing up
-                      in your publisher's chatbot results within an hour. Or import a sample so you can see
-                      what a populated dashboard looks like.
+                      {business.isDemo
+                        ? "Connect a feed from your DMS, MLS, or marketplace and your listings start showing up in your publisher's chatbot results within an hour. Or import a sample so you can see what a populated dashboard looks like."
+                        : 'Upload a spreadsheet of what you sell (saved as CSV, one row per item, with at least a title column; price_cents is optional). Live feeds from your DMS or MLS can be set up with Amplafai.'}
                     </p>
-                    {invState.tierEligible && (
+                    {invState.tierEligible && !business.isDemo && (
+                      <div className="mt-4 flex justify-center"><CsvUploadButton primary /></div>
+                    )}
+                    {invState.tierEligible && business.isDemo && (
                       <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                         <button
                           disabled={importing === 'vauto'}
@@ -5982,7 +6152,7 @@
               <Pill color={state.tierEligible ? 'emerald' : 'slate'}>
                 Tier {state.tier} — {state.tierEligible ? 'Chatbot included' : 'Upgrade required'}
               </Pill>
-              {state.tierEligible && (state.hasAnyConversation ? (
+              {state.tierEligible && business.isDemo && (state.hasAnyConversation ? (
                 <button onClick={handleClear} className="px-3 py-2 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-sm">
                   Clear samples
                 </button>
@@ -6017,7 +6187,7 @@
                   shows up here — with sentiment, escalation flags, and full transcripts. You see what your
                   consumers are actually asking and where the bot may need backup.
                 </p>
-                {state.tierEligible && (
+                {state.tierEligible && business.isDemo && (
                   <button onClick={handleSeed} disabled={seeding}
                     className="mt-4 px-3 py-2 rounded-lg bg-brand-700 text-white text-sm hover:bg-brand-800 disabled:opacity-50 inline-flex items-center gap-2">
                     {seeding ? 'Importing…' : (<><Icon name="sparkles" size={14} /> Import sample conversations</>)}
@@ -6204,7 +6374,8 @@
      VIEW: SETTINGS
      ============================================================ */
   const SettingsView = ({ onTalkToHuman, linkedinReturn }) => {
-    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings } = useDashboard();
+    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings, voiceBrief } = useDashboard();
+    const firstPublished = (posts || []).filter(p => p.status === 'published').sort((a, b) => (a.date || '').localeCompare(b.date || ''))[0];
     const mutate = useDashboardMutate();
     const [tab, setTab] = useState('account');
     const [cadence, setCadence] = useState(settings.cadence);
@@ -6547,7 +6718,7 @@
           breadcrumb="Account"
           title={titles[tab].title}
           subtitle={titles[tab].subtitle}
-          right={<Pill color="violet">Account ID • PN-WBK-0027</Pill>}
+          right={<Pill color="violet">Account #{String(business.id || 0).padStart(4, '0')}</Pill>}
         />
         <div className="px-8 pt-2"><TabBar tabs={tabs} value={tab} onChange={setTab} /></div>
         <div className="px-8 py-7 space-y-5">
@@ -6571,9 +6742,12 @@
                   <div className="mt-4 pt-4 border-t border-surface-edge">
                     <div className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-3">Onboarding milestones</div>
                     <div className="space-y-3">
-                      <Milestone done label="Voice interview complete" sub={business.joinedDaysAgo === 0 ? 'Today' : `${business.joinedDate}`} />
-                      <Milestone done label="Voice brief synthesized" sub={business.joinedDaysAgo === 0 ? 'Today' : `${business.joinedDate}`} />
-                      <Milestone {...(business.joinedDaysAgo === 0 ? { current: true } : { done: true })} label="First post published" sub={business.joinedDaysAgo === 0 ? 'in your Approvals queue' : `${business.joinedDate}`} />
+                      <Milestone {...(business.voiceInterview === 'complete' ? { done: true } : { current: true })}
+                        label="Voice interview" sub={business.voiceInterview === 'complete' ? 'done' : 'Amplafai will schedule it with you'} />
+                      <Milestone {...(voiceBrief ? { done: true } : { muted: true })}
+                        label="Voice brief synthesized" sub={voiceBrief ? 'the AI agent writes from it' : 'after the interview'} />
+                      <Milestone {...(firstPublished ? { done: true } : { current: true })}
+                        label="First post published" sub={firstPublished ? firstPublished.date : 'approve a draft to publish it'} />
                       <Milestone current label="Day 90 — full pilot milestone"
                         sub={business.joinedDaysAgo >= 90 ? 'milestone reached'
                           : business.joinedDaysAgo === 0 ? `90 days from today`
@@ -6593,25 +6767,10 @@
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-ink">{business.publisher}</div>
-                      {business.techName ? (
-                        <>
-                          <div className="text-xs text-ink-soft mt-0.5">{business.techName}, your rep</div>
-                          <div className="text-xs text-ink-faint mt-0.5">Direct line for anything off-platform.</div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="text-xs text-ink-soft mt-0.5">Rep assignment pending</div>
-                          <div className="text-xs text-ink-faint mt-0.5">A human partner will be assigned in your first 14 days.</div>
-                        </>
-                      )}
+                      <div className="text-xs text-ink-soft mt-0.5">Rep assignment pending</div>
+                      <div className="text-xs text-ink-faint mt-0.5">A human partner will be assigned in your first 14 days.</div>
                     </div>
                   </div>
-                  {business.techName && (
-                    <div className="grid grid-cols-2 gap-2 mt-4">
-                      <Button variant="secondary" size="sm" icon="phone">Call {business.techName.split(' ')[0]}</Button>
-                      <Button variant="ghost" size="sm" icon="msg">Message</Button>
-                    </div>
-                  )}
                   <p className="text-xs text-ink-soft mt-4 leading-relaxed pt-3 border-t border-surface-edge">
                     Your publisher partner is your direct human line for anything you'd rather not handle online. Your plan includes regular check-ins; higher tiers add a quarterly business review.
                   </p>
@@ -6664,7 +6823,7 @@
                   <div>
                     <div className="font-semibold text-ink text-base">Need a real person?</div>
                     <p className="text-sm text-ink-soft mt-0.5">
-                      We get back to every owner within one business day. Your direct line is your publisher rep at {business.publisher}, with the Popular Network team copied.
+                      Send us a note and Amplafai gets back to you, usually within one business day.
                     </p>
                   </div>
                   <Button icon="phone" variant="primary" onClick={onTalkToHuman}>Talk to a human</Button>
@@ -6714,7 +6873,7 @@
                       <div className="text-sm mt-0.5">{(billingState.currentTierLabel || '').replace(/^Tier \d+ . /, '')}</div>
                       <div className="mt-4 text-3xl font-serif font-semibold">${billingState.monthlyPrice}<span className="text-sm font-normal text-white/70">/month</span></div>
                       <div className="text-xs text-white/70 mt-3">Paid to date: ${(billingState.paidToDateCents / 100).toFixed(2)}</div>
-                      <div className="text-xs text-white/60 mt-1">Billing: {billingState.stripeEnabled ? 'Stripe-active' : 'Demo (no charges)'}</div>
+                      <div className="text-xs text-white/60 mt-1">Billing: {billingState.stripeEnabled ? 'Stripe-active' : (business.isDemo ? 'Demo (no charges)' : 'Invoiced by Amplafai')}</div>
                     </Card>
                     <Card className="lg:col-span-2">
                       <SectionHeader title="Change tier" subtitle="Records a request; we follow up to confirm before any billing change." />
@@ -6768,11 +6927,11 @@
                   <Card padded={false}>
                     <div className="px-5 py-4 border-b border-surface-edge">
                       <SectionHeader title="Invoice history"
-                        subtitle="Mocked in this demo — Stripe integration is on the V2 roadmap." />
+                        subtitle={business.isDemo ? 'Mocked in this demo — Stripe integration is on the V2 roadmap.' : 'Amplafai emails your invoices for now; they will appear here once online billing is switched on.'} />
                     </div>
                     {billingState.invoices.length === 0 ? (
                       <div className="p-6 text-center text-sm text-ink-soft">
-                        No invoices yet. Your first invoice will issue at the end of this month.
+                        No invoices here yet.
                       </div>
                     ) : (
                       <div className="overflow-x-auto">
@@ -6821,6 +6980,9 @@
               <Card>
                 <SectionHeader title="Social accounts" subtitle="Where the agent posts and reads on your behalf." />
                 <ul className="space-y-3">
+                  {settings.connections.length === 0 && (
+                    <li className="text-sm text-ink-faint italic">No social accounts connected yet. Amplafai connects your Facebook, Instagram, and Google Business pages with you during setup.</li>
+                  )}
                   {settings.connections.map((c, i) => {
                     const p = platformMeta(c.platform);
                     return (
@@ -6842,7 +7004,9 @@
                     accounts because ad OAuth is a separate scope and money
                     flows differently (to platforms, not to publishers). */}
                 <div className="mt-6 pt-5 border-t border-surface-edge">
-                  <SectionHeader title="Ad accounts" subtitle="Connect Meta / Google / TikTok / LinkedIn Ads to schedule paid campaigns." />
+                  <SectionHeader title="Ad accounts" subtitle={business.isDemo
+                    ? 'Connect Meta / Google / TikTok / LinkedIn Ads to schedule paid campaigns.'
+                    : 'Where your paid campaigns run.'} />
                   {!adConnections ? (
                     <div className="text-xs text-ink-faint italic">Loading…</div>
                   ) : (
@@ -6865,11 +7029,16 @@
                           : conn?.status === 'connected';
                         const busy = adConnBusy === p.key || (conn?.id && adConnBusy === conn.id);
                         const onConnect = isLinkedIn ? handleLinkedInConnect : () => handleAdConnect(p.key);
+                        // Real clients never get a Connect button that fakes
+                        // success: only LinkedIn's live OAuth connects for real;
+                        // everything else is run by Amplafai on their behalf.
+                        const managed = !business.isDemo && !connected && !liLive;
                         const subtitle = connected
                           ? (isLinkedIn && linkedinStatus?.connected
                               ? `${linkedinStatus.connectedUserName ? linkedinStatus.connectedUserName + ' · ' : ''}${linkedinStatus.accountUrn || 'Connected'}`
                               : `${conn?.externalAccountId || ''} · ${conn?.accountLabel || 'connected'}`)
-                          : (liExpired ? 'Token expired — reconnect' : 'Not yet connected');
+                          : (liExpired ? 'Token expired — reconnect'
+                            : (!business.isDemo && !liLive ? 'Amplafai runs campaigns here for you' : 'Not yet connected'));
                         return (
                           <li key={p.key} className="flex items-center gap-3 p-2.5 rounded-lg border border-surface-edge bg-white">
                             <div className={`w-8 h-8 rounded-lg bg-${p.accent}-50 text-${p.accent}-600 flex items-center justify-center shrink-0`}>
@@ -6878,7 +7047,7 @@
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
                                 <div className="text-sm font-medium text-ink truncate">{p.label}</div>
-                                {isLinkedIn && linkedinStatus && (
+                                {isLinkedIn && linkedinStatus && (liLive || business.isDemo) && (
                                   <span className={`text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0 ${liLive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
                                     {liLive ? 'Live OAuth' : 'Demo'}
                                   </span>
@@ -6886,7 +7055,9 @@
                               </div>
                               <div className="text-[11px] text-ink-faint truncate">{subtitle}</div>
                             </div>
-                            {connected ? (
+                            {managed ? (
+                              <span className="text-[11px] font-medium px-2 py-1 rounded-full bg-brand-50 text-brand-700 shrink-0">Managed by Amplafai</span>
+                            ) : connected ? (
                               <Button size="sm" variant="ghost" disabled={busy || !conn?.id}
                                 onClick={() => handleAdDisconnect(conn.id)}>
                                 {busy ? 'Disconnecting…' : 'Disconnect'}
@@ -6903,7 +7074,9 @@
                     </ul>
                   )}
                   <div className="mt-3 text-[11px] text-ink-faint leading-relaxed">
-                    {linkedinStatus?.live ? (
+                    {!business.isDemo ? (
+                      <>Amplafai sets up and runs your campaigns on these platforms and reports the real spend in Ads &amp; Spend. {linkedinStatus?.live ? 'LinkedIn can also connect directly to your own Campaign Manager.' : ''}</>
+                    ) : linkedinStatus?.live ? (
                       <>LinkedIn uses <span className="font-medium text-ink-soft">real OAuth</span> into Campaign Manager — connecting authorizes Amplafai to schedule and report on live campaigns. Meta / Google / TikTok are still mocked for the demo (real OAuth on the roadmap).</>
                     ) : (
                       <>LinkedIn is <span className="font-medium text-ink-soft">real-OAuth-ready</span> — it goes live the moment Marketing Developer Platform credentials are configured. Until then all four platforms use demo connections so the dashboard stays fully clickable.</>
@@ -7077,14 +7250,14 @@
                     <div className="flex items-center justify-between gap-3 mb-3">
                       <SectionHeader title="Relay snippet" subtitle="Paste this into your publisher's chatbot config." />
                       <button onClick={() => copyToClipboard(
-                        `// Drop this at the end of a completed chatbot session.\nfetch('https://amplafai.com/api/chatbot/ingest', {\n  method: 'POST',\n  headers: {\n    'Content-Type': 'application/json',\n    'X-Amplafai-Key': 'cbk_live_…'  // your key from the API keys panel\n  },\n  body: JSON.stringify({\n    external_session_id: session.id,\n    transcript: session.turns,        // [{ who: 'consumer'|'bot', text, at }]\n    referrer_label: session.referrer, // e.g. 'cottonwoodccitizen.com → article'\n    consumer_label: session.label,    // e.g. 'anonymous · iPhone Safari'\n    started_at: session.startedAt,\n    ended_at:   session.endedAt\n  })\n});`,
+                        `// Drop this at the end of a completed chatbot session.\nfetch('${location.origin}/api/chatbot/ingest', {\n  method: 'POST',\n  headers: {\n    'Content-Type': 'application/json',\n    'X-Amplafai-Key': 'cbk_live_…'  // your key from the API keys panel\n  },\n  body: JSON.stringify({\n    external_session_id: session.id,\n    transcript: session.turns,        // [{ who: 'consumer'|'bot', text, at }]\n    referrer_label: session.referrer, // e.g. 'yournewspaper.com → article'\n    consumer_label: session.label,    // e.g. 'anonymous · iPhone Safari'\n    started_at: session.startedAt,\n    ended_at:   session.endedAt\n  })\n});`,
                         'Snippet'
                       )} className="text-xs px-2 py-1 rounded-md border border-surface-edge text-ink-soft hover:bg-surface inline-flex items-center gap-1">
                         <Icon name="copy" size={12} /> Copy
                       </button>
                     </div>
                     <pre className="bg-ink/90 text-white/90 rounded-lg p-4 overflow-x-auto text-xs leading-relaxed">{`// Drop this at the end of a completed chatbot session.
-fetch('https://amplafai.com/api/chatbot/ingest', {
+fetch('${location.origin}/api/chatbot/ingest', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -7093,7 +7266,7 @@ fetch('https://amplafai.com/api/chatbot/ingest', {
   body: JSON.stringify({
     external_session_id: session.id,
     transcript: session.turns,        // [{ who: 'consumer'|'bot', text, at }]
-    referrer_label: session.referrer, // e.g. 'cottonwoodccitizen.com → article'
+    referrer_label: session.referrer, // e.g. 'yournewspaper.com → article'
     consumer_label: session.label,    // e.g. 'anonymous · iPhone Safari'
     started_at: session.startedAt,
     ended_at:   session.endedAt
@@ -7115,7 +7288,7 @@ fetch('https://amplafai.com/api/chatbot/ingest', {
                       <SectionHeader title="Chat widget embed"
                         subtitle="Drop two script tags on your site to install the chat bubble." />
                       <button onClick={() => copyToClipboard(
-                        `<script src="${location.origin}/static/widget.js"><\/script>\n<script>\n  PopularNetworkWidget.init({\n    businessId: ${business.id || 1},\n    apiBaseUrl: '${location.origin}',\n    title: 'Ask ${(business.name || 'us').replace(/'/g, "\\'")}',\n    greeting: 'Hi! How can we help today?'\n  });\n<\/script>`,
+                        `<script src="${location.origin}/static/widget.js"><\/script>\n<script>\n  PopularNetworkWidget.init({\n    businessId: ${business.id},\n    apiBaseUrl: '${location.origin}',\n    title: 'Ask ${(business.name || 'us').replace(/'/g, "\\'")}',\n    greeting: 'Hi! How can we help today?'\n  });\n<\/script>`,
                         'Embed snippet'
                       )} className="text-xs px-2 py-1 rounded-md border border-surface-edge text-ink-soft hover:bg-surface inline-flex items-center gap-1">
                         <Icon name="copy" size={12} /> Copy
@@ -7124,7 +7297,7 @@ fetch('https://amplafai.com/api/chatbot/ingest', {
                     <pre className="bg-ink/90 text-white/90 rounded-lg p-4 overflow-x-auto text-xs leading-relaxed">{`<script src="${location.origin}/static/widget.js"><\/script>
 <script>
   PopularNetworkWidget.init({
-    businessId: ${business.id || 1},
+    businessId: ${business.id},
     apiBaseUrl: '${location.origin}',
     title: 'Ask ${(business.name || 'us').replace(/'/g, "\\'")}',
     greeting: 'Hi! How can we help today?'
@@ -7168,7 +7341,7 @@ fetch('https://amplafai.com/api/chatbot/ingest', {
                 </div>
               </Card>
               <Card>
-                <SectionHeader title="When to ping you" subtitle="Pick the moments worth interrupting your day." />
+                <SectionHeader title="When to ping you" subtitle="Pick the moments worth interrupting your day. Email alerts are switching on in an upcoming update; your choices are saved and apply then." />
                 <ul className="space-y-3">
                   {notifs.map((n) => (
                     <li key={n.key} className={`flex items-center justify-between p-3 rounded-lg border ${n.muted ? 'border-surface-edge bg-surface opacity-60' : 'border-surface-edge bg-white'}`}>
@@ -7223,7 +7396,7 @@ fetch('https://amplafai.com/api/chatbot/ingest', {
                   <div>
                     <div className="font-semibold text-ink text-base">Need a real person?</div>
                     <p className="text-sm text-ink-soft mt-0.5">
-                      We get back to every owner within one business day. Your direct line is your publisher rep at {business.publisher}, with the Popular Network team copied.
+                      Send us a note and Amplafai gets back to you, usually within one business day.
                     </p>
                   </div>
                   <Button icon="phone" variant="primary" onClick={onTalkToHuman}>Talk to a human</Button>
@@ -7242,6 +7415,55 @@ fetch('https://amplafai.com/api/chatbot/ingest', {
   // Banner that surfaces a bootstrap-load failure visibly. Per global CLAUDE.md
   // disabled-visible pattern: never silently fall back to demo data without
   // telling the user something broke — that's how regressions hide.
+  // One screen's bug must not blank the whole dashboard: catch it, say so,
+  // and let the owner keep using the other tabs. Resets on navigation.
+  class ViewErrorBoundary extends React.Component {
+    constructor(props) { super(props); this.state = { error: null }; }
+    static getDerivedStateFromError(error) { return { error }; }
+    componentDidCatch(error, info) { console.error('[view crashed]', this.props.view, error, info); }
+    componentDidUpdate(prev) { if (prev.view !== this.props.view && this.state.error) this.setState({ error: null }); }
+    render() {
+      if (!this.state.error) return this.props.children;
+      return (
+        <div className="px-8 py-10 max-w-2xl">
+          <div role="alert" className="px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-bad">
+            <div className="font-semibold">This screen hit an error.</div>
+            <div className="mt-1 text-ink-soft">Other tabs still work. Reloading usually clears it; if not, let your Amplafai contact know. ({String(this.state.error?.message || this.state.error)})</div>
+          </div>
+        </div>
+      );
+    }
+  }
+
+  // Full-page state while the dashboard loads, or when it can't. Shows no
+  // business data at all, so nothing from another account can leak in.
+  const BootScreen = ({ error }) => (
+    <div className="min-h-screen w-full bg-surface flex items-center justify-center px-6">
+      <div className="max-w-md w-full bg-white rounded-2xl border border-surface-edge p-8 text-center shadow-card">
+        {error ? (
+          <>
+            <div className="mx-auto w-11 h-11 rounded-full bg-red-50 text-bad flex items-center justify-center mb-4">
+              <Icon name="alert" size={20} />
+            </div>
+            <h1 className="text-lg font-semibold text-ink">We couldn't load your dashboard</h1>
+            <p role="alert" className="mt-2 text-sm text-ink-soft">
+              The server didn't answer ({error}). Try again in a minute. If it keeps happening, let your Amplafai contact know.
+            </p>
+            <div className="mt-5 flex justify-center gap-2">
+              <Button onClick={() => window.location.reload()} icon="refresh">Try again</Button>
+              <Button variant="secondary" onClick={() => { window.location.href = '/login'; }}>Sign in again</Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="mx-auto w-9 h-9 rounded-full border-2 border-brand-200 border-t-brand-600 animate-spin mb-4" aria-hidden="true"></div>
+            <p role="status" className="text-sm text-ink-soft">Loading your dashboard…</p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   const BootstrapErrorBanner = ({ message }) => (
     <div className="fixed top-0 inset-x-0 z-50 bg-amber-100 border-b border-amber-300 text-amber-900 text-sm px-4 py-2 flex items-center gap-2 shadow-sm">
       <Icon name="alert" size={16} strokeWidth={2} />
@@ -7337,10 +7559,9 @@ fetch('https://amplafai.com/api/chatbot/ingest', {
                 <Icon name="check" size={18} strokeWidth={2.4} />
               </div>
               <p className="text-ink leading-relaxed">
-                Your note is in the queue. Your publisher rep at {business.publisher} will reach out within one business day.
+                Your note is saved. Amplafai reads every request and will get back to you, usually within one business day.
               </p>
             </div>
-            <p className="text-xs text-ink-faint">Need someone faster? Call (507) 555-0100 Mon–Fri 8am–5pm Central.</p>
           </div>
         ) : (
           <>
@@ -7369,10 +7590,6 @@ fetch('https://amplafai.com/api/chatbot/ingest', {
                   <div className="flex-1">{error}</div>
                 </div>
               )}
-              <div className="text-xs text-ink-faint flex items-start gap-2">
-                <Icon name="phone" size={12} className="mt-0.5 shrink-0" />
-                <span>Or call us at <span className="font-medium text-ink">(507) 555-0100</span> Mon–Fri 8am–5pm Central.</span>
-              </div>
             </div>
           </>
         )}
@@ -7418,6 +7635,9 @@ fetch('https://amplafai.com/api/chatbot/ingest', {
       let cancelled = false;
       fetch('/api/bootstrap', { headers: { 'Accept': 'application/json' } })
         .then(r => {
+          // Signed out / session expired → back to the sign-in page rather
+          // than an error screen the owner can't do anything about.
+          if (r.status === 401) { window.location.href = '/login'; throw new Error('signed out'); }
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           return r.json();
         })
@@ -7431,6 +7651,7 @@ fetch('https://amplafai.com/api/chatbot/ingest', {
           }
           setBootstrap(data);
           setLoadError(null);
+          try { document.title = `${data.business?.name || 'Your business'} — Marketing dashboard`; } catch {}
           console.log('[bootstrap] loaded', {
             posts: data.posts?.length,
             approvals: data.approvals?.length,
@@ -7445,9 +7666,16 @@ fetch('https://amplafai.com/api/chatbot/ingest', {
       return () => { cancelled = true; };
     }, []);
 
-    // While we wait, render the chrome with FALLBACK_DATA — useDashboard()
-    // returns FALLBACK_DATA when the context value is null. No `display:none`,
-    // no empty slots; failures stay diagnosable.
+    // Phase 1: a signed-in client must never see Quadd's built-in sample
+    // data. FALLBACK_DATA is only for an explicit offline design preview
+    // (?demo=offline, e.g. the dashboard-static launch config); otherwise
+    // loading and failure get their own honest screens.
+    const offlinePreview = (() => {
+      try { return new URLSearchParams(window.location.search).get('demo') === 'offline'; } catch { return false; }
+    })();
+    if (!bootstrap && !offlinePreview) {
+      return <BootScreen error={loadError} />;
+    }
     const data = bootstrap || FALLBACK_DATA;
     const { business } = data;
 
@@ -7466,6 +7694,7 @@ fetch('https://amplafai.com/api/chatbot/ingest', {
         <Sidebar current={view} onNavigate={(v) => navigate(v)} />
         <main className={`flex-1 overflow-y-auto ${loadError ? 'pt-9' : ''}`}>
           {bootstrap?.access && !bootstrap.access.can?.publish_post && <ViewOnlyNotice role={bootstrap.access.role} />}
+          <ViewErrorBoundary view={view}>
           {view === 'home'        && <HomeView onNavigate={navigate} />}
           {view === 'compose'     && <ComposeView onNavigate={navigate} />}
           {view === 'calendar'    && <CalendarView onNavigate={navigate} />}
@@ -7478,6 +7707,7 @@ fetch('https://amplafai.com/api/chatbot/ingest', {
           {view === 'chat'        && <ChatView onNavigate={navigate} />}
           {view === 'chatbotpreview' && <ChatbotPreviewView onNavigate={navigate} onTrain={handleTrain} />}
           {view === 'settings'    && <SettingsView onTalkToHuman={() => setHumanOpen(true)} linkedinReturn={linkedinReturn} />}
+          </ViewErrorBoundary>
         </main>
 
         <TalkToHumanModal

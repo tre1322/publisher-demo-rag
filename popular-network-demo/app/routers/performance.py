@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..auth.deps import get_tenant_id, require_capability
+from ..provisioning import require_demo
 from ..db import get_db
 from ..models import PerformanceSummary
 from .bootstrap import _performance_payload
@@ -113,6 +114,9 @@ _INSIGHTS_POOL = [
 
 @router.post("/performance/regenerate-insights", dependencies=[Depends(require_capability("edit_marketing_plan"))])
 def regenerate_insights(business_id: int = Depends(get_tenant_id), db: Session = Depends(get_db)) -> dict[str, Any]:
+    # The insight pool is canned demo copy (see _INSIGHTS_POOL); a real
+    # client must never see claims that weren't measured on their account.
+    require_demo(db, business_id)
     perf = db.get(PerformanceSummary, business_id)
     if perf is None:
         raise HTTPException(status_code=404, detail=f"no performance data for business {business_id}")

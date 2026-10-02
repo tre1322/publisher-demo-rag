@@ -29,7 +29,7 @@ RUN uv sync --frozen --no-dev
 # Layer 2: source. HTML roots + static + app package.
 COPY app/ ./app/
 COPY static/ ./static/
-COPY dashboard.html login.html invite.html widget-test.html ./
+COPY dashboard.html login.html invite.html admin.html widget-test.html ./
 # Voice briefs are load-bearing: bootstrap.voiceBrief + the agent system prompt
 # both read <repo-root>/voice-briefs/<slug>.json and FAIL SILENTLY to None/""
 # when absent. Omitting this line shipped a voiceless agent to prod for weeks.

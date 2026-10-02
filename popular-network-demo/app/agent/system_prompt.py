@@ -17,13 +17,12 @@ Voice carries two ways:
 """
 from __future__ import annotations
 
-import json
-from pathlib import Path
 
 from sqlalchemy.orm import Session
 
 from datetime import datetime
 
+from ..voice_brief import load_voice_brief
 from ..models import (
     AdCampaign,
     AdConnection,
@@ -35,10 +34,6 @@ from ..models import (
     Review,
 )
 
-# Repo-relative dir where synthesized voice-brief JSON files live, one per
-# business slug. Separate from data/voice-brief/ which holds gitignored raw
-# materials (audio recordings, transcripts) — see scripts/synthesize_voice_brief.py.
-_VOICE_BRIEF_DIR = Path(__file__).resolve().parent.parent.parent / "voice-briefs"
 
 
 def build_system_prompt(db: Session, business_id: int) -> str:
@@ -104,22 +99,16 @@ def _role_section(biz: Business | None) -> str:
 def _voice_brief_section(biz: Business | None) -> str:
     """Load and format the per-business voice brief, if one exists.
 
-    Looks for data/voice-brief/{biz.slug}.json. Returns "" silently when no
-    brief is present — Westbrook seed runs this path until a brief is added.
+    Reads the brief from the business row (voice_brief.load_voice_brief, with
+    the legacy per-slug file as fallback). Returns "" when there is none yet.
 
     Schema (matches the W2.1 PMC v4 shape):
       voice, amplify[], maintain[], mute[], audience, value_prop,
       customer_language[], proof_points[], constraints[], seasonal_patterns[],
       notes
     """
-    if biz is None or not biz.slug:
-        return ""
-    path = _VOICE_BRIEF_DIR / f"{biz.slug}.json"
-    if not path.exists():
-        return ""
-    try:
-        brief = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    brief = load_voice_brief(biz)
+    if not brief:
         return ""
 
     lines: list[str] = ["## Voice brief (from owner interview)"]

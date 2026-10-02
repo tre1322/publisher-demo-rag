@@ -23,10 +23,12 @@ from typing import Any, Callable
 from sqlalchemy.orm import Session
 
 from . import spend_policy
+from ..provisioning import is_demo
 from ..models import (
     AdCampaign,
     AdConnection,
     Approval,
+    Business,
     MarketingPlan,
     Post,
     Review,
@@ -477,6 +479,16 @@ def _exec_regenerate_insights(
     # Phase C.3: stub that touches the marketing-plan updated_at to signal a
     # refresh, returns a deterministic "did the work" payload. Real recompute
     # is wired in B.6 (insights endpoint) — we'll hook into that in a follow-up.
+    biz = db.get(Business, business_id)
+    if not is_demo(biz):
+        return ToolResult(
+            text=(
+                "Insights here only come from measured results, and this account doesn't "
+                "have enough published, tracked posts yet. Tell the owner they'll fill in "
+                "once posts are live and their accounts are connected."
+            ),
+            attachment={"kind": "tool-error", "tool": "regenerate_insights", "reason": "no_measured_data"},
+        )
     plan = db.get(MarketingPlan, business_id)
     if plan is not None:
         plan.updated_at = datetime.utcnow()

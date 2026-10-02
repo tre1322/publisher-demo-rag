@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..auth.deps import get_tenant_id, require_capability
+from ..provisioning import require_demo
 from ..db import get_db
 from ..models import (
     AdCampaign,
@@ -469,6 +470,9 @@ def tick_simulator(
     demo behavior. Real production would replace this with platform-specific
     insights API calls on a cron.
     """
+    # Fake spend is a demo affordance; a real client's numbers come from the
+    # ad platforms (Phase 5) or Amplafai's managed reports (Phase 4).
+    require_demo(db, business_id)
     now = datetime.utcnow()
     campaigns = (
         db.query(AdCampaign)
@@ -558,13 +562,16 @@ def connect_account(
     business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Mock OAuth flow. Real OAuth deferred to V2."""
+    """Mock OAuth flow — demo accounts only. A real client's ad accounts are
+    managed by Amplafai (or connected through the live LinkedIn handshake),
+    never "connected" by a button that fakes success."""
+    biz = require_demo(db, business_id)
     row = (
         db.query(AdConnection)
         .filter(AdConnection.business_id == business_id, AdConnection.platform == body.platform)
         .one_or_none()
     )
-    label = body.account_label or _default_account_label(body.platform)
+    label = body.account_label or _default_account_label(body.platform, biz.name)
     if row is None:
         row = AdConnection(
             business_id=business_id,
@@ -704,11 +711,11 @@ def schedule_approved_campaign(db: Session, business_id: int, c: AdCampaign) -> 
     c.external_campaign_id = external_id
 
 
-def _default_account_label(platform: str) -> str:
+def _default_account_label(platform: str, business_name: str) -> str:
     labels = {
-        "fb_ig":      "Meta Ads — Quadd.ai (mock)",
-        "google_ads": "Google Ads — Quadd.ai (mock)",
-        "tiktok":     "TikTok Ads — Quadd.ai (mock)",
-        "linkedin":   "LinkedIn Campaign Manager — Quadd.ai (mock)",
+        "fb_ig":      "Meta Ads",
+        "google_ads": "Google Ads",
+        "tiktok":     "TikTok Ads",
+        "linkedin":   "LinkedIn Campaign Manager",
     }
-    return labels.get(platform, f"{platform} (mock)")
+    return f"{labels.get(platform, platform)} — {business_name} (demo)"
