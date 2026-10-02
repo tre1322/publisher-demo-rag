@@ -31,7 +31,7 @@ load_dotenv(find_dotenv(usecwd=True), override=True)
 # run AFTER load_dotenv so the SDK clients pick up the keys. Silenced per-line
 # (matching the convention in app/scripts/smoke_*.py) so that a genuinely
 # misplaced import elsewhere in this file still gets flagged.
-from fastapi.responses import FileResponse, RedirectResponse  # noqa: E402
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from starlette.requests import Request  # noqa: E402
 from starlette.responses import Response  # noqa: E402
@@ -600,6 +600,38 @@ def login_page(request: Request):
     if _is_authed(request):
         return RedirectResponse(url="/", status_code=302)
     return FileResponse(ROOT / "login.html")
+
+
+@app.get("/healthz", include_in_schema=False)
+def healthz():
+    # For the external uptime monitor: 200 only if the app can reach its DB.
+    from sqlalchemy import text as _text
+
+    from .db import SessionLocal
+
+    try:
+        with SessionLocal() as db:
+            db.execute(_text("SELECT 1"))
+    except Exception:
+        log.exception("healthz: database check failed")
+        return JSONResponse({"ok": False, "db": "error"}, status_code=503)
+    return {"ok": True, "db": "ok"}
+
+
+@app.exception_handler(Exception)
+async def _unhandled_error(request: Request, exc: Exception):
+    # Log it, email ALERT_EMAIL in the background (rate-limited, see
+    # alerts.py), and give the browser a plain 500 instead of a traceback.
+    import threading
+
+    from .alerts import notify_error
+
+    log.error("Unhandled error on %s %s", request.method, request.url.path, exc_info=exc)
+    threading.Thread(
+        target=notify_error, args=(exc,), kwargs={"method": request.method, "path": request.url.path},
+        daemon=True,
+    ).start()
+    return JSONResponse({"detail": "Something went wrong on our side. Try again in a minute."}, status_code=500)
 
 
 @app.get("/admin", include_in_schema=False)
