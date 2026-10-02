@@ -12,5 +12,23 @@ app.amplafai.com {
 
 dashboard.amplafai.com {
         encode zstd gzip
+        # Access log (Phase 1), so an incident like "was anything downloaded?"
+        # can be answered. Cookie/Authorization values are blanked by Caddy's
+        # default; one-time ?token= values (reset + invite links) are redacted.
+        log {
+                output file /data/dashboard-access.log {
+                        roll_size 50MiB
+                        roll_keep 14
+                        roll_keep_for 720h
+                }
+                format filter {
+                        wrap json
+                        fields {
+                                request>uri query {
+                                        replace token REDACTED
+                                }
+                        }
+                }
+        }
         reverse_proxy dashboard:8080
 }

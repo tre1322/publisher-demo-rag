@@ -1,0 +1,5 @@
+# Nightly dashboard DB backup (Phase 1). Installed to /etc/cron.d/ on the droplet.
+# 03:17 UTC daily; output appends to the log for the morning check.
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+17 3 * * * root /bin/sh /opt/publisher-demo-rag/popular-network-demo/deploy/backup-dashboard.sh >> /var/log/amplafai-dashboard-backup.log 2>&1

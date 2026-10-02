@@ -1,0 +1,54 @@
+# Runs every marketing-dashboard smoke on each push to master and every PR
+# that touches popular-network-demo/ (Phase 1: "run the test suite on every
+# push"). The smokes are hermetic: temp SQLite DB, mocked Anthropic, no
+# Postmark sends, so no secrets are needed.
+name: Dashboard smokes
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "popular-network-demo/**"
+      - ".github/workflows/dashboard-smokes.yml"
+  pull_request:
+    paths:
+      - "popular-network-demo/**"
+      - ".github/workflows/dashboard-smokes.yml"
+
+jobs:
+  smokes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: popular-network-demo
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --frozen
+
+      - name: Catch syntax errors and undefined names
+        run: uv run ruff check app --select E9,F63,F7,F82
+
+      - name: Run every smoke
+        env:
+          POPULAR_PURGE_LOOP: "0"
+        run: |
+          fails=0
+          for f in app/scripts/smoke_*.py; do
+            m=$(basename "$f" .py)
+            if uv run python -m "app.scripts.$m" > "/tmp/$m.log" 2>&1; then
+              echo "PASS $m"
+            else
+              echo "::error title=$m failed::see the log below"
+              tail -60 "/tmp/$m.log"
+              fails=$((fails+1))
+            fi
+          done
+          echo "$fails smoke(s) failed"
+          test "$fails" -eq 0
