@@ -38,17 +38,26 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..agent.spend_policy import budget_row, current_month_year
-from ..auth.deps import get_tenant_id
+from ..auth.deps import get_tenant_id, require_capability
 from ..db import get_db
 from ..models import AdCampaign, AdPlatformBudget, Approval, Post, Review
 from .ads import AD_PLATFORMS, budget_payload, schedule_approved_campaign
 
 router = APIRouter()
+
+
+# Deciding an item needs the same permission as doing the thing directly:
+# approving a spend proposal is spending, approving a review reply is replying.
+_DECIDE_CAPABILITY = {
+    "post": "publish_post",
+    "review": "respond_to_review",
+    "boost": "manage_ads",
+}
 
 
 class DecideRequest(BaseModel):
@@ -87,6 +96,7 @@ def _find_review_for_approval(db: Session, a: Approval) -> Review | None:
 def decide(
     approval_id: int,
     body: DecideRequest,
+    request: Request,
     business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -100,6 +110,8 @@ def decide(
     )
     if a is None:
         raise HTTPException(status_code=404, detail=f"approval {approval_id} not found")
+    # Unknown kinds fall back to the strictest gate rather than none.
+    require_capability(_DECIDE_CAPABILITY.get(a.kind or "post", "manage_settings"))(request)
     if a.decision is not None:
         raise HTTPException(
             status_code=409,

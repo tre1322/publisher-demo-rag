@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
+from ..auth.deps import get_tenant_id, require_capability
 from ..db import get_db
 from ..models import Approval, Post
 
@@ -81,7 +82,9 @@ def _post_payload(p: Post) -> dict[str, Any]:
 
 
 class CreatePostRequest(BaseModel):
-    business_id: int = Field(default=1, ge=1)
+    # No business_id here: the post always belongs to the signed-in business
+    # (route-level get_tenant_id). A body field defaulted to 1 and filed every
+    # client's posts under Quadd.
     platform: str
     status: Literal["draft", "pending"]
     title: str = Field(max_length=280)
@@ -127,11 +130,15 @@ class CreatePostRequest(BaseModel):
         return v.strip()
 
 
-@router.post("/posts")
-def create_post(body: CreatePostRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
+@router.post("/posts", dependencies=[Depends(require_capability("publish_post"))])
+def create_post(
+    body: CreatePostRequest,
+    business_id: int = Depends(get_tenant_id),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
     now = datetime.utcnow()
     post = Post(
-        business_id=body.business_id,
+        business_id=business_id,
         date=body.date or now.strftime("%Y-%m-%d"),
         platform=body.platform,
         status=body.status,
@@ -146,7 +153,7 @@ def create_post(body: CreatePostRequest, db: Session = Depends(get_db)) -> dict[
     approval = None
     if body.status == "pending" and body.create_approval:
         approval = Approval(
-            business_id=body.business_id,
+            business_id=business_id,
             post_id=post.id,
             kind="post",
             platform=body.platform,
@@ -178,17 +185,19 @@ def create_post(body: CreatePostRequest, db: Session = Depends(get_db)) -> dict[
     return out
 
 
-@router.put("/posts/{post_id}")
+@router.put("/posts/{post_id}", dependencies=[Depends(require_capability("publish_post"))])
 def update_post(
     post_id: int,
     body: UpdatePostRequest,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     if not body.has_any_change():
         raise HTTPException(status_code=422, detail="request body must include at least one field to update")
 
+    # Another business's post reads as not found (no cross-tenant oracle).
     p = db.get(Post, post_id)
-    if p is None:
+    if p is None or p.business_id != business_id:
         raise HTTPException(status_code=404, detail=f"post {post_id} not found")
     if p.status == "published":
         # Don't let typo fixes silently rewrite live content. If the owner

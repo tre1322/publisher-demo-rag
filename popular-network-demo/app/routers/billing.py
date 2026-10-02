@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from ..auth.deps import get_tenant_id
+from ..auth.deps import get_tenant_id, require_capability
 from ..db import get_db
 from ..models import (
     BillingInvoice,
@@ -201,7 +201,7 @@ def list_invoices(
     return [invoice_payload(r) for r in rows]
 
 
-@router.post("/billing/change-tier-request")
+@router.post("/billing/change-tier-request", dependencies=[Depends(require_capability("manage_billing"))])
 def request_tier_change(
     body: TierChangeBody,
     business_id: int = Depends(get_tenant_id),

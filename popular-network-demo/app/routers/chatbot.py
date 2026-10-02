@@ -38,7 +38,7 @@ from ..chatbot_extract import (
     extract_topic_label,
     score_sentiment,
 )
-from ..auth.deps import get_tenant_id
+from ..auth.deps import get_tenant_id, require_capability
 from ..db import get_db
 from ..models import Business, ChatbotConversation, ChatbotIngestionKey
 
@@ -309,7 +309,7 @@ _QUADD_FIXTURES = [
 ]
 
 
-@router.post("/chatbot/seed-fixtures")
+@router.post("/chatbot/seed-fixtures", dependencies=[Depends(require_capability("manage_chatbot"))])
 def seed_fixtures(business_id: int = Depends(get_tenant_id), db: Session = Depends(get_db)) -> dict[str, Any]:
     """Populate fixture conversations so the dashboard has something to show.
 
@@ -359,7 +359,7 @@ def seed_fixtures(business_id: int = Depends(get_tenant_id), db: Session = Depen
     return {"ok": True, "createdCount": created}
 
 
-@router.delete("/chatbot/fixtures")
+@router.delete("/chatbot/fixtures", dependencies=[Depends(require_capability("manage_chatbot"))])
 def clear_fixtures(business_id: int = Depends(get_tenant_id), db: Session = Depends(get_db)) -> dict[str, Any]:
     """Wipe seeded fixture conversations. Real conversations untouched."""
     removed = (
@@ -614,7 +614,7 @@ def list_keys(business_id: int = Depends(get_tenant_id), db: Session = Depends(g
     ]
 
 
-@router.post("/chatbot/keys")
+@router.post("/chatbot/keys", dependencies=[Depends(require_capability("manage_chatbot"))])
 def create_key(
     payload: KeyCreatePayload,
     business_id: int = Depends(get_tenant_id),
@@ -647,7 +647,7 @@ def create_key(
     }
 
 
-@router.delete("/chatbot/keys/{key_id}")
+@router.delete("/chatbot/keys/{key_id}", dependencies=[Depends(require_capability("manage_chatbot"))])
 def revoke_key(
     key_id: int,
     business_id: int = Depends(get_tenant_id),

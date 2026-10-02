@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
+from ..auth.deps import get_tenant_id, require_capability
 from ..db import get_db
 from ..models import MarketingPlan
 
@@ -27,7 +28,6 @@ class UpdateMarketingPlanRequest(BaseModel):
     audience: Optional[str] = Field(default=None, max_length=5000)
     valueProp: Optional[str] = Field(default=None, max_length=5000)
     customerLanguage: Optional[list[str]] = Field(default=None)
-    business_id: int = Field(default=1, ge=1)
 
     @field_validator("audience")
     @classmethod
@@ -75,17 +75,18 @@ def _plan_payload(mp: MarketingPlan) -> dict[str, Any]:
     }
 
 
-@router.put("/marketing-plan")
+@router.put("/marketing-plan", dependencies=[Depends(require_capability("edit_marketing_plan"))])
 def update_marketing_plan(
     body: UpdateMarketingPlanRequest,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     if not body.has_any_change():
         raise HTTPException(status_code=422, detail="request must include at least one editable field")
 
-    mp = db.get(MarketingPlan, body.business_id)
+    mp = db.get(MarketingPlan, business_id)
     if mp is None:
-        raise HTTPException(status_code=404, detail=f"marketing plan for business {body.business_id} not found")
+        raise HTTPException(status_code=404, detail=f"marketing plan for business {business_id} not found")
 
     if body.audience is not None:
         mp.audience = body.audience

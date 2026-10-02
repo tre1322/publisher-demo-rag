@@ -28,7 +28,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 from starlette.responses import RedirectResponse
 
-from ..auth.deps import get_tenant_id
+from ..auth.deps import get_tenant_id, require_capability
 from ..db import get_db
 from ..integrations import linkedin as li
 from ..integrations import linkedin_store as store
@@ -40,7 +40,7 @@ router = APIRouter()
 _DASHBOARD_RETURN = "/?tab=settings&li={status}"
 
 
-@router.get("/integrations/linkedin/connect")
+@router.get("/integrations/linkedin/connect", dependencies=[Depends(require_capability("manage_ads"))])
 def linkedin_connect(
     business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),

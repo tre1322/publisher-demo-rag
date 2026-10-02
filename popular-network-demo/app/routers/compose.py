@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..agent.system_prompt import build_system_prompt
-from ..auth.deps import get_tenant_id
+from ..auth.deps import get_tenant_id, require_capability
 from ..db import get_db
 
 log = logging.getLogger("popular_network.compose")
@@ -123,7 +123,7 @@ def _build_redraft_message(req: RedraftRequest) -> str:
     return "\n\n".join(parts)
 
 
-@router.post("/compose/redraft")
+@router.post("/compose/redraft", dependencies=[Depends(require_capability("publish_post"))])
 def redraft(
     req: RedraftRequest,
     business_id: int = Depends(get_tenant_id),

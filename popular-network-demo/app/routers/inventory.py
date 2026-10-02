@@ -32,7 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from ..auth.deps import get_tenant_id
+from ..auth.deps import get_tenant_id, require_capability
 from ..db import get_db
 from ..models import (
     Business,
@@ -226,7 +226,7 @@ def list_feeds(business_id: int = Depends(get_tenant_id), db: Session = Depends(
     return [feed_payload(f) for f in rows]
 
 
-@router.post("/inventory/feeds")
+@router.post("/inventory/feeds", dependencies=[Depends(require_capability("manage_inventory"))])
 def connect_feed(
     body: FeedConnectBody,
     business_id: int = Depends(get_tenant_id),
@@ -251,7 +251,7 @@ def connect_feed(
     return feed_payload(feed)
 
 
-@router.put("/inventory/feeds/{feed_id}")
+@router.put("/inventory/feeds/{feed_id}", dependencies=[Depends(require_capability("manage_inventory"))])
 def update_feed(
     feed_id: int,
     body: FeedUpdateBody,
@@ -273,7 +273,7 @@ def update_feed(
     return feed_payload(feed)
 
 
-@router.delete("/inventory/feeds/{feed_id}")
+@router.delete("/inventory/feeds/{feed_id}", dependencies=[Depends(require_capability("manage_inventory"))])
 def disconnect_feed(
     feed_id: int,
     business_id: int = Depends(get_tenant_id),
@@ -289,7 +289,7 @@ def disconnect_feed(
     return {"ok": True, "id": feed_id, "status": "disconnected"}
 
 
-@router.post("/inventory/feeds/{feed_id}/sync")
+@router.post("/inventory/feeds/{feed_id}/sync", dependencies=[Depends(require_capability("manage_inventory"))])
 def sync_feed(
     feed_id: int,
     business_id: int = Depends(get_tenant_id),
@@ -448,7 +448,7 @@ _FIXTURE_BY_FEED_TYPE = {
 }
 
 
-@router.post("/inventory/import-fixture")
+@router.post("/inventory/import-fixture", dependencies=[Depends(require_capability("manage_inventory"))])
 def import_fixture(
     body: ImportFixtureBody,
     business_id: int = Depends(get_tenant_id),

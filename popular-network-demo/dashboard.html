@@ -139,7 +139,7 @@
   // version your browser is showing (rendered in the sidebar footer).
   // Keep it ONE concise line: it renders in the sidebar, so a changelog here
   // leaks internal roadmap language to customers. History lives in git.
-  const BUILD_VERSION = '2026-10-01 · v50 — money-path safety: spend policy, server-side autonomy switch, working pause/budget approvals.';
+  const BUILD_VERSION = '2026-10-02 · v51 — tenant isolation: posts/reviews/plan scoped to the signed-in business, roles enforced, view-only notice.';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -7252,6 +7252,17 @@ fetch('https://amplafai.com/api/chatbot/ingest', {
     </div>
   );
 
+  // Shown to teammates whose role can't change anything. The server refuses
+  // their edits anyway (403 with a plain-English reason); this says so first.
+  const ViewOnlyNotice = ({ role }) => (
+    <div role="status" className="mx-auto max-w-[1600px] px-8 pt-4">
+      <div className="px-4 py-2.5 rounded-lg bg-surface-card border border-surface-edge text-sm text-ink-soft flex items-center gap-2">
+        <Icon name="eye" size={15} strokeWidth={2} className="shrink-0" />
+        <span><span className="font-medium text-ink">View-only access{role ? ` (${role})` : ''}.</span> You can look around, but posts, replies, budgets, and settings can only be changed by the owner or an editor.</span>
+      </div>
+    </div>
+  );
+
   /* ============================================================
      Talk-to-a-human modal — Phase B.4 wired to POST /api/escalations
      Owns its own state so message/send/error/success are scoped to the
@@ -7454,6 +7465,7 @@ fetch('https://amplafai.com/api/chatbot/ingest', {
         {loadError && <BootstrapErrorBanner message={loadError} />}
         <Sidebar current={view} onNavigate={(v) => navigate(v)} />
         <main className={`flex-1 overflow-y-auto ${loadError ? 'pt-9' : ''}`}>
+          {bootstrap?.access && !bootstrap.access.can?.publish_post && <ViewOnlyNotice role={bootstrap.access.role} />}
           {view === 'home'        && <HomeView onNavigate={navigate} />}
           {view === 'compose'     && <ComposeView onNavigate={navigate} />}
           {view === 'calendar'    && <CalendarView onNavigate={navigate} />}

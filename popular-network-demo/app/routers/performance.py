@@ -21,7 +21,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from ..auth.deps import get_tenant_id
+from ..auth.deps import get_tenant_id, require_capability
 from ..db import get_db
 from ..models import PerformanceSummary
 from .bootstrap import _performance_payload
@@ -111,7 +111,7 @@ _INSIGHTS_POOL = [
 ]
 
 
-@router.post("/performance/regenerate-insights")
+@router.post("/performance/regenerate-insights", dependencies=[Depends(require_capability("edit_marketing_plan"))])
 def regenerate_insights(business_id: int = Depends(get_tenant_id), db: Session = Depends(get_db)) -> dict[str, Any]:
     perf = db.get(PerformanceSummary, business_id)
     if perf is None:
