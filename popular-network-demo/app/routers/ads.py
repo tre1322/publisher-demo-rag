@@ -29,7 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from ..auth.deps import get_tenant_id
+from ..auth.deps import get_tenant_id, require_capability
 from ..db import get_db
 from ..models import (
     AdCampaign,
@@ -227,7 +227,7 @@ def list_budgets(business_id: int = Depends(get_tenant_id), db: Session = Depend
     return {"monthYear": month, "budgets": [budget_payload(r) for r in rows]}
 
 
-@router.put("/ads/budgets/{platform}")
+@router.put("/ads/budgets/{platform}", dependencies=[Depends(require_capability("manage_ads"))])
 def update_budget(
     platform: AdPlatform,
     body: BudgetUpdateBody,
@@ -286,7 +286,7 @@ def list_campaigns(
     return [campaign_payload(c) for c in rows]
 
 
-@router.post("/ads/campaigns")
+@router.post("/ads/campaigns", dependencies=[Depends(require_capability("manage_ads"))])
 def create_campaign(
     body: CampaignCreateBody,
     business_id: int = Depends(get_tenant_id),
@@ -378,7 +378,7 @@ def create_campaign(
     return campaign_payload(campaign)
 
 
-@router.put("/ads/campaigns/{campaign_id}")
+@router.put("/ads/campaigns/{campaign_id}", dependencies=[Depends(require_capability("manage_ads"))])
 def update_campaign(
     campaign_id: int,
     body: CampaignUpdateBody,
@@ -411,7 +411,7 @@ def update_campaign(
     return campaign_payload(c)
 
 
-@router.delete("/ads/campaigns/{campaign_id}")
+@router.delete("/ads/campaigns/{campaign_id}", dependencies=[Depends(require_capability("manage_ads"))])
 def delete_campaign(
     campaign_id: int,
     business_id: int = Depends(get_tenant_id),
@@ -426,7 +426,7 @@ def delete_campaign(
     return {"ok": True, "id": campaign_id, "status": "cancelled"}
 
 
-@router.post("/ads/campaigns/{campaign_id}/approve")
+@router.post("/ads/campaigns/{campaign_id}/approve", dependencies=[Depends(require_capability("manage_ads"))])
 def approve_campaign(
     campaign_id: int,
     business_id: int = Depends(get_tenant_id),
@@ -456,7 +456,7 @@ def approve_campaign(
     return campaign_payload(c)
 
 
-@router.post("/ads/tick")
+@router.post("/ads/tick", dependencies=[Depends(require_capability("manage_ads"))])
 def tick_simulator(
     business_id: int = Depends(get_tenant_id),
     hours: float = Query(24.0, ge=0.1, le=24.0, description="Hours to advance"),
@@ -552,7 +552,7 @@ def tick_simulator(
     }
 
 
-@router.post("/ads/connections")
+@router.post("/ads/connections", dependencies=[Depends(require_capability("manage_ads"))])
 def connect_account(
     body: ConnectBody,
     business_id: int = Depends(get_tenant_id),
@@ -587,7 +587,7 @@ def connect_account(
     return connection_payload(row)
 
 
-@router.delete("/ads/connections/{connection_id}")
+@router.delete("/ads/connections/{connection_id}", dependencies=[Depends(require_capability("manage_ads"))])
 def disconnect_account(
     connection_id: int,
     business_id: int = Depends(get_tenant_id),

@@ -26,14 +26,14 @@ from datetime import datetime
 from typing import Any, Generator, Optional
 
 from anthropic import Anthropic
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..agent.system_prompt import build_system_prompt
 from ..agent.tools import MAX_TOOL_ITERATIONS, TOOL_SCHEMAS, execute_tool
-from ..auth.deps import get_tenant_id
+from ..auth.deps import get_tenant_id, has_capability
 from ..db import get_db
 from ..models import ChatTurn
 
@@ -107,6 +107,15 @@ def _content_blocks_to_dicts(content_blocks: list[Any]) -> list[dict[str, Any]]:
     return out
 
 
+_VIEW_ONLY_NOTE = (
+    "\n\nACCESS: The person you're talking with has view-only access to this "
+    "dashboard. You have no tools in this conversation, so you can't draft, "
+    "schedule, approve, or change anything for them. Answer questions and give "
+    "advice; if they want something created or changed, tell them plainly to "
+    "ask the business owner (or an editor) to do it."
+)
+
+
 def _sse(event: str, data: dict[str, Any]) -> str:
     """Format a single SSE event. data is JSON-encoded on a single line."""
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
@@ -115,6 +124,7 @@ def _sse(event: str, data: dict[str, Any]) -> str:
 @router.post("/chat/turn")
 def take_turn(
     req: ChatTurnRequest,
+    request: Request,
     business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
@@ -142,6 +152,12 @@ def take_turn(
     messages.append({"role": "user", "content": req.message})
 
     system_text = build_system_prompt(db, business_id)
+    # Every agent tool writes something (a post, a reply, a budget), so a
+    # view-only teammate gets the assistant without tools. The model can't
+    # call a tool it was never offered.
+    tools_enabled = has_capability(request, "publish_post")
+    if not tools_enabled:
+        system_text += _VIEW_ONLY_NOTE
     system_blocks = [
         {
             "type": "text",
@@ -150,7 +166,7 @@ def take_turn(
         }
     ]
 
-    forced_tool = _detect_forced_tool(req.message)
+    forced_tool = _detect_forced_tool(req.message) if tools_enabled else None
 
     return StreamingResponse(
         _event_generator(
@@ -161,6 +177,7 @@ def take_turn(
             messages=messages,
             system_blocks=system_blocks,
             forced_tool=forced_tool,
+            tools_enabled=tools_enabled,
         ),
         media_type="text/event-stream",
         headers={
@@ -180,6 +197,7 @@ def _event_generator(
     messages: list[dict[str, Any]],
     system_blocks: list[dict[str, Any]],
     forced_tool: Optional[str],
+    tools_enabled: bool = True,
 ) -> Generator[str, None, None]:
     client = Anthropic(api_key=api_key)
     full_text_parts: list[str] = []
@@ -219,8 +237,7 @@ def _event_generator(
                 max_tokens=_MAX_TOKENS,
                 system=system_blocks,
                 messages=messages,
-                tools=TOOL_SCHEMAS,
-                tool_choice=tool_choice,
+                **({"tools": TOOL_SCHEMAS, "tool_choice": tool_choice} if tools_enabled else {}),
             ) as stream:
                 for event in stream:
                     etype = getattr(event, "type", None)

@@ -39,6 +39,7 @@ EXEMPT_PREFIXES: tuple[str, ...] = (
     "/api/auth/invites/lookup",    # public — preview invite for the claim page
     "/api/auth/invites/claim",     # public — accept invite + mint session
     "/api/widget/",                # public widget chat (H.2)
+    "/api/chatbot/ingest",         # a client's chatbot relay; authed by X-Amplafai-Key, never a cookie
     "/static/",
     "/docs",
     "/redoc",

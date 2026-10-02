@@ -23,6 +23,8 @@ from typing import Optional
 
 from fastapi import HTTPException, Request
 
+from .permissions import Capability, can
+
 
 def get_tenant_id(request: Request) -> int:
     bid = getattr(request.state, "business_id", None)
@@ -45,5 +47,49 @@ def require_role(*allowed: str):
         if role not in allowed:
             raise HTTPException(status_code=403, detail=f"role_required: {allowed}")
         return role
+
+    return _checker
+
+
+# Plain-English verbs for the 403 message, so the dashboard can show the
+# detail as-is. Keys mirror permissions.Capability.
+_CAPABILITY_VERB: dict[str, str] = {
+    "publish_post": "create or edit posts",
+    "manage_ads": "change ads or ad budgets",
+    "respond_to_review": "reply to reviews",
+    "edit_marketing_plan": "edit the marketing plan",
+    "manage_inventory": "change inventory",
+    "manage_chatbot": "change the chatbot",
+    "manage_billing": "change billing",
+    "manage_invites": "invite teammates",
+    "manage_settings": "change settings",
+    "authorize_ad_autonomy": "change autonomous ad spend",
+}
+
+
+def has_capability(request: Request, capability: Capability) -> bool:
+    """Superusers pass every check; everyone else goes through the matrix."""
+    if getattr(request.state, "is_superuser", False):
+        return True
+    return can(getattr(request.state, "user_role", None) or "", capability)
+
+
+def require_capability(capability: Capability):
+    """Route dependency: 403 unless the signed-in role has `capability`.
+
+    Use it on the decorator so the handler signature stays unchanged:
+
+        @router.post("/posts", dependencies=[Depends(require_capability("publish_post"))])
+    """
+
+    def _checker(request: Request) -> None:
+        if has_capability(request, capability):
+            return
+        role = getattr(request.state, "user_role", None) or "current"
+        verb = _CAPABILITY_VERB.get(capability, "do that")
+        raise HTTPException(
+            status_code=403,
+            detail=f"Your {role} access can't {verb}. Ask the business owner if you need it.",
+        )
 
     return _checker

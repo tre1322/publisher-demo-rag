@@ -13,10 +13,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from ..auth.deps import get_tenant_id
+from ..auth.deps import get_tenant_id, has_capability
+from ..auth.permissions import ALL_CAPABILITIES
 from ..db import get_db
 from ..models import (
     AdCampaign,
@@ -273,7 +274,11 @@ def _stats_payload(
 
 
 @router.get("/bootstrap")
-def get_bootstrap(business_id: int = Depends(get_tenant_id), db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_bootstrap(
+    request: Request,
+    business_id: int = Depends(get_tenant_id),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
     biz = db.get(Business, business_id)
     if biz is None:
         raise HTTPException(status_code=404, detail=f"business {business_id} not found")
@@ -408,6 +413,9 @@ def get_bootstrap(business_id: int = Depends(get_tenant_id), db: Session = Depen
 
     payload: dict[str, Any] = {
         "business": _business_payload(biz),
+        # Who is looking. The server enforces every capability on its own;
+        # this only lets the UI say "view-only" up front instead of after a 403.
+        "access": _access_payload(request),
         "stats": _stats_payload(notices, agg, tier=biz.tier, chatbot_count=chatbot_total_count),
         "attention": notices.attention_json if notices else [],
         "weekRecap": _week_recap_payload(notices.week_recap_json if notices else []),
@@ -475,6 +483,15 @@ def get_bootstrap(business_id: int = Depends(get_tenant_id), db: Session = Depen
         },
     }
     return payload
+
+
+def _access_payload(request: Request) -> dict[str, Any]:
+    role = getattr(request.state, "user_role", None)
+    return {
+        "role": role,
+        "isSuperuser": bool(getattr(request.state, "is_superuser", False)),
+        "can": {c: has_capability(request, c) for c in ALL_CAPABILITIES},
+    }
 
 
 # 65 / 25 / 10 split when an ad sold by Publisher A surfaces in Publisher B's

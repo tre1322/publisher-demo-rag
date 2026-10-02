@@ -32,7 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
-from ..auth.deps import get_tenant_id
+from ..auth.deps import get_tenant_id, require_capability
 from ..auth.permissions import can
 from ..db import get_db
 from ..models import Escalation, SettingsRow
@@ -82,7 +82,7 @@ def update_ad_autonomy(
     return {"ok": True, "adAutonomyEnabled": bool(row.ad_autonomy_enabled)}
 
 
-@router.put("/settings/{section}")
+@router.put("/settings/{section}", dependencies=[Depends(require_capability("manage_settings"))])
 def update_settings(
     section: str,
     body: UpdateNotificationsRequest,

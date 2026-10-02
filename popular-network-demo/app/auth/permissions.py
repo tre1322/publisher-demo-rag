@@ -89,3 +89,4 @@ def can(role: str, capability: Capability) -> bool:
 
 
 VALID_ROLES: tuple[Role, ...] = ("owner", "editor", "viewer")
+ALL_CAPABILITIES: tuple[Capability, ...] = tuple(_CAPABILITY_MATRIX["owner"])

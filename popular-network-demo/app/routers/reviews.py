@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
+from ..auth.deps import get_tenant_id, require_capability
 from ..db import get_db
 from ..models import Review
 
@@ -54,14 +55,15 @@ def _review_payload(r: Review) -> dict[str, Any]:
     }
 
 
-@router.post("/reviews/{review_id}/respond")
+@router.post("/reviews/{review_id}/respond", dependencies=[Depends(require_capability("respond_to_review"))])
 def respond(
     review_id: int,
     body: RespondRequest,
+    business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     r = db.get(Review, review_id)
-    if r is None:
+    if r is None or r.business_id != business_id:
         raise HTTPException(status_code=404, detail=f"review {review_id} not found")
 
     r.owner_response = body.response
