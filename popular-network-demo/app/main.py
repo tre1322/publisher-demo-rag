@@ -65,7 +65,16 @@ ROOT = Path(__file__).resolve().parent.parent
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("popular_network")
 
-app = FastAPI(title="Popular Network — Marketing Dashboard", version="0.1.0")
+# The interactive API explorer (/docs, /redoc, /openapi.json) is dev-only:
+# in production it would publish every endpoint to anyone.
+_API_DOCS = os.getenv("ENVIRONMENT", "development").lower() != "production"
+app = FastAPI(
+    title="Popular Network — Marketing Dashboard",
+    version="0.1.0",
+    docs_url="/docs" if _API_DOCS else None,
+    redoc_url="/redoc" if _API_DOCS else None,
+    openapi_url="/openapi.json" if _API_DOCS else None,
+)
 
 
 @app.on_event("startup")
@@ -538,12 +547,12 @@ def _voice_briefs_blocked(_path: str):
     raise HTTPException(status_code=404)
 
 
-# Static files: served unauthenticated (assets, favicon, etc).
-# dashboard.html intentionally NOT here — it has its own gated route above
-# that wins because StaticFiles is mounted last and routes match first.
-# Same goes for /widget-test.html — the gated route above wins over the
-# static fallback in production.
-app.mount("/", StaticFiles(directory=str(ROOT), html=True), name="static")
+# Public assets: ONLY the static/ directory (widget.js). Pages are served by
+# the explicit routes above. This used to mount the whole project root at "/",
+# which published the live SQLite DB (/data/popular_network.db), its backups,
+# and the app source to anyone. Never mount ROOT again; give each new public
+# file a route or put it under static/. Guarded by smoke_static_exposure.
+app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 
 
 def _main() -> None:
