@@ -12,6 +12,7 @@
 # Exit code is non-zero on any failure so cron/monitoring can notice.
 # Restore drill: deploy/restore-check.sh <backup.db.gz>
 set -eu
+umask 077  # backups hold password hashes: root-only files and directory
 
 CONTAINER="${CONTAINER:-amplafai-dashboard-1}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/amplafai-dashboard}"
@@ -21,6 +22,7 @@ TS="$(date -u +%Y%m%d-%H%M%S)"
 OUT="$BACKUP_DIR/popular_network-$TS.db"
 
 mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
 echo "[$TS] backup start"
 
 docker exec -i "$CONTAINER" python - <<'PY'
