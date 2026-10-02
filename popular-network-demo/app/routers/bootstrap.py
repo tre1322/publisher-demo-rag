@@ -131,6 +131,7 @@ def _business_payload(biz: Business) -> dict[str, Any]:
         "slug": biz.slug,
         "isDemo": bool(biz.is_demo),
         "website": biz.website,
+        "deletionDueAt": biz.deletion_due_at.isoformat() if biz.deletion_due_at else None,
         "name": biz.name,
         "owner": biz.owner,
         "ownerInitials": biz.owner_initials,

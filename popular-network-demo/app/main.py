@@ -52,6 +52,7 @@ from .routers import (  # noqa: E402
     inventory,
     invites,
     marketing_plan,
+    password_reset,
     performance,
     posts,
     reach,
@@ -109,6 +110,8 @@ def _startup() -> None:
     _add_col_if_missing("businesses", "is_demo", "BOOLEAN")
     _add_col_if_missing("businesses", "voice_brief_json", "JSON")
     _add_col_if_missing("businesses", "website", "VARCHAR(200)")
+    _add_col_if_missing("businesses", "deletion_requested_at", "DATETIME")
+    _add_col_if_missing("businesses", "deletion_due_at", "DATETIME")
     inserted = seed_if_empty()
     if inserted:
         log.info("Seeded Quadd.ai (business_id=1) — Day-1 customer w/ voice brief loaded")
@@ -143,6 +146,43 @@ def _startup() -> None:
     _backfill_enrolled_at()
     _backfill_week_recap_timestamps()
     _backfill_attention_copy()
+    # Phase 1: run any deletion whose 30-day clock has run out, now and then
+    # every few hours while the server is up (there's no cron in the image).
+    _purge_due_businesses()
+    _start_purge_loop()
+
+
+def _purge_due_businesses() -> None:
+    from .data_lifecycle import purge_due
+    from .db import SessionLocal
+
+    try:
+        with SessionLocal() as db:
+            purged = purge_due(db)
+        if purged:
+            log.info(f"Deleted businesses past their deletion date: {purged}")
+    except Exception:  # never take the app down over housekeeping
+        log.exception("Scheduled business deletion failed; will retry")
+
+
+_PURGE_LOOP_STARTED = False
+
+
+def _start_purge_loop() -> None:
+    global _PURGE_LOOP_STARTED
+    if _PURGE_LOOP_STARTED or os.getenv("POPULAR_PURGE_LOOP", "1") == "0":
+        return
+    _PURGE_LOOP_STARTED = True
+
+    import threading
+    import time
+
+    def _loop() -> None:
+        while True:
+            time.sleep(6 * 3600)
+            _purge_due_businesses()
+
+    threading.Thread(target=_loop, name="purge-due-businesses", daemon=True).start()
 
 
 def _backfill_demo_flag() -> None:
@@ -505,6 +545,7 @@ app.add_middleware(RequireBusinessMiddleware)
 app.include_router(auth.router, prefix="/api", tags=["auth"])
 app.include_router(admin.router, prefix="/api", tags=["admin"])
 app.include_router(invites.router, prefix="/api", tags=["invites"])
+app.include_router(password_reset.router, prefix="/api", tags=["password-reset"])
 app.include_router(widget.router, prefix="/api", tags=["widget"])
 app.include_router(bootstrap.router, prefix="/api", tags=["bootstrap"])
 app.include_router(posts.router, prefix="/api", tags=["posts"])
@@ -570,6 +611,21 @@ def admin_page(request: Request):
     if not getattr(request.state, "is_superuser", False):
         return RedirectResponse(url="/", status_code=302)
     return FileResponse(ROOT / "admin.html")
+
+
+@app.get("/forgot-password", include_in_schema=False)
+def forgot_password_page(request: Request):
+    # Public. Signed-in users don't need it, so send them to the dashboard.
+    if _is_authed(request):
+        return RedirectResponse(url="/", status_code=302)
+    return FileResponse(ROOT / "forgot-password.html")
+
+
+@app.get("/reset-password", include_in_schema=False)
+def reset_password_page(request: Request):
+    # Public — opened from the emailed link. Works signed in or out (a
+    # signed-in user resetting gets signed out everywhere on success).
+    return FileResponse(ROOT / "reset-password.html")
 
 
 @app.get("/invite", include_in_schema=False)

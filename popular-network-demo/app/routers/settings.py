@@ -29,10 +29,12 @@ from datetime import datetime
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from ..auth.deps import get_tenant_id, require_capability
+from ..data_lifecycle import export_business
 from ..auth.permissions import can
 from ..db import get_db
 from ..models import Escalation, SettingsRow
@@ -154,3 +156,13 @@ def create_escalation(
             "businessId": esc.business_id,
         },
     }
+
+
+@router.get("/account/export", dependencies=[Depends(require_capability("manage_settings"))])
+def export_my_data(business_id: int = Depends(get_tenant_id), db: Session = Depends(get_db)) -> JSONResponse:
+    """The owner downloads a copy of everything Amplafai holds for their
+    business (privacy policy: data on request). Owner-only."""
+    data = export_business(db, business_id)
+    slug = data["business"].get("slug") or f"business-{business_id}"
+    filename = f"{slug}-export-{datetime.utcnow():%Y-%m-%d}.json"
+    return JSONResponse(data, headers={"Content-Disposition": f'attachment; filename="{filename}"'})

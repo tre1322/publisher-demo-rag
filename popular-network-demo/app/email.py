@@ -16,6 +16,7 @@ Env vars:
 """
 from __future__ import annotations
 
+import html
 import logging
 import os
 from typing import Optional
@@ -57,6 +58,7 @@ def _build_subject(business_name: str, from_name: str) -> str:
 
 
 def _build_html_body(business_name: str, role: str, claim_url: str, from_name: str) -> str:
+    business_name, role, claim_url, from_name = (html.escape(v, quote=True) for v in (business_name, role, claim_url, from_name))
     return (
         f"<p>You've been invited to join <strong>{business_name}</strong> as <strong>{role}</strong> on {from_name}.</p>"
         f"<p>Click the link below to set your password and get started:</p>"
@@ -75,6 +77,53 @@ def _build_text_body(business_name: str, role: str, claim_url: str, from_name: s
     )
 
 
+def _send(to_email: str, subject: str, html_body: str, text_body: str, *, kind: str) -> dict:
+    """POST one message to Postmark. Never raises; returns {"sent": bool, ...}."""
+    api_key = os.getenv("POSTMARK_API_KEY")
+    if not api_key:
+        # Local dev / unconfigured prod: log + bail. Callers keep working
+        # (e.g. the invite API still returns the claim URL to copy).
+        log.info("%s email skipped (POSTMARK_API_KEY unset) — to=%s", kind, to_email)
+        return {"sent": False, "reason": "no_api_key"}
+
+    from_email = os.getenv("INVITE_FROM_EMAIL", DEFAULT_FROM_EMAIL)
+    from_name = os.getenv("INVITE_FROM_NAME", DEFAULT_FROM_NAME)
+    payload = {
+        "From": f"{from_name} <{from_email}>",
+        "To": to_email,
+        "Subject": subject,
+        "HtmlBody": html_body,
+        "TextBody": text_body,
+        "MessageStream": os.getenv("POSTMARK_MESSAGE_STREAM", "outbound"),
+        "Tag": kind,
+    }
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.post(
+                POSTMARK_ENDPOINT,
+                json=payload,
+                headers={
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                    "X-Postmark-Server-Token": api_key,
+                },
+            )
+    except httpx.HTTPError as exc:
+        log.warning("Postmark request failed (%s) for to=%s: %s", kind, to_email, exc)
+        return {"sent": False, "reason": f"http_error: {exc}"}
+
+    if resp.status_code >= 400:
+        log.warning("Postmark returned %s (%s) for to=%s: %s", resp.status_code, kind, to_email, resp.text[:200])
+        return {"sent": False, "reason": f"postmark_{resp.status_code}"}
+
+    try:
+        message_id = resp.json().get("MessageID")
+    except Exception:
+        message_id = None
+    log.info("%s email sent — to=%s messageId=%s", kind, to_email, message_id)
+    return {"sent": True, "messageId": message_id}
+
+
 def send_invite_email(
     to_email: str,
     claim_url: str,
@@ -89,55 +138,40 @@ def send_invite_email(
         {"sent": True, "messageId": "..."} on success.
         {"sent": False, "reason": "..."} on any failure or skip.
     """
-    api_key = os.getenv("POSTMARK_API_KEY")
-    if not api_key:
-        # Local dev / unconfigured prod: log + bail. Caller still returns the
-        # claim URL in the API response so the owner can copy/paste manually.
-        log.info("send_invite_email skipped (POSTMARK_API_KEY unset) — to=%s", to_email)
-        return {"sent": False, "reason": "no_api_key"}
-
-    from_email = os.getenv("INVITE_FROM_EMAIL", DEFAULT_FROM_EMAIL)
     from_name = os.getenv("INVITE_FROM_NAME", DEFAULT_FROM_NAME)
     if base_url is None:
         base_url = os.getenv("APP_BASE_URL")
-
     abs_claim_url = _absolutize(claim_url, base_url)
+    return _send(
+        to_email,
+        _build_subject(business_name, from_name),
+        _build_html_body(business_name, role, abs_claim_url, from_name),
+        _build_text_body(business_name, role, abs_claim_url, from_name),
+        kind="invite",
+    )
 
-    payload = {
-        "From": f"{from_name} <{from_email}>",
-        "To": to_email,
-        "Subject": _build_subject(business_name, from_name),
-        "HtmlBody": _build_html_body(business_name, role, abs_claim_url, from_name),
-        "TextBody": _build_text_body(business_name, role, abs_claim_url, from_name),
-        "MessageStream": os.getenv("POSTMARK_MESSAGE_STREAM", "outbound"),
-    }
 
-    try:
-        with httpx.Client(timeout=10.0) as client:
-            resp = client.post(
-                POSTMARK_ENDPOINT,
-                json=payload,
-                headers={
-                    "Accept": "application/json",
-                    "Content-Type": "application/json",
-                    "X-Postmark-Server-Token": api_key,
-                },
-            )
-    except httpx.HTTPError as exc:
-        log.warning("Postmark request failed for to=%s: %s", to_email, exc)
-        return {"sent": False, "reason": f"http_error: {exc}"}
-
-    if resp.status_code >= 400:
-        log.warning(
-            "Postmark returned %s for to=%s: %s", resp.status_code, to_email, resp.text[:200]
-        )
-        return {"sent": False, "reason": f"postmark_{resp.status_code}"}
-
-    try:
-        body = resp.json()
-        message_id = body.get("MessageID")
-    except Exception:
-        message_id = None
-
-    log.info("Invite email sent — to=%s messageId=%s", to_email, message_id)
-    return {"sent": True, "messageId": message_id}
+def send_password_reset_email(to_email: str, reset_url: str, *, minutes_valid: int) -> dict:
+    """Send the "reset your password" link. Never raises."""
+    from_name = os.getenv("INVITE_FROM_NAME", DEFAULT_FROM_NAME)
+    abs_url = _absolutize(reset_url, os.getenv("APP_BASE_URL"))
+    safe_url, safe_from = html.escape(abs_url, quote=True), html.escape(from_name)
+    return _send(
+        to_email,
+        f"Reset your {from_name} password",
+        (
+            f"<p>Someone asked to reset the password for this email on {safe_from}. If it was you, "
+            f"choose a new password here:</p>"
+            f"<p><a href=\"{safe_url}\">{safe_url}</a></p>"
+            f"<p>The link works once and expires in {minutes_valid} minutes. If you didn't ask for this, "
+            f"ignore this email; your password stays the same.</p>"
+            f"<p>— {safe_from}</p>"
+        ),
+        (
+            f"Someone asked to reset the password for this email on {from_name}. If it was you, "
+            f"choose a new password here:\n\n{abs_url}\n\n"
+            f"The link works once and expires in {minutes_valid} minutes. If you didn't ask for this, "
+            f"ignore this email; your password stays the same.\n\n— {from_name}\n"
+        ),
+        kind="password-reset",
+    )

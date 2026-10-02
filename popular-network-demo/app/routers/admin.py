@@ -11,6 +11,10 @@ businesses here instead of hand-running seed scripts:
   POST /api/admin/businesses/{id}/open          make it this session's active business
   GET  /api/admin/businesses/{id}/embed         chat-widget snippet for their website
   POST /api/admin/escalations/{id}/handled      close a "Talk to a human" request
+  GET  /api/admin/businesses/{id}/export        download everything it owns (JSON)
+  POST /api/admin/businesses/{id}/schedule-deletion   start the 30-day clock   {confirm_name}
+  POST /api/admin/businesses/{id}/cancel-deletion     stop the clock
+  POST /api/admin/businesses/{id}/delete-now          delete immediately     {confirm_name}
 
 Everything here is superuser-only and reads across tenants on purpose
 (superusers skip the ORM tenant filter), so each handler scopes by the
@@ -23,11 +27,13 @@ from typing import Any, Optional
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from ..auth.permissions import VALID_ROLES
 from ..auth.sessions import COOKIE_NAME, lookup_session
+from ..data_lifecycle import cancel_deletion, export_business, purge_business, schedule_deletion
 from ..db import get_db
 from ..models import Business, BusinessUser, Escalation, Invite, User
 from ..provisioning import create_business
@@ -115,6 +121,7 @@ def _business_row(db: Session, biz: Business) -> dict[str, Any]:
         "monthlyPrice": biz.monthly_price,
         "isDemo": bool(biz.is_demo),
         "website": biz.website,
+        "deletionDueAt": biz.deletion_due_at.isoformat() if biz.deletion_due_at else None,
         "allowedOrigins": biz.allowed_origins_json or [],
         "enrolledAt": biz.enrolled_at.isoformat() if biz.enrolled_at else None,
         "hasVoiceBrief": load_voice_brief(biz) is not None,
@@ -162,6 +169,17 @@ class VoiceBriefBody(BaseModel):
 class AdminInviteBody(BaseModel):
     email: EmailStr
     role: str = "owner"
+
+
+class ConfirmNameBody(BaseModel):
+    # Typed by the operator; must match the business name exactly, so a
+    # deletion can't happen from a stray click on the wrong card.
+    confirm_name: str
+
+
+def _require_name(biz: Business, body: ConfirmNameBody) -> None:
+    if body.confirm_name.strip() != biz.name:
+        raise HTTPException(status_code=422, detail=f"Type the business name exactly ({biz.name}) to confirm.")
 
 
 # ---------- routes ----------
@@ -282,6 +300,39 @@ def mark_handled(escalation_id: int, db: Session = Depends(get_db)) -> dict[str,
         esc.handled_at = datetime.utcnow()
         db.commit()
     return {"ok": True, "business": _business_row(db, _get_business(db, esc.business_id))}
+
+
+@router.get("/businesses/{business_id}/export")
+def export(business_id: int, db: Session = Depends(get_db)) -> JSONResponse:
+    biz = _get_business(db, business_id)
+    data = export_business(db, business_id)
+    filename = f"{biz.slug}-export-{datetime.utcnow():%Y-%m-%d}.json"
+    return JSONResponse(data, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.post("/businesses/{business_id}/schedule-deletion")
+def schedule(business_id: int, body: ConfirmNameBody, db: Session = Depends(get_db)) -> dict[str, Any]:
+    biz = _get_business(db, business_id)
+    _require_name(biz, body)
+    schedule_deletion(db, biz)
+    db.commit()
+    return {"ok": True, "business": _business_row(db, biz)}
+
+
+@router.post("/businesses/{business_id}/cancel-deletion")
+def cancel(business_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    biz = _get_business(db, business_id)
+    cancel_deletion(biz)
+    db.commit()
+    return {"ok": True, "business": _business_row(db, biz)}
+
+
+@router.post("/businesses/{business_id}/delete-now")
+def delete_now(business_id: int, body: ConfirmNameBody, db: Session = Depends(get_db)) -> dict[str, Any]:
+    biz = _get_business(db, business_id)
+    _require_name(biz, body)
+    counts = purge_business(db, business_id)
+    return {"ok": True, "deleted": counts}
 
 
 @router.get("/businesses/{business_id}/embed")

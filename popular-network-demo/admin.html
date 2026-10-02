@@ -88,6 +88,10 @@
           <button data-a="toggle-embed" class="px-3 py-1.5 rounded-lg border border-slate-300 text-sm">Chat widget code</button>
         </div>
       </div>
+      <div data-f="deletion" class="hidden mt-3 text-sm bg-red-50 border border-red-200 text-red-800 rounded-lg p-3 flex items-center gap-3">
+        <span data-f="deletion-text" class="flex-1"></span>
+        <button type="button" data-a="cancel-deletion" class="px-3 py-1.5 rounded-lg border border-red-300 bg-white">Cancel deletion</button>
+      </div>
       <div data-f="requests" class="hidden mt-3 text-sm bg-amber-50 border border-amber-200 rounded-lg p-3">
         <div class="font-medium text-amber-900 mb-1">Waiting for a reply</div>
         <ul data-f="request-list" class="space-y-2"></ul>
@@ -137,6 +141,13 @@
         <p class="text-slate-500 mb-2" data-f="embed-note"></p>
         <pre data-f="snippet" class="bg-slate-900 text-slate-100 rounded-lg p-3 text-xs overflow-x-auto">Loading…</pre>
         <button type="button" data-a="copy-embed" class="mt-2 px-3 py-1.5 rounded-lg border border-slate-300">Copy code</button>
+      </div>
+
+      <div class="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-2 text-sm">
+        <span class="text-slate-500 mr-1">Data</span>
+        <a data-a="export" class="px-3 py-1.5 rounded-lg border border-slate-300" download>Export (JSON)</a>
+        <button type="button" data-a="schedule-deletion" class="px-3 py-1.5 rounded-lg border border-red-200 text-red-700">Schedule deletion (30 days)</button>
+        <button type="button" data-a="delete-now" class="px-3 py-1.5 rounded-lg border border-red-300 text-red-700">Delete now…</button>
       </div>
 
       <div data-f="msg" class="hidden mt-3 text-sm rounded-lg px-3 py-2" role="status"></div>
@@ -212,6 +223,41 @@ function renderCard(b) {
   f('invites').textContent = b.pendingInvites.length
     ? b.pendingInvites.map(i => `${i.email} (${i.role})`).join(', ') : 'None';
   f('brief').textContent = b.hasVoiceBrief ? 'Loaded' : 'Not yet — the agent writes from the marketing plan only';
+  f('deletion').classList.toggle('hidden', !b.deletionDueAt);
+  if (b.deletionDueAt) {
+    f('deletion-text').textContent = `Scheduled for deletion on ${new Date(b.deletionDueAt + 'Z').toLocaleDateString()}. The owner sees a warning in their dashboard.`;
+  }
+  card.querySelector('[data-a="schedule-deletion"]').disabled = !!b.deletionDueAt;
+  card.querySelector('[data-a="export"]').href = `/api/admin/businesses/${b.id}/export`;
+  const confirmName = (verb) => {
+    const typed = prompt(`${verb} ${b.name}? Type the business name to confirm:`);
+    return typed === null ? null : typed;
+  };
+  card.querySelector('[data-a="schedule-deletion"]').onclick = (ev) => withBusy(ev.currentTarget, async () => {
+    const typed = confirmName('Schedule deletion of');
+    if (typed === null) return;
+    try {
+      const res = await api('POST', `/api/admin/businesses/${b.id}/schedule-deletion`, {confirm_name: typed});
+      replaceCard(card, res.business, 'Deletion scheduled. Cancel any time in the next 30 days.');
+    } catch (err) { setMsg(card, `Not scheduled: ${err.message}`, false); }
+  });
+  card.querySelector('[data-a="cancel-deletion"]').onclick = (ev) => withBusy(ev.currentTarget, async () => {
+    try {
+      const res = await api('POST', `/api/admin/businesses/${b.id}/cancel-deletion`);
+      replaceCard(card, res.business, 'Deletion cancelled. Nothing will be removed.');
+    } catch (err) { setMsg(card, `Not cancelled: ${err.message}`, false); }
+  });
+  card.querySelector('[data-a="delete-now"]').onclick = (ev) => withBusy(ev.currentTarget, async () => {
+    const typed = confirmName('PERMANENTLY delete all data for');
+    if (typed === null) return;
+    try {
+      const res = await api('POST', `/api/admin/businesses/${b.id}/delete-now`, {confirm_name: typed});
+      const n = Object.values(res.deleted).reduce((a, x) => a + x, 0);
+      card.remove();
+      showPageError('');
+      document.getElementById('list-status').textContent = `${b.name} deleted (${n} rows). Copies in older backups age out on the backup schedule.`;
+    } catch (err) { setMsg(card, `Not deleted: ${err.message}`, false); }
+  });
   f('requests').classList.toggle('hidden', !(b.openRequests || []).length);
   for (const req of (b.openRequests || [])) {
     const li = document.createElement('li');

@@ -139,7 +139,7 @@
   // version your browser is showing (rendered in the sidebar footer).
   // Keep it ONE concise line: it renders in the sidebar, so a changelog here
   // leaks internal roadmap language to customers. History lives in git.
-  const BUILD_VERSION = '2026-10-02 · v52 — real clients: admin console, clean Day 1, demo-only simulator, honest empty states.';
+  const BUILD_VERSION = '2026-10-02 · v53 — password reset by email, data export + 30-day deletion.';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -6374,7 +6374,7 @@
      VIEW: SETTINGS
      ============================================================ */
   const SettingsView = ({ onTalkToHuman, linkedinReturn }) => {
-    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings, voiceBrief } = useDashboard();
+    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings, voiceBrief, access } = useDashboard();
     const firstPublished = (posts || []).filter(p => p.status === 'published').sort((a, b) => (a.date || '').localeCompare(b.date || ''))[0];
     const mutate = useDashboardMutate();
     const [tab, setTab] = useState('account');
@@ -6827,6 +6827,25 @@
                     </p>
                   </div>
                   <Button icon="phone" variant="primary" onClick={onTalkToHuman}>Talk to a human</Button>
+                </div>
+              </Card>
+
+              {/* Phase 1 — data export (privacy policy: a copy on request). */}
+              <Card>
+                <SectionHeader title="Your data" subtitle="A copy of everything Amplafai holds for your business." />
+                <div className="flex items-center justify-between gap-4">
+                  <p className="text-sm text-ink-soft">
+                    Downloads a JSON file with your posts, approvals, reviews, plan, settings, and team.
+                    To have your data deleted, use Talk to a human.
+                  </p>
+                  {access?.can?.manage_settings ? (
+                    <a href="/api/account/export" download
+                      className="shrink-0 px-3 py-2 rounded-lg border border-surface-edge text-sm font-medium text-ink hover:border-brand-500">
+                      Download your data
+                    </a>
+                  ) : (
+                    <span className="shrink-0 text-xs text-ink-faint">Only the owner can download this.</span>
+                  )}
                 </div>
               </Card>
 
@@ -7485,6 +7504,16 @@ fetch('${location.origin}/api/chatbot/ingest', {
     </div>
   );
 
+  // The 30-day deletion clock is running (set from the admin console).
+  const DeletionNotice = ({ due }) => (
+    <div role="alert" className="mx-auto max-w-[1600px] px-8 pt-4">
+      <div className="px-4 py-2.5 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-center gap-2">
+        <Icon name="alert" size={15} strokeWidth={2} className="shrink-0" />
+        <span><span className="font-medium">This account is scheduled for deletion on {new Date(due + 'Z').toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}.</span> Everything here is erased that day. To keep it, contact Amplafai before then; to keep a copy, use Settings → Download your data.</span>
+      </div>
+    </div>
+  );
+
   /* ============================================================
      Talk-to-a-human modal — Phase B.4 wired to POST /api/escalations
      Owns its own state so message/send/error/success are scoped to the
@@ -7694,6 +7723,7 @@ fetch('${location.origin}/api/chatbot/ingest', {
         <Sidebar current={view} onNavigate={(v) => navigate(v)} />
         <main className={`flex-1 overflow-y-auto ${loadError ? 'pt-9' : ''}`}>
           {bootstrap?.access && !bootstrap.access.can?.publish_post && <ViewOnlyNotice role={bootstrap.access.role} />}
+          {bootstrap?.business?.deletionDueAt && <DeletionNotice due={bootstrap.business.deletionDueAt} />}
           <ViewErrorBoundary view={view}>
           {view === 'home'        && <HomeView onNavigate={navigate} />}
           {view === 'compose'     && <ComposeView onNavigate={navigate} />}
