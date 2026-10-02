@@ -40,9 +40,22 @@ class Business(Base):
     # for any row that still lacks it (e.g. smoke-created businesses).
     enrolled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     voice_interview: Mapped[str] = mapped_column(String(40))
+    # Retired auto-shop demo fields (Phase 1). Nothing reads them any more;
+    # the columns stay because existing DBs have ase_certified NOT NULL and
+    # SQLite can't drop columns safely in place.
     tech_name: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     years_in_town: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     ase_certified: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Phase 1. True only for sales-demo accounts (Quadd). Demo accounts may
+    # use the simulator, canned insights, and sample imports; real clients
+    # may not, and the server refuses those actions for them. NULL = real.
+    is_demo: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    # Phase 1. The synthesized voice brief (W2.1 PMC v4 shape). Lives in the
+    # DB so a new business doesn't need a server rebuild; the old
+    # voice-briefs/{slug}.json files are only a fallback (see voice_brief.py).
+    voice_brief_json: Mapped[Any] = mapped_column(JSON, nullable=True)
+    # Phase 1. The business's own website, e.g. "https://example.com".
+    website: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     # Phase H.2.2 — widget CORS allowlist. JSON list of allowed origins
     # (e.g. ["https://cottonwoodcountycitizen.com", "https://staging.example.com"]).
     # When null/empty, /api/widget/chat accepts any Origin (v1 default — most

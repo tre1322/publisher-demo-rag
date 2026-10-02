@@ -40,7 +40,7 @@ if hasattr(sys.stdout, "reconfigure"):
 ROOT = Path(__file__).resolve().parent.parent.parent
 
 # Every HTML file the app actually serves to a browser.
-SERVED_HTML = ("dashboard.html", "login.html", "invite.html")
+SERVED_HTML = ("dashboard.html", "login.html", "invite.html", "admin.html")
 
 # Hosts that carry no package version in the URL, so there is nothing to pin.
 # Keep this list SHORT and justified — it is the loophole in this check.

@@ -39,6 +39,7 @@ from ..chatbot_extract import (
     score_sentiment,
 )
 from ..auth.deps import get_tenant_id, require_capability
+from ..provisioning import require_demo
 from ..db import get_db
 from ..models import Business, ChatbotConversation, ChatbotIngestionKey
 
@@ -316,7 +317,9 @@ def seed_fixtures(business_id: int = Depends(get_tenant_id), db: Session = Depen
     Sales-rep affordance — clicking the empty-state CTA imports ~10 sample
     publisher-prospect conversations. Idempotent: re-running clears the
     existing fixture rows (external_id LIKE 'fixture-%') and re-imports.
+    Demo accounts only: the fixtures are Quadd's sample prospects.
     """
+    require_demo(db, business_id)
     biz = db.get(Business, business_id)
     if biz is None:
         raise HTTPException(status_code=404, detail=f"business {business_id} not found")

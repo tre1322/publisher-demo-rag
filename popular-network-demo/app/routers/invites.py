@@ -94,10 +94,22 @@ def mint_invite(
     if not is_super and not can(role or "", "manage_invites"):
         raise HTTPException(403, "manage_invites_required")
 
-    if body.role not in VALID_ROLES:
-        raise HTTPException(400, f"invalid_role: {body.role}")
+    return create_invite(db, business_id=business_id, email=body.email, role=body.role,
+                         created_by_user_id=user_id)
 
-    email = body.email.lower().strip()
+
+def create_invite(
+    db: Session, *, business_id: int, email: str, role: str, created_by_user_id: int,
+) -> dict:
+    """Mint an invite to `business_id`, email it, and return the one-time link.
+
+    Shared by the owner's Settings → Team flow and the admin console. The
+    caller has already checked that the inviter may invite to this business.
+    """
+    if role not in VALID_ROLES:
+        raise HTTPException(400, f"invalid_role: {role}")
+
+    email = email.lower().strip()
     # Don't allow inviting an email that's already a member.
     existing_user = db.query(User).filter(User.email == email).first()
     if existing_user is not None:
@@ -116,10 +128,10 @@ def mint_invite(
     row = Invite(
         business_id=business_id,
         email=email,
-        role=body.role,
+        role=role,
         token_prefix=prefix,
         token_hash=hsh,
-        created_by_user_id=user_id,
+        created_by_user_id=created_by_user_id,
         expires_at=datetime.utcnow() + INVITE_TTL,
     )
     db.add(row)

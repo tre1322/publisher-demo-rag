@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..auth.deps import get_tenant_id, require_capability
+from ..provisioning import is_demo, require_demo
 from ..db import get_db
 from ..models import (
     Business,
@@ -232,8 +233,14 @@ def connect_feed(
     business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Connect a new feed. Tier 4 required."""
+    """Connect a new feed. Tier 4 required.
+
+    The feed connectors (DealerCenter, vAuto, MLS, ...) are simulated, so
+    only demo accounts may create them. Real clients upload a CSV through
+    /inventory/import-fixture with csv_text.
+    """
     _require_tier_4_for_writes(db, business_id)
+    require_demo(db, business_id)
 
     feed = InventoryFeed(
         business_id=business_id,
@@ -459,47 +466,68 @@ def import_fixture(
     Demo affordance — sales rep can show what populated Tier 4 looks like with
     one button-click. Returns the new feed + count of listings created.
     """
-    _require_tier_4_for_writes(db, business_id)
+    biz = _require_tier_4_for_writes(db, business_id)
 
     default_label, default_csv, default_facets = _FIXTURE_BY_FEED_TYPE.get(
         body.feed_type, _FIXTURE_BY_FEED_TYPE["generic_csv"]
     )
-    csv_text = body.csv_text or default_csv
+    uploaded = bool(body.csv_text and body.csv_text.strip())
+    # Real clients only ever see their own listings: no built-in sample CSV
+    # and no sample search-visibility rows.
+    if not uploaded and not is_demo(biz):
+        raise HTTPException(
+            status_code=422,
+            detail="Upload a CSV of your listings (one row per item, with at least a title column).",
+        )
+    csv_text = body.csv_text if uploaded else default_csv
     location_label = body.location_label or default_label
 
     feed = InventoryFeed(
         business_id=business_id,
         feed_type=body.feed_type,
         location_label=location_label,
-        config_json={"source": "fixture", "size_bytes": len(csv_text)},
+        config_json={"source": "csv_upload" if uploaded else "fixture", "size_bytes": len(csv_text)},
         status="connected",
         last_sync_at=datetime.utcnow(),
-        last_sync_status="initial fixture import",
+        last_sync_status="initial CSV upload" if uploaded else "initial fixture import",
         listing_count=0,
     )
     db.add(feed)
     db.flush()
 
-    reader = csv.DictReader(io.StringIO(csv_text))
+    reader = csv.DictReader(io.StringIO(csv_text.strip()))
+    if not reader.fieldnames or "title" not in [f.strip().lower() for f in reader.fieldnames]:
+        raise HTTPException(status_code=422, detail="The CSV needs a header row with a 'title' column.")
     created = 0
-    for row in reader:
+    for line_no, row in enumerate(reader, start=2):
+        row = {(k or "").strip().lower(): (v or "").strip() for k, v in row.items()}
+
+        def _num(key: str) -> int:
+            raw = (row.get(key) or "0").replace(",", "")
+            try:
+                return int(float(raw))
+            except ValueError:
+                raise HTTPException(
+                    status_code=422, detail=f"Row {line_no}: '{key}' should be a number, got '{raw}'."
+                ) from None
+
         attributes = {
             k[len("attribute_"):]: v
             for k, v in row.items()
             if k.startswith("attribute_") and v != ""
         }
-        days = int(row.get("days_listed") or 0)
-        clicks = int(row.get("clicks_30d") or 0)
+        days = _num("days_listed")
+        clicks = _num("clicks_30d")
         is_stale_now = days > STALE_DAYS_THRESHOLD and clicks == 0
         li = InventoryListing(
             feed_id=feed.id,
             business_id=business_id,
             external_id=row.get("external_id", f"row-{created}"),
             title=row.get("title", "(untitled)"),
-            price_cents=int(row.get("price_cents") or 0),
+            price_cents=_num("price_cents"),
             status=row.get("status") or "active",
             days_listed=days,
-            query_impressions_30d=int(row.get("query_impressions_30d") or 0),
+            query_impressions_30d=_num("query_impressions_30d"),
             clicks_30d=clicks,
             last_seen_at=datetime.utcnow() - timedelta(days=max(0, days)),
             attributes_json=attributes,
@@ -508,10 +536,18 @@ def import_fixture(
         db.add(li)
         created += 1
 
+    if created == 0:
+        raise HTTPException(status_code=422, detail="The CSV has a header row but no listings.")
     feed.listing_count = created
-    feed.last_sync_status = f"{created} listings · imported from fixture"
+    feed.last_sync_status = f"{created} listings · " + ("uploaded" if uploaded else "imported from fixture")
 
-    # Seed facet-hit rows alongside, so the search-visibility card has data.
+    if uploaded:
+        db.commit()
+        db.refresh(feed)
+        return {"ok": True, "feed": feed_payload(feed), "listingsCreated": created}
+
+    # Fixture import (demo only): seed facet-hit rows alongside, so the
+    # search-visibility card has data.
     db.flush()
     sample_listing = (
         db.query(InventoryListing).filter(InventoryListing.feed_id == feed.id).first()

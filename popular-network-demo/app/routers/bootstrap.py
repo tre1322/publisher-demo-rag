@@ -8,15 +8,14 @@ ordering).
 """
 from __future__ import annotations
 
-import json
-from datetime import datetime
-from pathlib import Path
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from ..auth.deps import get_tenant_id, has_capability
+from ..voice_brief import load_voice_brief
 from ..auth.permissions import ALL_CAPABILITIES
 from ..db import get_db
 from ..models import (
@@ -46,31 +45,6 @@ from ..models import (
 )
 
 router = APIRouter()
-
-# Where synthesized voice briefs live, keyed by business slug.
-# (Mirrors app/agent/system_prompt._VOICE_BRIEF_DIR — kept independent so a
-# refactor of one doesn't accidentally break the other.)
-_VOICE_BRIEF_DIR = Path(__file__).resolve().parent.parent.parent / "voice-briefs"
-
-
-def _load_voice_brief(slug: str | None) -> Optional[dict[str, Any]]:
-    """Return the parsed voice-brief dict for this business slug, or None.
-
-    The brief is the artifact of the W2.1 PMC pipeline (or local fallback via
-    scripts/synthesize_voice_brief.py). Dashboard surfaces it in the AI Agent
-    side rail ('What the agent knows') and could later show it in Marketing
-    Plan as a structured panel.
-    """
-    if not slug:
-        return None
-    path = _VOICE_BRIEF_DIR / f"{slug}.json"
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-
 
 def _format_absolute_date(dt: datetime) -> str:
     # No %-d — not portable to Windows strftime. "Jun 2, 2026".
@@ -109,6 +83,40 @@ def _week_recap_payload(items: Optional[list]) -> list[dict[str, Any]]:
     return out
 
 
+def _computed_stats(agg: ReviewAggregate | None, posts: list) -> dict[str, Any]:
+    now = datetime.utcnow()
+    this_month = now.strftime("%Y-%m")
+    last_month = (now.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+    published = [p for p in posts if p.status == "published"]
+    n_now = sum(1 for p in published if (p.date or "").startswith(this_month))
+    n_prev = sum(1 for p in published if (p.date or "").startswith(last_month))
+    pending = sum(1 for p in posts if p.status == "pending")
+    if n_now:
+        posts_helper = "published this month"
+    elif pending:
+        posts_helper = f"{pending} waiting for your approval"
+    else:
+        posts_helper = "nothing published yet"
+    total = agg.total if agg else 0
+    rating = agg.aggregate if agg else 0.0
+    return {
+        "posts": {
+            "value": n_now,
+            "prev": n_prev,
+            "delta": (f"{n_now - n_prev:+d}" if (n_now or n_prev) else "—"),
+            "helper": posts_helper,
+        },
+        # Engagement needs connected platform analytics; until then say so.
+        "engagement": {"value": "—", "helper": "shows once your accounts are connected", "positive": False},
+        "reviews": {
+            "value": total,
+            "rating": rating,
+            "helper": f"{rating:.1f} ★ avg" if total else "no reviews yet",
+        },
+        "spend": {"used": 0, "budget": 0, "helper": "no ad spend yet"},
+    }
+
+
 def _business_payload(biz: Business) -> dict[str, Any]:
     # Live Day-N: computed from enrolled_at at request time so the dashboard
     # ages honestly. Rows without enrolled_at (created before the column, or
@@ -119,6 +127,10 @@ def _business_payload(biz: Business) -> dict[str, Any]:
     else:
         days, joined_date = biz.joined_days_ago, biz.joined_date
     return {
+        "id": biz.id,
+        "slug": biz.slug,
+        "isDemo": bool(biz.is_demo),
+        "website": biz.website,
         "name": biz.name,
         "owner": biz.owner,
         "ownerInitials": biz.owner_initials,
@@ -131,9 +143,6 @@ def _business_payload(biz: Business) -> dict[str, Any]:
         "joinedDaysAgo": days,
         "joinedDate": joined_date,
         "voiceInterview": biz.voice_interview,
-        "techName": biz.tech_name,
-        "yearsInTown": biz.years_in_town,
-        "aseCertified": biz.ase_certified,
     }
 
 
@@ -245,6 +254,7 @@ def _stats_payload(
     *,
     tier: int = 0,
     chatbot_count: int = 0,
+    posts: Optional[list] = None,
 ) -> dict[str, Any]:
     """Compose the Home-view stat tiles. Phase A: use seeded overrides verbatim.
 
@@ -252,12 +262,11 @@ def _stats_payload(
     count (not a seeded override), so the Home tile and Sidebar badge agree after
     fixture import. Below Tier 3 the tile stays as a "Tier 3+ preview" upsell.
     """
+    # Overrides are hand-written seed copy (the demo account). Without them
+    # every tile is computed from the business's own rows — never invented.
     overrides = (notices.stats_overrides_json if notices else None) or {}
-    reviews_stat = overrides.get("reviews") or {
-        "value": 7,
-        "rating": agg.aggregate if agg else 4.8,
-        "helper": f"{agg.aggregate if agg else 4.8} ★ avg",
-    }
+    computed = _computed_stats(agg, posts or [])
+    reviews_stat = overrides.get("reviews") or computed["reviews"]
     if tier < 3:
         chatbot_stat = {"value": 0, "helper": "included in higher plans"}
     elif chatbot_count == 0:
@@ -265,10 +274,10 @@ def _stats_payload(
     else:
         chatbot_stat = {"value": chatbot_count, "helper": "served this month"}
     return {
-        "posts":      overrides.get("posts",      {"value": 12, "prev": 8, "delta": "+4", "helper": "across FB, IG, GBP"}),
-        "engagement": overrides.get("engagement", {"value": "+28%", "helper": "vs prior 30 days", "positive": True}),
+        "posts":      overrides.get("posts",      computed["posts"]),
+        "engagement": overrides.get("engagement", computed["engagement"]),
         "reviews":    reviews_stat,
-        "spend":      overrides.get("spend",      {"used": 112, "budget": 150, "helper": "$200 / mo recommended"}),
+        "spend":      overrides.get("spend",      computed["spend"]),
         "chatbot":    chatbot_stat,
     }
 
@@ -416,7 +425,7 @@ def get_bootstrap(
         # Who is looking. The server enforces every capability on its own;
         # this only lets the UI say "view-only" up front instead of after a 403.
         "access": _access_payload(request),
-        "stats": _stats_payload(notices, agg, tier=biz.tier, chatbot_count=chatbot_total_count),
+        "stats": _stats_payload(notices, agg, tier=biz.tier, chatbot_count=chatbot_total_count, posts=posts),
         "attention": notices.attention_json if notices else [],
         "weekRecap": _week_recap_payload(notices.week_recap_json if notices else []),
         "posts": [_post_payload(p) for p in posts],
@@ -451,7 +460,7 @@ def get_bootstrap(
         # AI Agent already injects it into its system prompt; this surface
         # makes it visible to the dashboard's UI (e.g. "What the agent knows"
         # panel). None when no brief exists for this business yet.
-        "voiceBrief": _load_voice_brief(biz.slug),
+        "voiceBrief": load_voice_brief(biz),
         # Phase D — Display Ad Amplification surfaces.
         "reach": _reach_payload(reach_tiers, impressions_rows, local_first_rows),
         # Phase E — paid-ad spend management aggregate slice. Full per-row
