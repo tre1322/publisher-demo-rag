@@ -334,8 +334,13 @@ _AGENT_TO_AD_PLATFORM = {
 # --------------------------------------------------------------------------- #
 
 
+# The agent names platforms in full; posts store the dashboard's keys, so a
+# chat draft shows up on the calendar and in Approvals like any other post.
+_POST_PLATFORM_KEYS = {"facebook": "fb", "instagram": "ig", "google": "gbp"}
+
+
 def _exec_draft_post(db: Session, business_id: int, args: dict[str, Any]) -> ToolResult:
-    platform = args["platform"]
+    platform = _POST_PLATFORM_KEYS.get(args["platform"], args["platform"])
     topic = args["topic"]
     brief = args["brief"]
     today = datetime.utcnow().date().isoformat()

@@ -37,6 +37,8 @@ from ..data_lifecycle import cancel_deletion, export_business, purge_business, s
 from ..db import get_db
 from ..models import Business, BusinessUser, Escalation, Invite, User
 from ..provisioning import create_business
+from ..onboarding import get_state as get_onboarding_state
+from ..onboarding import save_state as save_onboarding_state
 from ..voice_brief import load_voice_brief, validate_brief
 from .billing import TIER_LABELS, TIER_PRICES
 from .invites import create_invite
@@ -126,6 +128,7 @@ def _business_row(db: Session, biz: Business) -> dict[str, Any]:
         "enrolledAt": biz.enrolled_at.isoformat() if biz.enrolled_at else None,
         "hasVoiceBrief": load_voice_brief(biz) is not None,
         "voiceInterview": biz.voice_interview,
+        "onboardingStatus": get_onboarding_state(biz)["status"],
         "members": [{"email": u.email, "role": bu.role, "active": u.is_active} for bu, u in members],
         "pendingInvites": [
             {"id": i.id, "email": i.email, "role": i.role, "expiresAt": i.expires_at.isoformat()}
@@ -261,6 +264,12 @@ def set_voice_brief(business_id: int, body: VoiceBriefBody, db: Session = Depend
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e)) from None
         biz.voice_interview = "complete"
+        # The recorded interview fills the same brief the setup wizard
+        # would, so the owner isn't asked to do setup on top of it.
+        state = get_onboarding_state(biz)
+        if state["status"] not in ("done", "drafting", "planning"):
+            state.update(status="done", error=None, source="interview")
+            save_onboarding_state(biz, state)
     db.commit()
     return {"ok": True, "business": _business_row(db, biz)}
 

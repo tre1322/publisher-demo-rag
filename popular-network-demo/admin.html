@@ -100,6 +100,7 @@
         <div><dt class="text-slate-500">People</dt><dd data-f="members"></dd></div>
         <div><dt class="text-slate-500">Pending invites</dt><dd data-f="invites"></dd></div>
         <div><dt class="text-slate-500">Voice brief</dt><dd data-f="brief"></dd></div>
+        <div><dt class="text-slate-500">Owner setup</dt><dd data-f="setup"></dd></div>
       </dl>
       <form data-p="invite" class="mt-3 flex flex-wrap items-end gap-2 text-sm">
         <label>Invite someone<input name="email" type="email" required placeholder="name@business.com" class="mt-1 block px-3 py-1.5 border border-slate-300 rounded-lg" /></label>
@@ -155,6 +156,11 @@
   </template>
 
 <script>
+const SETUP_LABELS = {
+  not_started: 'Not started', answering: 'Answering questions', drafting: 'Drafting brief…',
+  review: 'Reviewing draft brief', planning: 'Planning first week…', plan_failed: 'First-week plan failed (owner can retry)',
+  skipped: 'Skipped for now', done: 'Done',
+};
 const TIER_NAMES = {1: 'Tier 1 — Self-serve', 2: 'Tier 2 — Surfaced', 3: 'Tier 3 — Concierge', 4: 'Tier 4 — Inventory'};
 
 function detailOf(body, status) {
@@ -223,6 +229,7 @@ function renderCard(b) {
   f('invites').textContent = b.pendingInvites.length
     ? b.pendingInvites.map(i => `${i.email} (${i.role})`).join(', ') : 'None';
   f('brief').textContent = b.hasVoiceBrief ? 'Loaded' : 'Not yet — the agent writes from the marketing plan only';
+  f('setup').textContent = SETUP_LABELS[b.onboardingStatus] || b.onboardingStatus || '—';
   f('deletion').classList.toggle('hidden', !b.deletionDueAt);
   if (b.deletionDueAt) {
     f('deletion-text').textContent = `Scheduled for deletion on ${new Date(b.deletionDueAt + 'Z').toLocaleDateString()}. The owner sees a warning in their dashboard.`;

@@ -54,6 +54,9 @@ class Business(Base):
     # DB so a new business doesn't need a server rebuild; the old
     # voice-briefs/{slug}.json files are only a fallback (see voice_brief.py).
     voice_brief_json: Mapped[Any] = mapped_column(JSON, nullable=True)
+    # Phase 2. The onboarding wizard's progress (answers, draft brief,
+    # status). NULL = never started; see app/onboarding.py for the shape.
+    onboarding_json: Mapped[Any] = mapped_column(JSON, nullable=True)
     # Phase 1. The business's own website, e.g. "https://example.com".
     website: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     # Phase 1. Deletion clock (privacy policy: deleted 30 days after
