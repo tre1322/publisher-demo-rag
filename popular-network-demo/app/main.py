@@ -99,6 +99,7 @@ def _startup() -> None:
     _add_col_if_missing("ad_connections", "oauth_state", "VARCHAR(64)")
     _add_col_if_missing("ad_connections", "account_urn", "VARCHAR(120)")
     _add_col_if_missing("ad_connections", "connected_user_name", "VARCHAR(120)")
+    _add_col_if_missing("ad_connections", "config_json", "JSON")  # Phase 5c Meta link
     # Trust pass (v49): anchor timestamp for live Day-N rendering. Nullable;
     # _backfill_enrolled_at below fills pre-existing rows.
     _add_col_if_missing("businesses", "enrolled_at", "DATETIME")

@@ -145,7 +145,7 @@
   // version your browser is showing (rendered in the sidebar footer).
   // Keep it ONE concise line: it renders in the sidebar, so a changelog here
   // leaks internal roadmap language to customers. History lives in git.
-  const BUILD_VERSION = '2026-10-03 · v62 — automatic posting (Tier 2+): link accounts once; approved posts publish on their day.';
+  const BUILD_VERSION = '2026-10-03 · v63 — Meta ads through the API: Amplafai links the account; campaigns created paused, a person turns them on.';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -3888,21 +3888,27 @@
                                   style={{ width: `${pctUsed}%` }} />
                               </div>
                               {a.managed && spendCents >= capCents && (
-                                <div className="mt-1 text-[11px] text-bad">Cap reached. Amplafai has been asked to pause what's still running here; raise the cap to keep going.</div>
+                                <div className="mt-1 text-[11px] text-bad">{conn?.viaApi
+                                  ? <>Cap reached. What was still running here has been paused; raise the cap to keep going.</>
+                                  : <>Cap reached. Amplafai has been asked to pause what's still running here; raise the cap to keep going.</>}</div>
                               )}
                               {a.managed && spendCents >= capCents * 0.8 && spendCents < capCents && (
-                                <div className="mt-1 text-[11px] text-amber-700">Over 80% of this month's cap. At 100%, Amplafai pauses what's still running here.</div>
+                                <div className="mt-1 text-[11px] text-amber-700">Over 80% of this month's cap. At 100%, {conn?.viaApi ? "what's still running here is paused automatically" : "Amplafai pauses what's still running here"}.</div>
                               )}
                             </div>
                           )}
                           {a.managed && (a.lastImports || {})[p.key] && (
                             <div className="mt-1 text-[11px] text-ink-faint">
-                              Real spend from your {(a.lastImports[p.key].source || '').replace(' export', '')}, through {fmtDay(a.lastImports[p.key].through)}.
+                              {a.lastImports[p.key].viaApi
+                                ? <>Real spend, read from {p.label} automatically every few hours, through {fmtDay(a.lastImports[p.key].through)}.</>
+                                : <>Real spend from your {(a.lastImports[p.key].source || '').replace(' export', '')}, through {fmtDay(a.lastImports[p.key].through)}.</>}
                             </div>
                           )}
                           {a.managed && capCents > 0 && !(a.lastImports || {})[p.key] && (
                             <div className="mt-1 text-[11px] text-ink-faint">
-                              Spend appears once a campaign is running and Amplafai uploads the platform's numbers (every day or two).
+                              {conn?.viaApi
+                                ? <>Spend appears once a campaign is running; it's read from {p.label} every few hours.</>
+                                : <>Spend appears once a campaign is running and Amplafai uploads the platform's numbers (every day or two).</>}
                             </div>
                           )}
                           {capCents === 0 && !isConnected && (
@@ -7639,7 +7645,9 @@
                         const subtitle = connected
                           ? (isLinkedIn && linkedinStatus?.connected
                               ? `${linkedinStatus.connectedUserName ? linkedinStatus.connectedUserName + ' · ' : ''}${linkedinStatus.accountUrn || 'Connected'}`
-                              : `${conn?.externalAccountId || ''} · ${conn?.accountLabel || 'connected'}`)
+                              : (conn?.viaApi
+                                  ? `${conn.accountLabel} · ${conn.externalAccountId} · linked by Amplafai`
+                                  : `${conn?.externalAccountId || ''} · ${conn?.accountLabel || 'connected'}`))
                           : (liExpired ? 'Token expired — reconnect'
                             : (!business.isDemo && !liLive ? 'Amplafai runs campaigns here for you' : 'Not yet connected'));
                         return (
@@ -7654,6 +7662,10 @@
                                   <span className={`text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0 ${liLive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
                                     {liLive ? 'Live OAuth' : 'Demo'}
                                   </span>
+                                )}
+                                {conn?.viaApi && (
+                                  <span className="text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0 bg-emerald-50 text-emerald-700"
+                                    title="Campaigns here are created paused through Meta's API; a person turns each one on.">API</span>
                                 )}
                               </div>
                               <div className="text-[11px] text-ink-faint truncate">{subtitle}</div>
@@ -7678,7 +7690,7 @@
                   )}
                   <div className="mt-3 text-[11px] text-ink-faint leading-relaxed">
                     {!business.isDemo ? (
-                      <>Amplafai sets up and runs your campaigns on these platforms and reports the real spend in Ads &amp; Spend. {linkedinStatus?.live ? 'LinkedIn can also connect directly to your own Campaign Manager.' : ''}</>
+                      <>Amplafai sets up and runs your campaigns on these platforms and reports the real spend in Ads &amp; Spend. {adConnections?.some(c => c.viaApi) ? 'Accounts marked API are run through the platform directly: each campaign is created paused, you or Amplafai turn it on, and spend updates every few hours. ' : ''}{linkedinStatus?.live ? 'LinkedIn can also connect directly to your own Campaign Manager.' : ''}</>
                     ) : linkedinStatus?.live ? (
                       <>LinkedIn uses <span className="font-medium text-ink-soft">real OAuth</span> into Campaign Manager — connecting authorizes Amplafai to schedule and report on live campaigns. Meta / Google / TikTok are still mocked for the demo (real OAuth on the roadmap).</>
                     ) : (

@@ -202,6 +202,23 @@
         <p class="mt-1 text-xs text-slate-500">Download the campaign report broken down by day, with the Campaign ID column, for the days since the last upload (overlapping days are replaced, never double-counted).</p>
         <p data-f="ad-last" class="mt-1 text-xs text-slate-500"></p>
         <div data-f="ad-preview-box" class="hidden mt-3 rounded-lg border border-slate-200 p-3"></div>
+
+        <div data-f="meta-link" class="mt-4 rounded-lg border border-slate-200 p-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="font-medium">Meta API</span>
+            <span data-f="meta-state" class="text-slate-600">Loading…</span>
+            <button type="button" data-a="meta-unlink" class="hidden ml-auto px-3 py-1.5 rounded-lg border border-slate-300">Stop using the API</button>
+          </div>
+          <form data-f="meta-form" class="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2">
+            <label>Ad account ID<input name="ad_account_id" placeholder="act_1234567890" class="mt-1 block w-full px-3 py-1.5 border border-slate-300 rounded-lg disabled:bg-slate-50" /></label>
+            <label>Facebook Page ID<input name="page_id" placeholder="1029384756" class="mt-1 block w-full px-3 py-1.5 border border-slate-300 rounded-lg disabled:bg-slate-50" /></label>
+            <label>Instagram account ID (optional)<input name="instagram_id" class="mt-1 block w-full px-3 py-1.5 border border-slate-300 rounded-lg disabled:bg-slate-50" /></label>
+            <label>ZIP code (only if the town isn't found)<input name="zip_code" inputmode="numeric" maxlength="5" class="mt-1 block w-full px-3 py-1.5 border border-slate-300 rounded-lg disabled:bg-slate-50" /></label>
+            <label>Radius around the town (miles, 10 to 50)<input name="radius_miles" type="number" min="10" max="50" value="15" class="mt-1 block w-full px-3 py-1.5 border border-slate-300 rounded-lg disabled:bg-slate-50" /></label>
+            <div class="self-end"><button data-a="meta-save" class="px-4 py-2 rounded-lg bg-slate-900 text-white disabled:opacity-50">Check and link</button></div>
+          </form>
+          <p class="mt-2 text-xs text-slate-500">First the client adds Amplafai's business as a partner on their ad account and Page (runbook section 1). Linking checks both with Amplafai's token. After that, their Meta campaigns are created paused through the API, a person turns each one on, and spend is read from Meta every 3 hours.</p>
+        </div>
       </div>
 
       <div class="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-2 text-sm">
@@ -695,6 +712,7 @@ function wireAdResults(card, b) {
     } catch (e) { setMsg(card, e.message, false); }
   });
   showLastImport(card, b);
+  wireMetaLink(card, b);
   const box = f('ad-preview-box');
   const send = async (commit) => {
     const file = f('ad-file').files[0];
@@ -717,6 +735,61 @@ function wireAdResults(card, b) {
       box.replaceChildren(el('p', 'text-red-700', e.message));
     }
   });
+}
+
+// ---------------------------------------------------------------- Meta API link (Phase 5c)
+function wireMetaLink(card, b) {
+  const f = (k) => card.querySelector(`[data-f="${k}"]`);
+  const form = f('meta-form');
+  const unlink = card.querySelector('[data-a="meta-unlink"]');
+  const show = (m) => {
+    const live = !!(m && m.live);
+    const link = m && m.link;
+    const state = f('meta-state');
+    if (!live) {
+      state.textContent = "Not switched on for this server yet (META_ACCESS_TOKEN and META_APP_SECRET). Run this client's Meta campaigns by hand.";
+    } else if (link) {
+      const g = link.geo || {};
+      const where = g.zip ? `ZIP ${g.zip}` : `${g.name}, ${g.region} + ${g.radiusMiles} mi`;
+      state.textContent = `Linked: ${link.accountName} (${link.accountId}), Page ${link.pageName || link.pageId}` +
+        `${link.instagramId ? ', Instagram on' : ''}, ${where}. By ${link.linkedBy || '?'}, ${ago(link.linkedAt)}. ` +
+        (link.spendCapCents ? `Meta account spending limit: ${usd(link.spendCapCents)}.`
+                            : 'No account spending limit in Meta: set one a little above the owner\'s caps (runbook section 1).');
+    } else {
+      state.textContent = 'Not linked. Meta campaigns go to the hand queue.';
+    }
+    state.className = link ? (link.spendCapCents ? 'text-emerald-800' : 'text-amber-800') : 'text-slate-600';
+    // Disabled-visible: the form is always there; it only works once Meta is live.
+    for (const x of form.elements) x.disabled = !live;
+    form.classList.toggle('hidden', !!link);
+    unlink.classList.toggle('hidden', !link);
+  };
+  show(b.adsMeta);
+  form.onsubmit = (ev) => {
+    ev.preventDefault();
+    const btn = form.querySelector('[data-a="meta-save"]');
+    withBusy(btn, async () => {
+      const x = form.elements;
+      try {
+        const res = await api('POST', `/api/admin/businesses/${b.id}/ads/meta`, {
+          ad_account_id: x.ad_account_id.value, page_id: x.page_id.value,
+          instagram_id: x.instagram_id.value || null, zip_code: x.zip_code.value || null,
+          radius_miles: x.radius_miles.value ? Number(x.radius_miles.value) : null,
+        });
+        b.adsMeta = res.business.adsMeta;
+        setMsg(card, `${b.name}'s Meta ad account is linked. New Meta campaigns are created paused through the API.`, true);
+        loadAds();
+      } catch (e) { setMsg(card, `Not linked: ${e.message}`, false); }
+    }).then(() => show(b.adsMeta));
+  };
+  unlink.onclick = () => withBusy(unlink, async () => {
+    try {
+      const res = await api('DELETE', `/api/admin/businesses/${b.id}/ads/meta`);
+      b.adsMeta = res.business.adsMeta;
+      setMsg(card, `Stopped using Meta's API for ${b.name}. Changes to their Meta campaigns now come to the hand queue.`, true);
+      loadAds();
+    } catch (e) { setMsg(card, e.message, false); }
+  }).then(() => show(b.adsMeta));
 }
 
 async function loadList() {

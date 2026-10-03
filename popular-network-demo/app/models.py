@@ -533,7 +533,7 @@ class AdActionLog(Base):
     business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"), index=True)
     campaign_id: Mapped[Optional[int]] = mapped_column(ForeignKey("ad_campaigns.id"), nullable=True, index=True)
     platform: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
-    action: Mapped[str] = mapped_column(String(24))  # create_paused|activate|pause|resume|cancel|halt|unhalt|sync
+    action: Mapped[str] = mapped_column(String(24))  # create_paused|activate|pause|resume|cancel|halt|unhalt|sync|link|unlink
     actor: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
     source: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)  # owner|agent|cap|halt|system
     ok: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -583,6 +583,9 @@ class AdConnection(Base):
     oauth_state: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)  # transient CSRF state mid-handshake
     account_urn: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)  # urn:li:sponsoredAccount:123
     connected_user_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)  # r_basicprofile display name
+    # Phase 5c: per-platform settings for an API-linked account. Meta:
+    # {pageId, instagramId, geo:{key,name,region,radiusMiles} | {zip}, currency, timezone, linkedBy}.
+    config_json: Mapped[Any] = mapped_column(JSON, nullable=True)
 
 
 # ---------------------------------------------------------------------------

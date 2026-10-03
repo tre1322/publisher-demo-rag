@@ -672,6 +672,7 @@ def _exec_schedule_boost(
                 duration_days=days,
                 audience=audience,
                 by="AI agent, on its own within the owner's cap",
+                post_id=post.id,
             )
         except Exception as e:
             return ToolResult(
