@@ -175,3 +175,132 @@ def send_password_reset_email(to_email: str, reset_url: str, *, minutes_valid: i
         ),
         kind="password-reset",
     )
+
+
+# ----------------------------------------------------------------------------
+# Phase 2: reminder and weekly summary emails. Built by app/notifications.py,
+# which decides who gets them and when. Every link opens the right screen of
+# the right business (?tab=...&b=...).
+# ----------------------------------------------------------------------------
+def _button(url: str, label: str) -> str:
+    return (
+        f"<p style=\"margin:20px 0\"><a href=\"{html.escape(url, quote=True)}\" "
+        f"style=\"background:#0E5E6F;color:#ffffff;padding:10px 18px;border-radius:8px;"
+        f"text-decoration:none;font-weight:600\">{html.escape(label)}</a></p>"
+    )
+
+
+def _footer(settings_url: str, what: str) -> tuple[str, str]:
+    from_name = os.getenv("INVITE_FROM_NAME", DEFAULT_FROM_NAME)
+    safe = html.escape(settings_url, quote=True)
+    return (
+        f"<p style=\"color:#6b7280;font-size:12px;margin-top:28px\">You get this because \"{html.escape(what)}\" "
+        f"is on in your notification settings. <a href=\"{safe}\">Change it here</a>.<br>— {html.escape(from_name)}</p>",
+        f"\n--\nYou get this because \"{what}\" is on in your notification settings. Change it here: {settings_url}\n"
+        f"— {from_name}\n",
+    )
+
+
+def send_approvals_reminder(
+    to_email: str,
+    *,
+    business_name: str,
+    items: list[dict],
+    review_url: str,
+    settings_url: str,
+) -> dict:
+    """"N posts are waiting for your approval". items: [{title, planned}]. Never raises."""
+    n = len(items)
+    noun = "post is" if n == 1 else "posts are"
+    def li(i: dict) -> str:
+        when = f' <span style="color:#6b7280">· {html.escape(i["planned"])}</span>' if i.get("planned") else ""
+        return f"<li>{html.escape(i['title'])}{when}</li>"
+
+    lines_html = "".join(li(i) for i in items[:8])
+    more = f"<li>and {n - 8} more</li>" if n > 8 else ""
+    lines_text = "\n".join(f"- {i['title']}" + (f" ({i['planned']})" if i.get("planned") else "") for i in items[:8])
+    foot_html, foot_text = _footer(settings_url, "Posts waiting for your approval")
+    return _send(
+        to_email,
+        f"{n} {noun} waiting for your approval — {business_name}",
+        (
+            f"<p>Your AI agent drafted {'a post' if n == 1 else f'{n} posts'} for <strong>{html.escape(business_name)}</strong>. "
+            f"{'It goes' if n == 1 else 'They go'} nowhere until you approve:</p>"
+            f"<ul>{lines_html}{more}</ul>"
+            f"{_button(review_url, 'Review drafts')}"
+            f"<p>Approve, edit, or toss each one. It takes a minute or two, and it works from your phone.</p>"
+            f"{foot_html}"
+        ),
+        (
+            f"Your AI agent drafted {'a post' if n == 1 else f'{n} posts'} for {business_name}. "
+            f"{'It goes' if n == 1 else 'They go'} nowhere until you approve:\n\n{lines_text}\n"
+            + (f"- and {n - 8} more\n" if n > 8 else "")
+            + f"\nReview drafts: {review_url}\n\nApprove, edit, or toss each one. It takes a minute or two.\n{foot_text}"
+        ),
+        kind="approvals-reminder",
+    )
+
+
+def send_weekly_summary(
+    to_email: str,
+    *,
+    business_name: str,
+    approved: list[dict],
+    upcoming: list[dict],
+    pending: int,
+    suggestion: Optional[dict],
+    setup_unfinished: bool,
+    links: dict[str, str],
+) -> dict:
+    """Monday summary: approved last week, coming up, waiting, and the agent's next idea. Never raises.
+
+    approved/upcoming: [{title, when}]; suggestion: {title, why} (already queued in
+    Approvals) or None; links: approvals, calendar, chat, onboarding, settings.
+    """
+    def ul(items: list[dict]) -> tuple[str, str]:
+        return (
+            "<ul>" + "".join(f"<li>{html.escape(i['title'])} <span style=\"color:#6b7280\">· {html.escape(i['when'])}</span></li>"
+                             for i in items[:8]) + "</ul>",
+            "\n".join(f"- {i['title']} ({i['when']})" for i in items[:8]),
+        )
+
+    h: list[str] = []
+    t: list[str] = []
+    if setup_unfinished:
+        h.append("<p><strong>Your setup isn't finished.</strong> Ten minutes of questions and the agent writes in your voice "
+                 "and plans your first week.</p>" + _button(links["onboarding"], "Finish setup"))
+        t.append(f"Your setup isn't finished. Ten minutes of questions and the agent writes in your voice: {links['onboarding']}\n")
+    if approved:
+        uh, ut = ul(approved)
+        h.append(f"<h3 style=\"margin-bottom:4px\">Approved last week ({len(approved)})</h3>{uh}")
+        t.append(f"Approved last week ({len(approved)}):\n{ut}\n")
+    else:
+        h.append("<p>No posts were approved last week.</p>")
+        t.append("No posts were approved last week.\n")
+    if upcoming:
+        uh, ut = ul(upcoming)
+        h.append(f"<h3 style=\"margin-bottom:4px\">Coming up this week</h3>{uh}<p><a href=\"{html.escape(links['calendar'], quote=True)}\">Open the calendar</a></p>")
+        t.append(f"Coming up this week:\n{ut}\nCalendar: {links['calendar']}\n")
+    if suggestion:
+        h.append(
+            f"<h3 style=\"margin-bottom:4px\">The agent's idea for this week</h3>"
+            f"<p><strong>{html.escape(suggestion['title'])}</strong><br>{html.escape(suggestion.get('why') or '')}</p>"
+            f"<p>It's drafted and waiting in Approvals.</p>"
+        )
+        t.append(f"The agent's idea for this week: {suggestion['title']}\n{suggestion.get('why') or ''}\nIt's drafted and waiting in Approvals.\n")
+    if pending:
+        noun = "post is" if pending == 1 else "posts are"
+        h.append(f"<p><strong>{pending} {noun} waiting for your approval.</strong></p>" + _button(links["approvals"], "Review drafts"))
+        t.append(f"{pending} {noun} waiting for your approval: {links['approvals']}\n")
+    elif not setup_unfinished:
+        h.append(f"<p>Nothing is waiting for you. Want something posted? "
+                 f"<a href=\"{html.escape(links['chat'], quote=True)}\">Ask the agent</a>.</p>")
+        t.append(f"Nothing is waiting for you. Ask the agent for a post: {links['chat']}\n")
+    foot_html, foot_text = _footer(links["settings"], "Weekly summary")
+    return _send(
+        to_email,
+        f"Your week with Amplafai — {business_name}",
+        f"<p>Here's your week for <strong>{html.escape(business_name)}</strong>.</p>" + "".join(h) + foot_html,
+        f"Here's your week for {business_name}.\n\n" + "\n".join(t) + foot_text,
+        kind="weekly-summary",
+    )

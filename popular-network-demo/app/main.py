@@ -115,6 +115,7 @@ def _startup() -> None:
     _add_col_if_missing("businesses", "deletion_due_at", "DATETIME")
     # Phase 2: onboarding wizard progress.
     _add_col_if_missing("businesses", "onboarding_json", "JSON")
+    _add_col_if_missing("settings", "notify_state_json", "JSON")
     inserted = seed_if_empty()
     if inserted:
         log.info("Seeded Quadd.ai (business_id=1) — Day-1 customer w/ voice brief loaded")
@@ -153,6 +154,8 @@ def _startup() -> None:
     # every few hours while the server is up (there's no cron in the image).
     _purge_due_businesses()
     _start_purge_loop()
+    # Phase 2: approval reminders and the Monday summary.
+    _start_notify_loop()
 
 
 def _purge_due_businesses() -> None:
@@ -186,6 +189,42 @@ def _start_purge_loop() -> None:
             _purge_due_businesses()
 
     threading.Thread(target=_loop, name="purge-due-businesses", daemon=True).start()
+
+
+_NOTIFY_LOOP_STARTED = False
+
+
+def _start_notify_loop() -> None:
+    """Every 15 minutes, send the reminder/summary emails that are due.
+
+    On by default only in production, so a dev server with a Postmark key
+    in .env can't email real people from a copy of the data.
+    POPULAR_NOTIFY_LOOP=1/0 overrides either way.
+    """
+    global _NOTIFY_LOOP_STARTED
+    default = "1" if os.getenv("ENVIRONMENT", "").lower() == "production" else "0"
+    if _NOTIFY_LOOP_STARTED or os.getenv("POPULAR_NOTIFY_LOOP", default) == "0":
+        return
+    _NOTIFY_LOOP_STARTED = True
+
+    import threading
+    import time
+
+    from .db import SessionLocal
+    from .notifications import run_due
+
+    def _loop() -> None:
+        time.sleep(60)  # let startup finish first
+        while True:
+            try:
+                with SessionLocal() as db:
+                    run_due(db)
+            except Exception:  # housekeeping never takes the app down
+                log.exception("Notification run failed; will retry")
+            time.sleep(15 * 60)
+
+    threading.Thread(target=_loop, name="notifications", daemon=True).start()
+    log.info("Notification loop started (every 15 minutes)")
 
 
 def _backfill_demo_flag() -> None:
@@ -583,10 +622,27 @@ def _is_authed(request: Request) -> bool:
     return getattr(request.state, "user_id", None) is not None
 
 
+def _login_redirect(request: Request) -> RedirectResponse:
+    # Keep where they were going (an email's ?tab=approvals&b=7 link) so
+    # signing in lands them there instead of on Home.
+    from urllib.parse import quote
+
+    target = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+    url = "/login" if target == "/" else f"/login?next={quote(target, safe='')}"
+    return RedirectResponse(url=url, status_code=302)
+
+
+def _safe_next(value: str | None) -> str:
+    """Only same-site paths: '/?tab=x' yes; '//evil.com', 'https://...' no."""
+    if value and value.startswith("/") and not value.startswith("//") and "\\" not in value:
+        return value
+    return "/"
+
+
 @app.get("/", include_in_schema=False)
 def root(request: Request):
     if not _is_authed(request):
-        return RedirectResponse(url="/login", status_code=302)
+        return _login_redirect(request)
     return FileResponse(ROOT / "dashboard.html")
 
 
@@ -599,10 +655,10 @@ def dashboard_html(request: Request):
 
 
 @app.get("/login", include_in_schema=False)
-def login_page(request: Request):
-    # If already logged in, skip the form and go straight to the dashboard.
+def login_page(request: Request, next: str | None = None):
+    # If already logged in, skip the form and go straight to where they meant to go.
     if _is_authed(request):
-        return RedirectResponse(url="/", status_code=302)
+        return RedirectResponse(url=_safe_next(next), status_code=302)
     return FileResponse(ROOT / "login.html")
 
 

@@ -201,6 +201,9 @@ class SettingsRow(Base):
     # browser localStorage only, which the server never read. NULL = never
     # chosen = OFF — the agent proposes every ad change until the owner opts in.
     ad_autonomy_enabled: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    # Phase 2: when reminder/summary emails last went out, so the loop sends
+    # each one once ({"approvalsAt": iso, "weeklyWeek": "2026-W41"}).
+    notify_state_json: Mapped[Any] = mapped_column(JSON, nullable=True)
 
 
 class Connection(Base):
