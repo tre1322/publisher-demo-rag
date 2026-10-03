@@ -75,12 +75,26 @@
         <h2 class="text-base font-semibold">Ad requests</h2>
         <span id="ads-status" class="text-sm text-slate-500" role="status">Loading…</span>
         <button type="button" id="ads-refresh" class="ml-auto px-3 py-1.5 rounded-lg border border-slate-300 text-sm">Refresh</button>
+        <button type="button" id="ads-halt-all" class="px-3 py-1.5 rounded-lg border border-red-300 text-red-700 text-sm">Pause paid ads for every client…</button>
+      </div>
+      <div id="ads-halt-banner" class="hidden mb-3 text-sm bg-red-50 border border-red-200 text-red-900 rounded-lg p-3 flex flex-wrap items-center gap-3">
+        <span id="ads-halt-text" class="flex-1"></span>
+        <button type="button" id="ads-allow-all" class="px-3 py-1.5 rounded-lg border border-red-300 bg-white">Allow paid ads again</button>
+      </div>
+      <div id="ads-halt-confirm" class="hidden mb-3 text-sm bg-amber-50 border border-amber-200 rounded-lg p-3">
+        <p class="mb-2">Pause paid ads for <strong>every client</strong>? Campaigns on a connected platform are paused right away; hand-run ones become pause requests below. Nothing can start or restart anywhere until you allow paid ads again.</p>
+        <button type="button" id="ads-halt-yes" class="px-3 py-1.5 rounded-lg bg-red-700 text-white">Yes, pause everything</button>
+        <button type="button" id="ads-halt-no" class="px-3 py-1.5 rounded-lg border border-slate-300 bg-white">Cancel</button>
       </div>
       <p id="ads-intro" class="text-sm text-slate-500 mb-3">Real clients' campaigns are launched, paused and cancelled by hand in their own ad accounts. Do each one in the platform first, then mark it done here; the owner's dashboard changes only then.</p>
       <div id="ads-list" class="space-y-3"></div>
       <details class="mt-4">
         <summary class="text-sm text-slate-600 cursor-pointer">Recently handled</summary>
         <ul id="ads-recent" class="mt-2 space-y-1 text-sm text-slate-600"></ul>
+      </details>
+      <details class="mt-2">
+        <summary class="text-sm text-slate-600 cursor-pointer">Platform activity (every change sent to an ad platform)</summary>
+        <ul id="ads-log" class="mt-2 space-y-1 text-sm text-slate-600"></ul>
       </details>
     </section>
 
@@ -182,7 +196,9 @@
           </label>
           <label>Export (CSV, by day)<input data-f="ad-file" type="file" accept=".csv,.tsv,.txt,text/csv" class="mt-1 block text-sm" /></label>
           <button type="button" data-a="ad-preview" class="px-3 py-1.5 rounded-lg border border-slate-300">Preview</button>
+          <button type="button" data-a="ad-halt" class="ml-auto px-3 py-1.5 rounded-lg border border-red-200 text-red-700">Pause this client's paid ads</button>
         </div>
+        <p data-f="ad-halt-state" class="hidden mt-2 text-red-800"></p>
         <p class="mt-1 text-xs text-slate-500">Download the campaign report broken down by day, with the Campaign ID column, for the days since the last upload (overlapping days are replaced, never double-counted).</p>
         <p data-f="ad-last" class="mt-1 text-xs text-slate-500"></p>
         <div data-f="ad-preview-box" class="hidden mt-3 rounded-lg border border-slate-200 p-3"></div>
@@ -567,6 +583,14 @@ function renderAds(data) {
     list.prepend(el('p', 'text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2',
       'New requests are not emailed to anyone: set ADS_OPS_EMAIL (or ALERT_EMAIL) on the server. Check this page instead.'));
   }
+  const halt = data.haltAll || {};
+  document.getElementById('ads-halt-banner').classList.toggle('hidden', !halt.on);
+  document.getElementById('ads-halt-all').classList.toggle('hidden', !!halt.on);
+  document.getElementById('ads-halt-text').textContent = halt.on
+    ? `Paid ads are paused for every client (by ${halt.by || '?'}, ${ago(halt.at)}). Nothing can start or restart anywhere.` : '';
+  document.getElementById('ads-log').replaceChildren(...((data.log || []).length ? data.log.map(x => el('li', x.ok ? '' : 'text-red-700',
+    `${x.ok ? '' : 'FAILED · '}${x.action.replace('_', ' ')} · ${x.business}${x.campaignId ? ` · campaign #${x.campaignId}` : ''}${x.platform ? ` · ${x.platform}` : ''} · ${x.actor || 'system'}, ${ago(x.at)}${x.detail ? `: ${x.detail}` : ''}`))
+    : [el('li', '', 'Nothing yet.')]));
   document.getElementById('ads-recent').replaceChildren(...(data.recent.length ? data.recent.map(r => el('li', '',
     `${AD_VERBS[r.kind]} · ${r.business.name} · ${r.campaign.name}: ${r.status === 'done' ? 'done' : 'closed'} by ${r.doneBy || '?'}, ${ago(r.doneAt)}${r.doneNote ? ` (${r.doneNote})` : ''}`))
     : [el('li', '', 'Nothing handled yet.')]));
@@ -650,6 +674,26 @@ function renderImportSummary(box, s, onImport) {
 function wireAdResults(card, b) {
   const f = (k) => card.querySelector(`[data-f="${k}"]`);
   f('ad-results').classList.remove('hidden');
+  const haltBtn = card.querySelector('[data-a="ad-halt"]');
+  const showHalt = (h) => {
+    f('ad-halt-state').classList.toggle('hidden', !h);
+    f('ad-halt-state').textContent = h ? (h.scope === 'all'
+      ? 'Paid ads are paused for every client (switch at the top of Ad requests).'
+      : `Paid ads are paused for this client (by ${h.by || '?'}, ${ago(h.at)}).`) : '';
+    haltBtn.textContent = h && h.scope === 'business' ? 'Allow paid ads again' : "Pause this client's paid ads";
+    haltBtn.disabled = !!(h && h.scope === 'all');
+  };
+  showHalt(b.adsHalt);
+  haltBtn.onclick = () => withBusy(haltBtn, async () => {
+    const on = !(b.adsHalt && b.adsHalt.scope === 'business');
+    try {
+      const res = await api('POST', `/api/admin/businesses/${b.id}/ads/${on ? 'halt' : 'allow'}`);
+      b.adsHalt = res.business.adsHalt;
+      showHalt(b.adsHalt);
+      setMsg(card, on ? `Paid ads paused for ${b.name}.` : `Paid ads allowed again for ${b.name}. Nothing restarted on its own.`, true);
+      loadAds();
+    } catch (e) { setMsg(card, e.message, false); }
+  });
   showLastImport(card, b);
   const box = f('ad-preview-box');
   const send = async (commit) => {
@@ -729,6 +773,21 @@ document.getElementById('create-form').onsubmit = (ev) => {
     if (!me.is_superuser) { window.location = '/'; return; }
   } catch (err) { showPageError(`Couldn't check your sign-in: ${err.message}`); }
   document.getElementById('ads-refresh').onclick = loadAds;
+  const confirmBox = document.getElementById('ads-halt-confirm');
+  document.getElementById('ads-halt-all').onclick = () => confirmBox.classList.remove('hidden');
+  document.getElementById('ads-halt-no').onclick = () => confirmBox.classList.add('hidden');
+  document.getElementById('ads-halt-yes').onclick = (ev) => withBusy(ev.currentTarget, async () => {
+    try {
+      const res = await api('POST', '/api/admin/ads/halt-all');
+      confirmBox.classList.add('hidden');
+      renderAds(res);
+      loadList();
+    } catch (e) { showPageError(`Couldn't pause everything: ${e.message}`); }
+  });
+  document.getElementById('ads-allow-all').onclick = (ev) => withBusy(ev.currentTarget, async () => {
+    try { renderAds(await api('POST', '/api/admin/ads/allow-all')); loadList(); }
+    catch (e) { showPageError(`Couldn't allow paid ads again: ${e.message}`); }
+  });
   loadAds();
   loadList();
 })();

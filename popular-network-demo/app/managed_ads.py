@@ -34,8 +34,9 @@ from typing import Any, Callable, Optional
 from sqlalchemy import event, select
 from sqlalchemy.orm import Session
 
+from . import ad_platforms
 from .db import SessionLocal
-from .models import AdCampaign, AdOpsRequest, Business, Post
+from .models import AdCampaign, AdOpsRequest, AppFlag, Business, Post, SettingsRow
 from .provisioning import is_demo
 
 log = logging.getLogger("popular_network.managed_ads")
@@ -131,7 +132,9 @@ def stage(c: AdCampaign, req: Optional[AdOpsRequest], managed: bool) -> str:
                 "resume": "resume_requested", "cancel": "cancel_requested"}[req.kind]
     if c.status == "scheduled" and managed and not on_platform(c):
         return "waiting_for_launch"
-    if c.status == "paused" and managed and not on_platform(c):
+    if c.status == "scheduled" and managed and c.launched_at is None:
+        return "ready_to_turn_on"   # created paused through the platform's API
+    if c.status == "paused" and managed and (not on_platform(c) or c.launched_at is None):
         return "held"
     return {"active": "live"}.get(c.status, c.status)
 
@@ -147,6 +150,129 @@ def add_business_days(start: datetime, days: int) -> datetime:
         if d.weekday() < 5:
             days -= 1
     return d
+
+
+# --------------------------------------------------------------------------- #
+# "Pause all paid ads" (Phase 5a)
+# --------------------------------------------------------------------------- #
+
+HALT_FLAG = "ads_halted"
+
+
+def _settings(db: Session, business_id: int) -> Optional[SettingsRow]:
+    return db.execute(select(SettingsRow).where(SettingsRow.business_id == business_id)
+                      .execution_options(include_all_tenants=True)).scalar_one_or_none()
+
+
+def halt_state(db: Session, business_id: int) -> Optional[dict[str, Any]]:
+    """{"scope": "all"|"business", "at", "by"} while paid ads are paused."""
+    flag = db.get(AppFlag, HALT_FLAG)
+    if flag is not None and (flag.value or {}).get("on"):
+        return {"scope": "all", "at": flag.updated_at.isoformat(), "by": flag.updated_by}
+    row = _settings(db, business_id)
+    if row is not None and row.ads_halted_at:
+        return {"scope": "business", "at": row.ads_halted_at.isoformat(), "by": row.ads_halted_by}
+    return None
+
+
+def halt_message(state: dict[str, Any]) -> str:
+    if state["scope"] == "all":
+        return ("Amplafai has paused paid ads for every client while something is checked. "
+                "Nothing can start or restart until that's lifted.")
+    return ("Paid ads are paused for this business. Allow paid ads again in Ads & Spend "
+            "to start or restart campaigns.")
+
+
+def spend_block(db: Session, biz: Optional[Business]) -> Optional[str]:
+    """Why nothing new may start spending for this business right now, or None."""
+    if not plan_allows(biz):
+        return PLAN_MESSAGE
+    state = halt_state(db, biz.id) if biz is not None else None
+    return halt_message(state) if state else None
+
+
+def _require_spend_allowed(db: Session, biz: Business) -> None:
+    block = spend_block(db, biz)
+    if block:
+        raise ManagedAdsError(block, 403 if block == PLAN_MESSAGE else 409)
+
+
+def _stop_everything(db: Session, biz: Business, *, by: str) -> dict[str, int]:
+    """Pause what's running (through the API, or ask Amplafai), hold what
+    hasn't started. Proposals waiting for approval stay; they can't be
+    approved while paid ads are paused."""
+    counts = {"paused": 0, "requested": 0, "held": 0}
+    rows = db.execute(select(AdCampaign).where(
+        AdCampaign.business_id == biz.id, AdCampaign.status.in_(("scheduled", "active")),
+    ).execution_options(include_all_tenants=True)).scalars().all()
+    for c in rows:
+        was_running = c.status == "active"
+        try:
+            out = change(db, biz, c, "pause", by=by, source="halt")
+        except ManagedAdsError:
+            continue
+        if out["outcome"] in ("requested", "unchanged"):
+            counts["requested"] += 1
+        elif was_running:
+            counts["paused"] += 1
+        else:
+            counts["held"] += 1
+    return counts
+
+
+def halt_business(db: Session, biz: Business, *, by: str) -> dict[str, Any]:
+    """The owner's (or Amplafai's) "Pause all paid ads". Never commits."""
+    row = _settings(db, biz.id)
+    if row is None:
+        row = SettingsRow(business_id=biz.id)
+        db.add(row)
+    if row.ads_halted_at is None:
+        row.ads_halted_at, row.ads_halted_by = _now(), by
+    counts = _stop_everything(db, biz, by=by)
+    ad_platforms.record(db, business_id=biz.id, action="halt", actor=by, source="halt",
+                        detail=f"Paused {counts['paused']}, asked Amplafai to pause {counts['requested']}, "
+                               f"held {counts['held']} not yet started.")
+    return counts
+
+
+def allow_business(db: Session, biz: Business, *, by: str) -> None:
+    """Lift this business's switch. Nothing restarts on its own."""
+    row = _settings(db, biz.id)
+    if row is not None and row.ads_halted_at is not None:
+        row.ads_halted_at, row.ads_halted_by = None, None
+        ad_platforms.record(db, business_id=biz.id, action="unhalt", actor=by, source="halt",
+                            detail="Paid ads allowed again. Nothing restarted on its own.")
+
+
+def halt_all(db: Session, *, by: str) -> dict[str, int]:
+    """Amplafai's switch for every business. Never commits."""
+    flag = db.get(AppFlag, HALT_FLAG)
+    if flag is None:
+        flag = AppFlag(key=HALT_FLAG)
+        db.add(flag)
+    flag.value, flag.updated_at, flag.updated_by = {"on": True}, _now(), by
+    totals = {"paused": 0, "requested": 0, "held": 0, "businesses": 0}
+    from .db import current_tenant_id
+
+    for biz in db.execute(select(Business).execution_options(include_all_tenants=True)).scalars().all():
+        token = current_tenant_id.set(biz.id)   # adapters read this business's connections
+        try:
+            counts = _stop_everything(db, biz, by=by)
+        finally:
+            current_tenant_id.reset(token)
+        if any(counts.values()):
+            totals["businesses"] += 1
+            ad_platforms.record(db, business_id=biz.id, action="halt", actor=by, source="halt",
+                                detail="Amplafai paused paid ads for every client.")
+        for k, v in counts.items():
+            totals[k] += v
+    return totals
+
+
+def allow_all(db: Session, *, by: str) -> None:
+    flag = db.get(AppFlag, HALT_FLAG)
+    if flag is not None:
+        flag.value, flag.updated_at, flag.updated_by = {"on": False}, _now(), by
 
 
 # --------------------------------------------------------------------------- #
@@ -231,8 +357,7 @@ def change(db: Session, biz: Business, c: AdCampaign, action: str, *, by: str,
         if action == "resume":
             if c.status != "paused":
                 raise ManagedAdsError(f"This campaign is {c.status.replace('_', ' ')}, so there's nothing to restart.")
-            if not plan_allows(biz):
-                raise ManagedAdsError(PLAN_MESSAGE, 403)
+            _require_spend_allowed(db, biz)
             c.status = "scheduled"
             request_launch(db, biz, c, by=by, source=source)
             return {"outcome": "requested",
@@ -247,6 +372,82 @@ def change(db: Session, biz: Business, c: AdCampaign, action: str, *, by: str,
     if c.status in ("cancelled", "completed"):
         raise ManagedAdsError(f"This campaign is already {c.status}.")
 
+    if c.launched_at is None:
+        # Phase 5a: created PAUSED through the platform's API and never turned
+        # on, so nothing is spending; hold / ready again / cancel apply here.
+        if action == "pause":
+            if c.status != "scheduled":
+                raise ManagedAdsError("This campaign is already on hold.")
+            c.status = "paused"
+            ad_platforms.record(db, business_id=biz.id, campaign_id=c.id, platform=c.platform, action="pause",
+                                actor=by, source=source, detail="Held before it was turned on.")
+            return {"outcome": "applied", "message": "On hold. It was never turned on, so nothing has been spent."}
+        if action == "resume":
+            if c.status != "paused":
+                raise ManagedAdsError(f"This campaign is {c.status}, so there's nothing to restart.")
+            _require_spend_allowed(db, biz)
+            c.status = "scheduled"
+            return {"outcome": "applied", "message": "Ready to turn on again."}
+        detail = "Cancelled before it was turned on."
+        adapter = ad_platforms.adapter_for(db, biz.id, c.platform)
+        if adapter is not None:
+            try:
+                adapter.cancel(c.external_campaign_id)
+                detail += f" Archived on {ad_platforms.LABELS.get(c.platform, label)}."
+            except ad_platforms.PlatformError as e:
+                detail += f" Couldn't archive it on the platform ({e}); it stays paused there."
+            finally:
+                adapter.close()
+        c.status, c.ended_at = "cancelled", _now()
+        for r in pending:
+            _close(db, r, "dropped", by=by, note="The campaign was cancelled.")
+        ad_platforms.record(db, business_id=biz.id, campaign_id=c.id, platform=c.platform, action="cancel",
+                            actor=by, source=source, detail=detail)
+        return {"outcome": "applied", "message": "Cancelled. It was never turned on, so nothing was spent."}
+
+    # Phase 5a: with the platform's API connected, make the change there.
+    # If the platform call fails, fall through to Amplafai doing it by hand.
+    # (An open hand request is answered by the request flow below, so the
+    # owner can still withdraw it.)
+    fallback = ""
+    adapter = ad_platforms.adapter_for(db, biz.id, c.platform) if current is None else None
+    if adapter is not None:
+        api_label = ad_platforms.LABELS.get(c.platform, label)
+        try:
+            if action == "pause" and c.status != "active":
+                raise ManagedAdsError(f"This campaign is {c.status}, so it can't be paused.")
+            if action == "resume":
+                if c.status != "paused":
+                    raise ManagedAdsError(f"This campaign is {c.status}, so there's nothing to restart.")
+                _require_spend_allowed(db, biz)
+            try:
+                if action == "pause":
+                    adapter.pause(c.external_campaign_id)
+                elif action == "resume":
+                    adapter.activate(c.external_campaign_id, ends_at=ends_at(c) or _now())
+                else:
+                    adapter.cancel(c.external_campaign_id)
+            except ad_platforms.PlatformError as e:
+                ad_platforms.record(db, business_id=biz.id, campaign_id=c.id, platform=c.platform, action=action,
+                                    actor=by, source=source, ok=False, detail=str(e))
+                fallback = f"{api_label} didn't take the change ({e}). "
+            else:
+                if action == "pause":
+                    c.status = "paused"
+                elif action == "resume":
+                    c.status = "active"
+                else:
+                    c.status, c.ended_at = "cancelled", _now()
+                for r in pending:
+                    _close(db, r, "done", by=by, note=f"Done through the {api_label} API.")
+                ad_platforms.record(db, business_id=biz.id, campaign_id=c.id, platform=c.platform, action=action,
+                                    actor=by, source=source, detail=f"Done on {api_label} through its API.")
+                return {"outcome": "applied", "message": {
+                    "pause": f"Paused on {api_label}.", "resume": f"Running again on {api_label}.",
+                    "cancel": f"Stopped on {api_label}."}[action]}
+        finally:
+            adapter.close()
+
     if action == "pause":
         if current is not None and current.kind == "resume":
             _withdraw(db, biz, c, current, by=by)
@@ -257,7 +458,7 @@ def change(db: Session, biz: Business, c: AdCampaign, action: str, *, by: str,
             raise ManagedAdsError(f"This campaign is {c.status}, so it can't be paused.")
         _open(db, biz, c, "pause", by=by, source=source)
         return {"outcome": "requested",
-                "message": f"Pause requested. Amplafai will pause it in {manager} {PROMISE}. "
+                "message": f"{fallback}Pause requested. Amplafai will pause it in {manager} {PROMISE}. "
                            "Until then it keeps running inside its budget and end date."}
 
     if action == "resume":
@@ -268,17 +469,16 @@ def change(db: Session, biz: Business, c: AdCampaign, action: str, *, by: str,
             return {"outcome": "unchanged", "message": f"Already asked: {current.kind} requested."}
         if c.status != "paused":
             raise ManagedAdsError(f"This campaign is {c.status}, so there's nothing to restart.")
-        if not plan_allows(biz):
-            raise ManagedAdsError(PLAN_MESSAGE, 403)
+        _require_spend_allowed(db, biz)
         _open(db, biz, c, "resume", by=by, source=source)
         return {"outcome": "requested",
-                "message": f"Restart requested. Amplafai will switch it back on in {manager} {PROMISE}."}
+                "message": f"{fallback}Restart requested. Amplafai will switch it back on in {manager} {PROMISE}."}
 
     if current is not None and current.kind == "cancel":
         return {"outcome": "unchanged", "message": "Already asked: cancel requested."}
     _open(db, biz, c, "cancel", by=by, source=source)
     return {"outcome": "requested",
-            "message": f"Cancel requested. Amplafai will stop it in {manager} {PROMISE}."}
+            "message": f"{fallback}Cancel requested. Amplafai will stop it in {manager} {PROMISE}."}
 
 
 def confirm(db: Session, req_id: int, *, by: str, external_campaign_id: Optional[str] = None,

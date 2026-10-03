@@ -24,7 +24,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from starlette.responses import RedirectResponse
 
@@ -50,6 +50,15 @@ def linkedin_connect(
     if not cfg.is_live:
         # Honest: the demo's "Connect" falls back to the mock when we report this.
         return {"live": False, "reason": "credentials_not_configured"}
+
+    # Phase 5a: a live token can spend money, so it's only ever stored
+    # encrypted. Refuse before sending the owner to LinkedIn, not after.
+    from ..token_crypto import is_configured as tokens_encryptable
+
+    if not tokens_encryptable():
+        raise HTTPException(status_code=409, detail=(
+            "Connecting ad accounts is switched off until the server's token encryption key is set. "
+            "Ask Amplafai."))
 
     state = li.generate_state()
     conn = store.get_or_create_connection(db, business_id)

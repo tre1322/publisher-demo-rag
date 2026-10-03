@@ -20,7 +20,7 @@ Public surface:
 """
 from __future__ import annotations
 
-from .campaigns import create_boost_campaign, list_campaigns, pause_campaign
+from .campaigns import create_boost_campaign, list_campaigns, pause_campaign, set_campaign_status
 from .client import LinkedInClient
 from .config import DEFAULT_SCOPES, get_config, is_live
 from .errors import (
@@ -37,7 +37,7 @@ from .oauth import (
     generate_state,
     refresh_access_token,
 )
-from .reporting import date_range_last_n_days, fetch_campaign_analytics
+from .reporting import date_range_last_n_days, fetch_campaign_analytics, fetch_daily_analytics
 
 __all__ = [
     "DEFAULT_SCOPES",
@@ -53,10 +53,12 @@ __all__ = [
     "date_range_last_n_days",
     "exchange_code_for_token",
     "fetch_campaign_analytics",
+    "fetch_daily_analytics",
     "generate_state",
     "get_config",
     "is_live",
     "list_campaigns",
     "pause_campaign",
     "refresh_access_token",
+    "set_campaign_status",
 ]

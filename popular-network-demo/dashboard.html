@@ -145,7 +145,7 @@
   // version your browser is showing (rendered in the sidebar footer).
   // Keep it ONE concise line: it renders in the sidebar, so a changelog here
   // leaks internal roadmap language to customers. History lives in git.
-  const BUILD_VERSION = '2026-10-03 · v60 — real ad spend from the platforms\' exports; cap alerts at 80% and 100%.';
+  const BUILD_VERSION = '2026-10-03 · v61 — ad safety: campaigns created paused + Turn on, Pause all paid ads, encrypted tokens.';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -196,6 +196,7 @@
     sparkles: '<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/><path d="M5 3v4M19 17v4M3 5h4M17 19h4"/>',
     chevR: '<polyline points="9 18 15 12 9 6"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
+    pause: '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>',
     bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
     search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
     logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>',
@@ -3549,10 +3550,51 @@
 
     // Pause / Restart / Cancel from a campaign row. On a real client's
     // running campaign these become requests Amplafai carries out.
-    const campaignAction = (c, action) => updateCampaign(c.id, {
+    const campaignAction = (c, action) => action === 'turnon' ? turnOn(c) : updateCampaign(c.id, {
       status: action === 'pause' ? 'paused' : action === 'cancel' ? 'cancelled' : 'active',
     });
     const canManageAds = !!access?.can?.manage_ads;
+    const canAllowAds = !!access?.can?.authorize_ad_autonomy;
+
+    // Phase 5a: a campaign created paused on the platform starts only when a
+    // person presses Turn on.
+    const turnOn = async (c) => {
+      setSavingDecision(c.id);
+      setNotice(null);
+      try {
+        const r = await fetch(`/api/ads/campaigns/${c.id}/turn-on`, { method: 'POST' });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : `HTTP ${r.status}`);
+        if (j.message) setNotice(j.message);
+        await refresh();
+      } catch (e) {
+        console.error('[ads.turnOn]', e);
+        setError(`Couldn't turn it on: ${e.message || e}`);
+      } finally {
+        setSavingDecision(null);
+      }
+    };
+
+    // Phase 5a: "Pause all paid ads" and "Allow paid ads again".
+    const [confirmHalt, setConfirmHalt] = useState(false);
+    const [halting, setHalting] = useState(false);
+    const setHalt = async (on) => {
+      setHalting(true);
+      setNotice(null);
+      try {
+        const r = await fetch(on ? '/api/ads/halt' : '/api/ads/allow', { method: 'POST' });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : `HTTP ${r.status}`);
+        if (j.message) setNotice(j.message);
+        setConfirmHalt(false);
+        await refresh();
+      } catch (e) {
+        console.error('[ads.halt]', e);
+        setError(`Couldn't change it: ${e.message || e}`);
+      } finally {
+        setHalting(false);
+      }
+    };
 
     const saveCap = async (platform, dollarsStr) => {
       const cents = Math.max(0, Math.round(parseFloat(dollarsStr || '0') * 100) || 0);
@@ -3584,7 +3626,10 @@
     }
 
     const a = adsState || { budgets: [], campaigns: [], connections: [], totalCapCents: 0, totalSpendCents: 0, activeCount: 0, pendingCount: 0, totalImpressions: 0, totalClicks: 0, avgCtr: 0, hasAnyCap: false, hasAnyCampaign: false, hasAnyConnection: false, managed: !business.isDemo, planAllows: true, waitingCount: 0, promise: 'within one business day' };
-    const rowProps = { onAction: campaignAction, busyId: savingDecision, canAct: canManageAds };
+    const haltReason = a.halt ? (a.halt.scope === 'all'
+      ? 'Amplafai has paused paid ads for every client while something is checked.'
+      : 'Paid ads are paused for this business.') : null;
+    const rowProps = { onAction: campaignAction, busyId: savingDecision, canAct: canManageAds, haltReason };
 
     const titles = {
       overview:    { title: 'Ads & Spend',        subtitle: 'Set monthly caps per platform, watch active campaigns, and tune budgets.' },
@@ -3621,9 +3666,17 @@
                   {ticking ? 'Simulating…' : 'Simulate today'}
                 </Button>
               )}
+              {!a.halt && (
+                <Button variant="danger" size="sm" icon="pause"
+                  disabled={!canManageAds || halting}
+                  title={!canManageAds ? 'Your role can look but not change campaigns.' : 'Stop every paid campaign for this business'}
+                  onClick={() => setConfirmHalt(true)}>
+                  Pause all paid ads
+                </Button>
+              )}
               <Button variant="primary" size="sm" icon="plus"
-                disabled={!a.planAllows || !canManageAds}
-                title={!a.planAllows ? a.planMessage : (!canManageAds ? 'Your role can look but not start campaigns.' : undefined)}
+                disabled={!a.planAllows || !canManageAds || !!a.halt}
+                title={!a.planAllows ? a.planMessage : (a.halt ? haltReason : (!canManageAds ? 'Your role can look but not start campaigns.' : undefined))}
                 onClick={() => setNewCampaign({ platform: 'fb_ig', name: '', daily: '20', days: '7', audience: '' })}>
                 New campaign
               </Button>
@@ -3649,6 +3702,24 @@
             <button className="text-emerald-800/60 hover:text-emerald-900" aria-label="Dismiss" onClick={() => setNotice(null)}>
               <Icon name="x" size={14} />
             </button>
+          </div>
+        )}
+        {a.halt && (
+          <div role="alert" className="mx-4 md:mx-8 mt-5 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-900 flex flex-wrap items-center gap-3">
+            <Icon name="pause" size={16} className="shrink-0" />
+            <div className="flex-1 min-w-[14rem]">
+              <strong>All paid ads are paused.</strong>{' '}
+              {a.halt.scope === 'all'
+                ? 'Amplafai paused paid ads for every client while something is checked. Nothing can start or restart until that\'s lifted.'
+                : <>Paused by {a.halt.by} on {fmtDay((a.halt.at || '').slice(0, 10))}. Nothing new starts, and campaigns stay paused until you restart them one by one.</>}
+            </div>
+            {a.halt.scope === 'business' && (
+              <Button variant="secondary" size="sm" disabled={!canAllowAds || halting}
+                title={canAllowAds ? undefined : 'Only an owner can allow paid ads again.'}
+                onClick={() => setHalt(false)}>
+                {halting ? 'Saving…' : 'Allow paid ads again'}
+              </Button>
+            )}
           </div>
         )}
         {a.managed && !a.planAllows && (
@@ -3951,6 +4022,24 @@
           )}
         </div>
 
+        <Modal
+          open={confirmHalt}
+          onClose={() => setConfirmHalt(false)}
+          title="Pause all paid ads?"
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setConfirmHalt(false)} disabled={halting}>Keep them running</Button>
+              <Button variant="danger" icon="pause" onClick={() => setHalt(true)} disabled={halting}>
+                {halting ? 'Pausing…' : 'Pause all paid ads'}
+              </Button>
+            </>
+          }>
+          <div className="space-y-2 text-sm text-ink-soft leading-relaxed">
+            <p>Every campaign that's running stops. Where the platform is connected it's paused right away; campaigns Amplafai runs by hand are paused by Amplafai {a.promise}.</p>
+            <p>Nothing new can start, restart or be turned on, by you or the AI agent, until someone with owner access allows paid ads again. Nothing restarts on its own after that.</p>
+          </div>
+        </Modal>
+
         {/* New campaign modal — owner-initiated creation. Submits as
             manual_owner (lands scheduled). The Compose 'Boost on launch'
             card uses a different path that goes via Approvals. */}
@@ -4250,6 +4339,7 @@
   const CAMPAIGN_STAGE = {
     needs_approval:     { label: 'Needs your approval', color: 'amber' },
     waiting_for_launch: { label: 'Waiting for launch',  color: 'sky' },
+    ready_to_turn_on:   { label: 'Ready to turn on',    color: 'sky' },
     scheduled:          { label: 'Scheduled',           color: 'sky' },
     live:               { label: 'Live',                color: 'emerald' },
     pause_requested:    { label: 'Pause requested',     color: 'amber' },
@@ -4262,7 +4352,7 @@
     draft:              { label: 'Draft',               color: 'slate' },
   };
 
-  const CampaignRow = ({ c, compact, onAction, busyId, canAct }) => {
+  const CampaignRow = ({ c, compact, onAction, busyId, canAct, haltReason }) => {
     const p = AD_PLATFORM_BY_KEY[c.platform];
     const perf = c.performance || {};
     const [confirmCancel, setConfirmCancel] = useState(false);
@@ -4274,8 +4364,9 @@
     // With a pause asked for, "Keep running" withdraws it; with a restart
     // asked for, "Keep paused" does.
     const actions = !onAction || !canAct || !open ? [] : [
+      ...(c.stage === 'ready_to_turn_on' ? [['turnon', 'Turn on']] : []),
       ...(c.status === 'active' || c.status === 'scheduled'
-        ? [req?.kind === 'pause' ? ['resume', 'Keep running'] : (!req || req.kind === 'launch' ? ['pause', 'Pause'] : null)]
+        ? [req?.kind === 'pause' ? ['resume', 'Keep running'] : (!req || req.kind === 'launch' ? ['pause', c.stage === 'ready_to_turn_on' ? 'Hold' : 'Pause'] : null)]
         : []),
       ...(c.status === 'paused'
         ? [req?.kind === 'resume' ? ['pause', 'Keep paused'] : (!req ? ['resume', 'Restart'] : null)]
@@ -4292,7 +4383,8 @@
         {actions.length > 0 && !confirmCancel && (
           <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
             {actions.map(([act, label]) => (
-              <button key={act} type="button" disabled={busy}
+              <button key={act} type="button" disabled={busy || (!!haltReason && (act === 'turnon' || (act === 'resume' && c.status === 'paused')))}
+                title={haltReason && (act === 'turnon' || (act === 'resume' && c.status === 'paused')) ? haltReason : undefined}
                 onClick={() => act === 'cancel' ? setConfirmCancel(true) : onAction(c, act)}
                 className={`text-[11px] font-medium hover:underline disabled:opacity-50 ${act === 'cancel' ? 'text-bad' : 'text-brand-700'}`}>
                 {busy ? 'Saving…' : label}
@@ -4327,7 +4419,7 @@
             <div className="text-[11px] text-ink-faint">Spend from {perf.source.replace(' export', '')}, through {fmtDay(perf.through)}</div>
           )}
           {!compact && c.managed && c.launchedAt && !perf.source && (
-            <div className="text-[11px] text-ink-faint">Spend shows after Amplafai's first upload of the platform's numbers</div>
+            <div className="text-[11px] text-ink-faint">Spend shows once the platform's first numbers come in</div>
           )}
           {c.opsNote && (
             <div className="mt-1 text-[11px] text-ink-soft"><span className="font-medium">From Amplafai:</span> {c.opsNote}</div>

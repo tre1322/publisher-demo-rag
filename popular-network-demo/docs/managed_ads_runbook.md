@@ -91,3 +91,27 @@ Each level emails once per month. Client emails go out from production only.
 | --- | --- |
 | `ADS_OPS_EMAIL` | Where new requests and cap alerts go (comma-separated). Falls back to `ALERT_EMAIL`. |
 | `ENVIRONMENT=production` | Required for owner-facing cap alert emails (already set on the droplet). |
+
+## Phase 5: when a platform's API is connected
+
+Once a platform's API access is approved and a client connects their account (LinkedIn today; Meta
+next), the dashboard talks to the platform directly. The safety rules:
+
+- **Created paused.** An approved campaign is created on the platform **paused**. It says *Ready to
+  turn on* until the owner (or Amplafai, from the client's dashboard) presses **Turn on**. The AI agent
+  can create campaigns within the owner's cap but can never turn one on.
+- **Pause, restart, cancel go straight to the platform.** If the platform refuses or can't be reached,
+  the change falls back to a request in **Ad requests** for Amplafai to do by hand, and the owner is
+  told so.
+- **Real spend is read from the platform every 3 hours** (the last 7 days each time; revised days
+  replace old numbers). At 100% of a monthly cap, running campaigns on that platform are paused through
+  the API immediately.
+- **Pause all paid ads.** The owner's button in Ads & Spend, a per-client button on the admin card, and
+  **Pause paid ads for every client** at the top of Ad requests. Everything running stops (through the
+  API, or as hand requests); nothing can start, restart or be turned on until someone allows paid ads
+  again, and nothing restarts on its own after that. Pausing works even when a client's billing is
+  overdue.
+- **Every change is logged** under *Platform activity* in the admin console, failures included.
+- **Tokens are encrypted.** Ad-account sign-in tokens are stored encrypted with `TOKEN_ENCRYPTION_KEY`
+  (server `.env`, never in the database or its backups). Connecting a real ad account is refused until
+  the key is set. Losing the key means every client reconnects; keep a copy somewhere safe.

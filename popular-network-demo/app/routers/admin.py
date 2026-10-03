@@ -36,7 +36,7 @@ from ..auth.permissions import VALID_ROLES
 from ..auth.sessions import COOKIE_NAME, lookup_session
 from ..data_lifecycle import cancel_deletion, export_business, purge_business, schedule_deletion
 from ..db import current_tenant_id, get_db
-from ..models import Business, BusinessUser, Escalation, Invite, User
+from ..models import AppFlag, Business, BusinessUser, Escalation, Invite, User
 from ..provisioning import create_business
 from .. import managed_ads, subscriptions
 from ..onboarding import get_state as get_onboarding_state
@@ -124,6 +124,7 @@ def _business_row(db: Session, biz: Business) -> dict[str, Any]:
         "tierLabel": biz.tier_label,
         "monthlyPrice": biz.monthly_price,
         "isDemo": bool(biz.is_demo),
+        "adsHalt": managed_ads.halt_state(db, biz.id),
         "website": biz.website,
         "deletionDueAt": biz.deletion_due_at.isoformat() if biz.deletion_due_at else None,
         "allowedOrigins": biz.allowed_origins_json or [],
@@ -389,11 +390,31 @@ class AdRequestDropBody(BaseModel):
     note: str = Field(min_length=1, max_length=500)
 
 
+def _action_log(db: Session, business_id: Optional[int] = None, limit: int = 40) -> list[dict[str, Any]]:
+    from sqlalchemy import select
+
+    from ..models import AdActionLog
+
+    q = select(AdActionLog, Business.name).join(Business, Business.id == AdActionLog.business_id)
+    if business_id is not None:
+        q = q.where(AdActionLog.business_id == business_id)
+    rows = db.execute(q.order_by(AdActionLog.created_at.desc()).limit(limit)
+                      .execution_options(include_all_tenants=True)).all()
+    return [{"id": r.id, "business": name, "campaignId": r.campaign_id, "platform": r.platform,
+             "action": r.action, "actor": r.actor, "source": r.source, "ok": r.ok, "detail": r.detail,
+             "at": r.created_at.isoformat()} for r, name in rows]
+
+
 def _ads_queue(db: Session) -> dict[str, Any]:
+    flag = db.get(AppFlag, managed_ads.HALT_FLAG)
+    on = bool(flag and (flag.value or {}).get("on"))
     return {"requests": managed_ads.admin_queue(db, "open"),
             "recent": managed_ads.admin_queue(db, "closed", limit=20),
             "promise": managed_ads.PROMISE,
-            "emailsTo": managed_ads.ops_recipients()}
+            "emailsTo": managed_ads.ops_recipients(),
+            "haltAll": {"on": on, "at": flag.updated_at.isoformat() if flag else None,
+                        "by": flag.updated_by if flag else None},
+            "log": _action_log(db)}
 
 
 @router.get("/ads/requests")
@@ -401,6 +422,54 @@ def ad_requests(db: Session = Depends(get_db)) -> dict[str, Any]:
     if managed_ads.complete_finished(db):
         db.commit()
     return _ads_queue(db)
+
+
+@router.post("/ads/halt-all")
+def ads_halt_all(user_id: int = Depends(require_superuser), db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Phase 5a: pause paid ads for every client at once."""
+    me = db.get(User, user_id)
+    totals = managed_ads.halt_all(db, by=f"{me.email} (Amplafai)")
+    db.commit()
+    out = _ads_queue(db)
+    out["totals"] = totals
+    return out
+
+
+@router.post("/ads/allow-all")
+def ads_allow_all(user_id: int = Depends(require_superuser), db: Session = Depends(get_db)) -> dict[str, Any]:
+    me = db.get(User, user_id)
+    managed_ads.allow_all(db, by=f"{me.email} (Amplafai)")
+    db.commit()
+    return _ads_queue(db)
+
+
+@router.post("/businesses/{business_id}/ads/halt")
+def ads_halt_business(business_id: int, user_id: int = Depends(require_superuser),
+                      db: Session = Depends(get_db)) -> dict[str, Any]:
+    biz = _get_business(db, business_id)
+    me = db.get(User, user_id)
+    token = current_tenant_id.set(business_id)
+    try:
+        counts = managed_ads.halt_business(db, biz, by=f"{me.email} (Amplafai)")
+    finally:
+        current_tenant_id.reset(token)
+    db.commit()
+    return {"ok": True, "counts": counts, "business": _business_row(db, biz)}
+
+
+@router.post("/businesses/{business_id}/ads/allow")
+def ads_allow_business(business_id: int, user_id: int = Depends(require_superuser),
+                       db: Session = Depends(get_db)) -> dict[str, Any]:
+    biz = _get_business(db, business_id)
+    me = db.get(User, user_id)
+    managed_ads.allow_business(db, biz, by=f"{me.email} (Amplafai)")
+    db.commit()
+    return {"ok": True, "business": _business_row(db, biz)}
+
+
+@router.get("/ads/log")
+def ads_log(business_id: Optional[int] = None, db: Session = Depends(get_db)) -> dict[str, Any]:
+    return {"log": _action_log(db, business_id, limit=100)}
 
 
 @router.post("/ads/requests/{request_id}/done")

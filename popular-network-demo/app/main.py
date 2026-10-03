@@ -126,6 +126,13 @@ def _startup() -> None:
     _add_col_if_missing("ad_campaigns", "ops_note", "TEXT")
     # Phase 4b: which cap alerts were already sent this month.
     _add_col_if_missing("ad_platform_budgets", "alerts_json", "JSON")
+    # Phase 5a: "Pause all paid ads" per business; tokens encrypted at rest.
+    _add_col_if_missing("settings", "ads_halted_at", "DATETIME")
+    _add_col_if_missing("settings", "ads_halted_by", "VARCHAR(160)")
+    from .db import engine as _engine
+    from .token_crypto import encrypt_existing
+
+    encrypt_existing(_engine)
     inserted = seed_if_empty()
     if inserted:
         log.info("Seeded Quadd.ai (business_id=1) — Day-1 customer w/ voice brief loaded")
@@ -167,6 +174,8 @@ def _startup() -> None:
     _start_purge_loop()
     # Phase 2: approval reminders and the Monday summary.
     _start_notify_loop()
+    # Phase 5a: real spend from connected ad platforms' APIs.
+    _start_ad_sync_loop()
 
 
 def _purge_due_businesses() -> None:
@@ -256,6 +265,39 @@ def _start_notify_loop() -> None:
 
     threading.Thread(target=_loop, name="notifications", daemon=True).start()
     log.info("Notification loop started (every 15 minutes)")
+
+
+_AD_SYNC_LOOP_STARTED = False
+
+
+def _start_ad_sync_loop() -> None:
+    """Every few hours, read real spend from connected ad platforms. Production
+    only by default (POPULAR_AD_SYNC_LOOP=1/0 overrides); a no-op until a
+    platform's API is switched on and a client connects to it."""
+    global _AD_SYNC_LOOP_STARTED
+    default = "1" if os.getenv("ENVIRONMENT", "").lower() == "production" else "0"
+    if _AD_SYNC_LOOP_STARTED or os.getenv("POPULAR_AD_SYNC_LOOP", default) == "0":
+        return
+    _AD_SYNC_LOOP_STARTED = True
+
+    import threading
+    import time
+
+    from .ad_sync import SYNC_EVERY_HOURS, run_all
+    from .db import SessionLocal
+
+    def _loop() -> None:
+        time.sleep(120)
+        while True:
+            try:
+                with SessionLocal() as db:
+                    run_all(db)
+            except Exception:  # housekeeping never takes the app down
+                log.exception("Ad sync failed; will retry")
+            time.sleep(SYNC_EVERY_HOURS * 3600)
+
+    threading.Thread(target=_loop, name="ad-sync", daemon=True).start()
+    log.info("Ad spend sync loop started (every %d hours)", SYNC_EVERY_HOURS)
 
 
 def _backfill_demo_flag() -> None:
