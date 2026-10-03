@@ -11,6 +11,8 @@ businesses here instead of hand-running seed scripts:
   POST /api/admin/businesses/{id}/open          make it this session's active business
   GET  /api/admin/businesses/{id}/embed         chat-widget snippet for their website
   POST /api/admin/escalations/{id}/handled      close a "Talk to a human" request
+  POST /api/admin/businesses/{id}/ads/meta      link the client's Meta ad account (Phase 5c)
+  DELETE /api/admin/businesses/{id}/ads/meta    stop using Meta's API for that client
   GET  /api/admin/businesses/{id}/export        download everything it owns (JSON)
   POST /api/admin/businesses/{id}/schedule-deletion   start the 30-day clock   {confirm_name}
   POST /api/admin/businesses/{id}/cancel-deletion     stop the clock
@@ -83,6 +85,13 @@ def _get_business(db: Session, business_id: int) -> Business:
     return biz
 
 
+def _meta_row(db: Session, biz: Business) -> dict[str, Any]:
+    """Phase 5c: is Meta's API on for the server, and is this client linked."""
+    from ..integrations import meta, meta_store
+
+    return {"live": meta.is_live(), "link": meta_store.summary(meta_store.get_connection(db, biz.id))}
+
+
 def _business_row(db: Session, biz: Business) -> dict[str, Any]:
     members = (
         db.query(BusinessUser, User)
@@ -125,6 +134,7 @@ def _business_row(db: Session, biz: Business) -> dict[str, Any]:
         "monthlyPrice": biz.monthly_price,
         "isDemo": bool(biz.is_demo),
         "adsHalt": managed_ads.halt_state(db, biz.id),
+        "adsMeta": _meta_row(db, biz),
         "website": biz.website,
         "deletionDueAt": biz.deletion_due_at.isoformat() if biz.deletion_due_at else None,
         "allowedOrigins": biz.allowed_origins_json or [],
@@ -503,6 +513,73 @@ def ad_request_drop(
         raise HTTPException(status_code=e.status, detail=str(e))
     db.commit()
     return _ads_queue(db)
+
+
+class MetaLinkBody(BaseModel):
+    ad_account_id: str = Field(min_length=1, max_length=40)
+    page_id: str = Field(min_length=1, max_length=40)
+    instagram_id: Optional[str] = Field(default=None, max_length=40)
+    zip_code: Optional[str] = Field(default=None, max_length=10)
+    radius_miles: Optional[int] = Field(default=None, ge=1, le=80)
+
+
+@router.post("/businesses/{business_id}/ads/meta")
+def meta_link(
+    business_id: int,
+    body: MetaLinkBody,
+    user_id: int = Depends(require_superuser),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Phase 5c: check the client's ad account with Amplafai's token, then
+    run their Meta campaigns through the API (created paused; turned on by a
+    person)."""
+    from .. import ad_platforms
+    from ..integrations import meta_store
+
+    biz = _get_business(db, business_id)
+    me = db.get(User, user_id)
+    token = current_tenant_id.set(business_id)
+    try:
+        conn = meta_store.link(db, biz, ad_account_id=body.ad_account_id, page_id=body.page_id,
+                               instagram_id=body.instagram_id, zip_code=body.zip_code,
+                               radius_miles=body.radius_miles, by=me.email)
+        s = meta_store.summary(conn) or {}
+        geo = s.get("geo") or {}
+        where = f"ZIP {geo['zip']}" if geo.get("zip") else f"{geo.get('name')}, {geo.get('region')} +{geo.get('radiusMiles')} mi"
+        ad_platforms.record(db, business_id=biz.id, platform="fb_ig", action="link", actor=f"{me.email} (Amplafai)",
+                            source="system", detail=f"Linked {s.get('accountName')} ({s.get('accountId')}), Page "
+                                                    f"{s.get('pageName') or s.get('pageId')}, {where}.")
+    except meta_store.LinkProblem as e:
+        db.rollback()
+        raise HTTPException(status_code=e.status, detail=str(e))
+    finally:
+        current_tenant_id.reset(token)
+    db.commit()
+    return {"ok": True, "business": _business_row(db, biz)}
+
+
+@router.delete("/businesses/{business_id}/ads/meta")
+def meta_unlink(business_id: int, user_id: int = Depends(require_superuser),
+                db: Session = Depends(get_db)) -> dict[str, Any]:
+    from .. import ad_platforms
+    from ..integrations import meta_store
+
+    biz = _get_business(db, business_id)
+    me = db.get(User, user_id)
+    token = current_tenant_id.set(business_id)
+    try:
+        conn = meta_store.get_connection(db, business_id)
+        if conn is None or not meta_store.connection_is_live(conn):
+            raise HTTPException(status_code=409, detail="This client's Meta ad account isn't linked.")
+        was = conn.external_account_id
+        meta_store.unlink(db, conn)
+        ad_platforms.record(db, business_id=biz.id, platform="fb_ig", action="unlink", actor=f"{me.email} (Amplafai)",
+                            source="system", detail=f"Stopped using Meta's API for {was}. Changes to campaigns "
+                                                    "already on Meta now go to the hand queue.")
+    finally:
+        current_tenant_id.reset(token)
+    db.commit()
+    return {"ok": True, "business": _business_row(db, biz)}
 
 
 class AdImportBody(BaseModel):

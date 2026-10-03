@@ -94,8 +94,8 @@ Each level emails once per month. Client emails go out from production only.
 
 ## Phase 5: when a platform's API is connected
 
-Once a platform's API access is approved and a client connects their account (LinkedIn today; Meta
-next), the dashboard talks to the platform directly. The safety rules:
+Once a platform's API access is approved and a client's account is connected (LinkedIn by the
+owner's sign-in; Meta by Amplafai linking it, below), the dashboard talks to the platform directly. The safety rules:
 
 - **Created paused.** An approved campaign is created on the platform **paused**. It says *Ready to
   turn on* until the owner (or Amplafai, from the client's dashboard) presses **Turn on**. The AI agent
@@ -115,6 +115,84 @@ next), the dashboard talks to the platform directly. The safety rules:
 - **Tokens are encrypted.** Ad-account sign-in tokens are stored encrypted with `TOKEN_ENCRYPTION_KEY`
   (server `.env`, never in the database or its backups). Connecting a real ad account is refused until
   the key is set. Losing the key means every client reconnects; keep a copy somewhere safe.
+
+## Meta through its API (Phase 5c)
+
+Built and switched off. Until the server has `META_ACCESS_TOKEN` and `META_APP_SECRET`, every Meta
+campaign runs by hand exactly as in sections 2 to 4. Nothing about a client changes until Amplafai
+links their ad account (step B).
+
+### A. Switch it on (Trevor, once Meta approves the app)
+
+Prerequisites: a Business-type Meta app owned by Amplafai's business, Business Verification, and
+App Review approval for advanced access to `ads_management` and `ads_read` (Meta requires that for
+managing other businesses' ad accounts).
+
+1. **System user.** In Amplafai's Business settings → Users → System users, add an Admin system user
+   (e.g. "Amplafai server"). Add the app to it (Assign assets → Apps).
+2. **Token.** Generate a token for that system user and the Amplafai app with: `ads_management`,
+   `ads_read`, `business_management`, `pages_read_engagement`, `pages_show_list`, `pages_manage_ads`.
+   Choose **Never expires** if Meta offers it. If Meta only allows 60-day tokens for Amplafai's
+   business, set a reminder for day 50; when it lapses, Meta campaigns fall back to the hand queue
+   and the admin log says "needs to be renewed".
+3. **Require app secret.** In the app dashboard → App settings → Advanced, turn on *Require app
+   secret*. Every call the server makes is signed with it (`appsecret_proof`), so the token alone is
+   useless to anyone who copies it.
+4. **Server.** `ssh root@157.230.61.250`, then `nano /opt/publisher-demo-rag/popular-network-demo/.env`,
+   add `META_ACCESS_TOKEN=...` and `META_APP_SECRET=...`, save, and ask Claude to restart the
+   dashboard. (`META_GRAPH_VERSION` defaults to v26.0; set it only when Meta retires that version.)
+5. **First real campaign on Amplafai's own account.** Link Amplafai as a "client" (step B), boost one
+   of Amplafai's own Page posts at $5/day for 2 days, turn it on, let the 3-hourly sync run, and
+   check the dashboard matches Ads Manager to the cent. Then cancel it.
+
+Meta keeps a new app on its *Limited* Marketing API tier (development only) until it has made 500+
+API calls in 15 days with under 15% errors; then it can move to *Full*. Ordinary use (links, syncs,
+the test campaign) counts toward that.
+
+### B. Link each client (Amplafai staff)
+
+1. The client adds Amplafai's business as a **partner** on their ad account (permission to manage
+   campaigns) **and on their Facebook Page** (permission to create ads), as in section 1.
+2. In Amplafai's Business settings, give the "Amplafai server" system user access to the client's
+   shared ad account and Page. *(Meta's docs describe assigning a system user to an ad account; that
+   this works for partner-shared assets is the standard agency setup but wasn't confirmed in Meta's
+   docs. Check it on the first client.)*
+3. Admin console → the client's card → **Meta API**: ad account ID, Facebook Page ID, Instagram
+   account ID (optional; adds Instagram placements), radius. **Check and link** confirms Amplafai can
+   see the account and Page, that the account is active and bills in US dollars, finds the town on
+   Meta's map (or asks for a ZIP code), and shows the account's spending limit. If it says there's no
+   spending limit, set one in Meta a little above the owner's caps.
+4. The client should also have automatic posting linked (Phase 5b): Meta campaigns boost a post
+   that's already on their Facebook Page.
+
+### C. What a Meta campaign is
+
+- Created **paused**: campaign (Awareness, Reach) → ad set (lifetime budget = days × daily budget,
+  end date, the town plus radius, ages 18+, Facebook, plus Instagram if linked, Advantage+ audience
+  off) → ad (the owner's own published post, unchanged).
+- The radius comes from the audience hint when it says "within N miles" (kept to Meta's 10–50), or
+  the radius set when linking.
+- **Turn on** sets the end date to turn-on day + the campaign's days and starts it. Pause / restart
+  act on the campaign; restart keeps the original end date. Cancel archives it on Meta.
+- If Meta refuses any step of building it, the half-built campaign is deleted on Meta and the owner
+  sees Meta's reason.
+- **Goes to the hand queue instead** (Ad requests, as in section 2): the post isn't on Facebook yet,
+  the post is on a different Page from the linked one, or there's no post. The reason is in the
+  *Platform activity* log.
+
+### D. When something goes wrong
+
+| What the owner or the log says | What it means / what to do |
+|---|---|
+| "Amplafai's Meta connection needs to be renewed" | Meta refused the token. Generate a new one (A.2), update `.env`, restart. |
+| "Meta is limiting how fast Amplafai can make changes" | Rate limit. The change became a hand request; do it in Ads Manager. |
+| "doesn't have permission … partner" | The client's partner access or the system user's assignment is missing (B.1–B.2). |
+| "This campaign has no ad on Meta yet" | Add the ad in Ads Manager, then press Turn on again. |
+| Sync failures in Platform activity | Spend for that client isn't updating; upload an export (section 4) until it's fixed. |
+
+**Stop using the API** on the card (or the owner's **Disconnect** in Settings) only stops Amplafai's
+server from calling Meta for that client; it doesn't remove partner access in Meta. Campaigns
+already on Meta keep running, and changes to them go to the hand queue.
 
 ## Automatic posting (Phase 5b, Tier 2 and up)
 

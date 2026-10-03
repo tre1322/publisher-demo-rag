@@ -1,6 +1,6 @@
 """Phase 5a — one interface to every ad platform's API.
 
-Each platform (LinkedIn now, Meta in 5c) plugs in an adapter with the same
+Each platform (LinkedIn; Meta since 5c) plugs in an adapter with the same
 five actions. `adapter_for` returns one only when that platform's API is
 switched on for the app AND this business has a working connection to it;
 otherwise it returns None and the change goes to Amplafai's hand queue
@@ -33,6 +33,12 @@ class PlatformError(Exception):
     """The ad platform refused or couldn't be reached. Message is owner-safe."""
 
 
+class ByHand(Exception):
+    """The platform's API is connected but can't build this campaign on its
+    own (Meta: the post isn't on Facebook yet). Not a failure: the campaign
+    goes to Amplafai's launch queue, as in Phase 4. Message is owner-safe."""
+
+
 @dataclass
 class DayResult:
     external_id: str
@@ -46,7 +52,7 @@ class Adapter(Protocol):
     platform: str
 
     def create_paused(self, *, name: str, daily_budget_cents: int, duration_days: int,
-                      audience: Optional[str]) -> str: ...
+                      audience: Optional[str], post_ref: Optional[str] = None) -> str: ...
 
     def activate(self, external_id: str, *, ends_at: datetime) -> None: ...
 
@@ -79,6 +85,17 @@ def adapter_for(db: Session, business_id: int, platform: str) -> Optional[Adapte
         return None
 
 
+def post_ref(post, platform: str) -> Optional[str]:
+    """The platform's own id for the post a campaign boosts, if it was
+    published there automatically (Phase 5b). Meta: the Facebook post id."""
+    if post is None or platform != "fb_ig":
+        return None
+    for p in (post.publish_result_json or {}).get("posts") or []:
+        if p.get("platform") == "facebook" and p.get("id"):
+            return str(p["id"])
+    return None
+
+
 def record(db: Session, *, business_id: int, action: str, actor: Optional[str], source: Optional[str],
            ok: bool = True, detail: Optional[str] = None, campaign_id: Optional[int] = None,
            platform: Optional[str] = None) -> None:
@@ -107,7 +124,7 @@ class LinkedInAdapter:
         except li.LinkedInError as e:
             raise PlatformError(f"LinkedIn said: {e}") from e
 
-    def create_paused(self, *, name, daily_budget_cents, duration_days, audience):
+    def create_paused(self, *, name, daily_budget_cents, duration_days, audience, post_ref=None):
         from .integrations import linkedin as li
 
         return self._call(li.create_boost_campaign, self._client, account_urn=self._account, name=name,
@@ -151,3 +168,80 @@ def _linkedin_factory(db: Session, business_id: int) -> Optional[Adapter]:
 
 
 register("linkedin", _linkedin_factory)
+
+
+# --------------------------------------------------------------------------- #
+# Meta (Phase 5c; switched on by META_ACCESS_TOKEN/META_APP_SECRET + an ad
+# account Amplafai linked in the admin console)
+# --------------------------------------------------------------------------- #
+
+class MetaAdapter:
+    platform = "fb_ig"
+
+    def __init__(self, client, act_id: str, cfg: dict):
+        self._client = client
+        self._act = act_id
+        self._cfg = cfg
+
+    def _call(self, fn, *args, **kwargs):
+        from .integrations import meta
+
+        try:
+            return fn(*args, **kwargs)
+        except meta.MetaError as e:
+            raise PlatformError(f"Meta said: {e}") from e
+
+    def create_paused(self, *, name, daily_budget_cents, duration_days, audience, post_ref=None):
+        from .integrations import meta
+
+        page = str(self._cfg.get("pageId") or "")
+        if not post_ref:
+            raise ByHand("the post it boosts isn't on Facebook yet")
+        story = post_ref if "_" in post_ref else f"{page}_{post_ref}"
+        if not page or not story.startswith(f"{page}_"):
+            raise ByHand("the post is on a different Facebook Page from the linked one")
+        spec = meta.targeting(self._cfg.get("geo") or {}, audience=audience,
+                              instagram=bool(self._cfg.get("instagramId")))
+        return self._call(meta.create_paused, self._client, self._act, name=name,
+                          lifetime_budget_cents=daily_budget_cents * duration_days, days=duration_days,
+                          targeting_spec=spec, page_id=page, story_id=story,
+                          instagram_id=self._cfg.get("instagramId"))
+
+    def activate(self, external_id, *, ends_at):
+        from .integrations import meta
+
+        self._call(meta.activate, self._client, external_id, ends_at=ends_at)
+
+    def pause(self, external_id):
+        from .integrations import meta
+
+        self._call(meta.set_status, self._client, external_id, "PAUSED")
+
+    def cancel(self, external_id):
+        from .integrations import meta
+
+        self._call(meta.set_status, self._client, external_id, "ARCHIVED")
+
+    def daily_results(self, external_ids, start, end):
+        from .integrations import meta
+
+        rows = self._call(meta.daily_results, self._client, self._act, list(external_ids), start, end)
+        return [DayResult(r["campaign_id"], r["day"], r["spend_cents"], r["impressions"], r["clicks"]) for r in rows]
+
+    def close(self):
+        self._client.close()
+
+
+def _meta_factory(db: Session, business_id: int) -> Optional[Adapter]:
+    from .integrations import meta
+    from .integrations import meta_store as store
+
+    if not meta.is_live():
+        return None
+    conn = store.get_connection(db, business_id)
+    if not store.connection_is_live(conn):
+        return None
+    return MetaAdapter(meta.MetaClient(), conn.external_account_id, dict(conn.config_json or {}))
+
+
+register("fb_ig", _meta_factory)

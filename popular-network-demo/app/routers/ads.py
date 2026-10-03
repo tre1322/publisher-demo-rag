@@ -174,7 +174,23 @@ def _last_imports(db: Session, business_id: int) -> dict[str, Any]:
               .order_by(AdImport.imported_at.desc()).limit(50)):
         if r.platform not in out:
             out[r.platform] = {"at": r.imported_at.isoformat(), "through": through.get(r.platform),
-                               "source": SOURCE_LABELS.get(r.platform, r.platform)}
+                               "source": SOURCE_LABELS.get(r.platform, r.platform), "viaApi": False}
+    # Phase 5c: a successful API sync is a source too (newest wins). Before
+    # this, synced spend showed no "where these numbers came from" line.
+    from .. import ad_platforms
+    from ..models import AdActionLog
+
+    seen: set[str] = set()
+    for s in (db.query(AdActionLog).filter(AdActionLog.business_id == business_id, AdActionLog.action == "sync",
+                                           AdActionLog.ok.is_(True))
+              .order_by(AdActionLog.created_at.desc()).limit(50)):
+        if s.platform in seen or s.platform not in through:
+            continue
+        seen.add(s.platform)
+        prev = out.get(s.platform)
+        if prev is None or prev["at"] < s.created_at.isoformat():
+            out[s.platform] = {"at": s.created_at.isoformat(), "through": through.get(s.platform),
+                               "source": f"{ad_platforms.LABELS.get(s.platform, s.platform)} API", "viaApi": True}
     return out
 
 
@@ -194,6 +210,10 @@ def connection_payload(c: AdConnection) -> dict[str, Any]:
         "externalAccountId":  c.external_account_id,
         "status":             c.status,
         "lastSyncedAt":       c.last_synced_at.isoformat() if c.last_synced_at else None,
+        # Phase 5c: linked by Amplafai through the platform's API (Meta).
+        "viaApi":             c.status == "connected" and bool(c.config_json)
+                              and not (c.external_account_id or "").startswith("mock_"),
+        "linkedBy":           c.connected_user_name if c.config_json else None,
     }
 
 
@@ -397,6 +417,7 @@ def create_campaign(
                 duration_days=body.duration_days,
                 audience=body.target_audience,
                 by=actor(db, request),
+                post_id=body.post_id,
             )
         except Exception as e:  # LinkedInProvisioningError or transport failure
             raise HTTPException(status_code=502, detail=f"ad platform error: {e}")
@@ -792,12 +813,23 @@ def connect_account(
 @router.delete("/ads/connections/{connection_id}", dependencies=[Depends(require_capability("manage_ads"))])
 def disconnect_account(
     connection_id: int,
+    request: Request,
     business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     row = db.get(AdConnection, connection_id)
     if row is None or row.business_id != business_id:
         raise HTTPException(status_code=404, detail=f"connection {connection_id} not found")
+    if row.status == "connected" and row.config_json:
+        # Phase 5c: an API link Amplafai made. Meta itself is untouched (the
+        # owner removes Amplafai as a partner there); from now on changes to
+        # campaigns already on Meta go to Amplafai's hand queue.
+        from .. import ad_platforms
+
+        ad_platforms.record(db, business_id=business_id, platform=row.platform, action="unlink",
+                            actor=actor(db, request), source="owner",
+                            detail=f"Owner disconnected {row.external_account_id} in Settings.")
+    row.config_json = None
     row.status = "disconnected"
     row.external_account_id = None
     row.oauth_token = None
@@ -840,6 +872,7 @@ def resolve_external_campaign_id(
     duration_days: int,
     audience: Optional[str] = None,
     by: str = "owner",
+    post_id: Optional[int] = None,
 ) -> Optional[str]:
     """The mock→real swap point for campaign provisioning.
 
@@ -857,6 +890,10 @@ def resolve_external_campaign_id(
     raised (ad_platforms.PlatformError) so callers surface it rather than
     masking it with a mock id.
 
+    Phase 5c: Meta boosts the campaign's post. When the adapter can't build
+    the campaign on its own (ad_platforms.ByHand, e.g. the post isn't on
+    Facebook yet), the campaign goes to Amplafai's launch queue instead.
+
     Used by all three campaign-scheduling paths: the manual New-Campaign modal,
     the Tier-2 approve transition, and the agent's schedule_boost tool. One seam,
     so going live is a credential drop with no behavioral fork to maintain.
@@ -865,9 +902,16 @@ def resolve_external_campaign_id(
 
     adapter = ad_platforms.adapter_for(db, business_id, platform)
     if adapter is not None:
+        post = db.get(Post, post_id) if post_id else None
         try:
             ext = adapter.create_paused(name=name, daily_budget_cents=daily_budget_cents,
-                                        duration_days=duration_days, audience=audience)
+                                        duration_days=duration_days, audience=audience,
+                                        post_ref=ad_platforms.post_ref(post, platform))
+        except ad_platforms.ByHand as e:
+            ad_platforms.record(db, business_id=business_id, platform=platform, action="create_paused",
+                                actor=by, source="system",
+                                detail=f"{name}: not created through the API ({e}). Sent to Amplafai to launch.")
+            return None
         except ad_platforms.PlatformError as e:
             ad_platforms.record(db, business_id=business_id, platform=platform, action="create_paused",
                                 actor=by, source="system", ok=False, detail=f"{name}: {e}")
@@ -917,6 +961,7 @@ def schedule_approved_campaign(db: Session, business_id: int, c: AdCampaign, *, 
             duration_days=c.duration_days,
             audience=(c.target_audience_json or {}).get("hint"),
             by=by,
+            post_id=c.post_id,
         )
     except Exception as e:  # LinkedInProvisioningError or transport failure
         raise HTTPException(status_code=502, detail=f"ad platform error: {e}")

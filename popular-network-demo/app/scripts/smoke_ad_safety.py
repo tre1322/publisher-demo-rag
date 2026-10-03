@@ -67,7 +67,7 @@ class FakeMeta:
         if what in FakeMeta.fail:
             raise PlatformError(f"(#100) {what} rejected in test")
 
-    def create_paused(self, *, name, daily_budget_cents, duration_days, audience):
+    def create_paused(self, *, name, daily_budget_cents, duration_days, audience, post_ref=None):
         self._maybe_fail("create")
         FakeMeta.seq[0] += 1
         FakeMeta.calls.append(("create_paused", self.business_id, name, daily_budget_cents, duration_days, audience))
