@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  Popular Network — Marketing Agent dashboard demo
+  Amplafai — Marketing Agent dashboard
   ================================================
   WHAT THIS IS
     A static, self-contained sample of what a Tier 2 / Tier 3 small business
@@ -145,7 +145,7 @@
   // version your browser is showing (rendered in the sidebar footer).
   // Keep it ONE concise line: it renders in the sidebar, so a changelog here
   // leaks internal roadmap language to customers. History lives in git.
-  const BUILD_VERSION = '2026-10-03 · v58 — plans and card billing (Stripe): choose a plan, manage billing, payment banners.';
+  const BUILD_VERSION = '2026-10-03 · v59 — managed ad campaigns: Amplafai launches and pauses by hand; Waiting for launch, Pause requested.';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -512,7 +512,7 @@
     </span>;
   };
 
-  const Button = ({ variant = 'primary', icon, children, onClick, className = '', size = 'md', disabled = false }) => {
+  const Button = ({ variant = 'primary', icon, children, onClick, className = '', size = 'md', disabled = false, title }) => {
     const base = 'inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all duration-150 select-none';
     const sizes = { sm: 'text-xs px-2.5 py-1.5', md: 'text-sm px-3.5 py-2', lg: 'text-sm px-4 py-2.5' };
     const variants = {
@@ -524,7 +524,7 @@
       neutral:    'bg-surface-edge text-ink hover:bg-slate-300/50'
     };
     return (
-      <button onClick={onClick} disabled={disabled}
+      <button onClick={onClick} disabled={disabled} title={title}
         className={`${base} ${sizes[size]} ${variants[variant]} ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${className}`}>
         {icon && <Icon name={icon} size={14} strokeWidth={2.2} />}
         {children}
@@ -876,9 +876,9 @@
     <aside className={`w-60 shrink-0 bg-brand-700 text-white flex-col h-full ${className}`}>
       <div className="px-5 pt-6 pb-5 border-b border-white/10">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-lg bg-accent flex items-center justify-center font-serif font-bold text-brand-800 text-base">P</div>
+          <div className="w-9 h-9 rounded-lg bg-accent flex items-center justify-center font-serif font-bold text-brand-800 text-base">A</div>
           <div className="leading-tight">
-            <div className="font-serif font-semibold text-base">Popular Network</div>
+            <div className="font-serif font-semibold text-base">Amplafai</div>
             <div className="text-[11px] text-white/60 tracking-wide uppercase">Marketing Agent</div>
           </div>
           {onClose && (
@@ -1045,6 +1045,8 @@
     const [boostDaily, setBoostDaily]       = useState('20');
     const [boostDays, setBoostDays]         = useState('7');
     const boostVisible = chosen.length > 0;  // any paid surface counts
+    // Phase 4: Amplafai runs a real client's paid campaigns from Tier 3 up.
+    const boostAllowed = business?.isDemo || (business?.tier || 0) >= 3;
 
     // Re-draft from brief — single LLM call that fills setDrafts() with fresh
     // per-platform copy honoring the voice brief. Endpoint: /api/compose/redraft.
@@ -1579,14 +1581,17 @@
                       <div className="text-[11px] text-ink-faint">Pay Meta / Google / TikTok / LinkedIn directly</div>
                     </div>
                   </div>
-                  <button onClick={() => setBoostEnabled(b => !b)}
+                  <button onClick={() => setBoostEnabled(b => !b)} disabled={!boostAllowed}
+                    aria-label="Boost on launch"
                     className={`relative w-10 h-5 rounded-full transition-colors ${boostEnabled ? 'bg-amber-500' : 'bg-surface-edge'}`}>
                     <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${boostEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
                   </button>
                 </div>
                 {!boostEnabled && (
                   <p className="text-[11px] text-ink-faint italic">
-                    Toggle on to also pay the platform for paid distribution alongside the organic post.
+                    {boostAllowed
+                      ? 'Toggle on to also pay the platform for paid distribution alongside the organic post.'
+                      : 'Paid boosts that Amplafai runs for you come with the Marketing Agent + Concierge plan (Tier 3) and up.'}
                   </p>
                 )}
                 {boostEnabled && (
@@ -1634,6 +1639,7 @@
                         <strong>Planned: ${((parseFloat(boostDaily || '0') * parseInt(boostDays || '0', 10)) || 0).toLocaleString()}</strong>
                         {' '}on {AD_PLATFORM_BY_KEY[boostPlatform]?.label || boostPlatform} over {parseInt(boostDays || '0', 10) || 0} days.
                         When you Send for review, this creates a boost proposal alongside the post drafts.
+                        {!business?.isDemo && <> Once you approve it, Amplafai launches it in your own ad account.</>}
                       </div>
                     </div>
                   </div>
@@ -3423,7 +3429,7 @@
   };
 
   const AdsView = ({ onNavigate }) => {
-    const { business, settings } = useDashboard();
+    const { business, settings, access } = useDashboard();
     // Server-side switch (Phase 0). Off = the agent proposes every spend change.
     const autonomyOn = business.tier >= 3 && !!settings?.adAutonomyEnabled;
     const [adsState, setAdsState] = useState(null);
@@ -3436,6 +3442,7 @@
     const [newCampaign, setNewCampaign] = useState(null);  // null or {platform, name, daily, days, audience}
     const [creatingCampaign, setCreatingCampaign] = useState(false);
     const [savingDecision, setSavingDecision] = useState(null);  // campaign id while updating
+    const [notice, setNotice] = useState(null);  // what the last change did (e.g. "Pause requested…")
 
     const refresh = useCallback(async () => {
       try {
@@ -3495,7 +3502,11 @@
           const j = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
           throw new Error(typeof j.detail === 'string' ? j.detail : `HTTP ${r.status}`);
         }
+        const made = await r.json().catch(() => null);
         setNewCampaign(null);
+        if (made?.stage === 'waiting_for_launch') {
+          setNotice(`Sent to Amplafai. They'll launch it in your ${AD_PLATFORM_BY_KEY[made.platform]?.label || ''} ad account ${adsState?.promise || 'soon'}, and it shows "Waiting for launch" until then.`);
+        }
         await refresh();
       } catch (e) {
         console.error('[ads.createCampaign]', e);
@@ -3507,6 +3518,7 @@
 
     const updateCampaign = async (campaignId, body) => {
       setSavingDecision(campaignId);
+      setNotice(null);
       try {
         const r = await fetch(`/api/ads/campaigns/${campaignId}`, {
           method: 'PUT',
@@ -3517,6 +3529,8 @@
           const j = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
           throw new Error(typeof j.detail === 'string' ? j.detail : `HTTP ${r.status}`);
         }
+        const out = await r.json().catch(() => null);
+        if (out?.message) setNotice(out.message);
         await refresh();
       } catch (e) {
         console.error('[ads.updateCampaign]', e);
@@ -3525,6 +3539,13 @@
         setSavingDecision(null);
       }
     };
+
+    // Pause / Restart / Cancel from a campaign row. On a real client's
+    // running campaign these become requests Amplafai carries out.
+    const campaignAction = (c, action) => updateCampaign(c.id, {
+      status: action === 'pause' ? 'paused' : action === 'cancel' ? 'cancelled' : 'active',
+    });
+    const canManageAds = !!access?.can?.manage_ads;
 
     const saveCap = async (platform, dollarsStr) => {
       const cents = Math.max(0, Math.round(parseFloat(dollarsStr || '0') * 100) || 0);
@@ -3555,7 +3576,8 @@
       );
     }
 
-    const a = adsState || { budgets: [], campaigns: [], connections: [], totalCapCents: 0, totalSpendCents: 0, activeCount: 0, pendingCount: 0, totalImpressions: 0, totalClicks: 0, avgCtr: 0, hasAnyCap: false, hasAnyCampaign: false, hasAnyConnection: false };
+    const a = adsState || { budgets: [], campaigns: [], connections: [], totalCapCents: 0, totalSpendCents: 0, activeCount: 0, pendingCount: 0, totalImpressions: 0, totalClicks: 0, avgCtr: 0, hasAnyCap: false, hasAnyCampaign: false, hasAnyConnection: false, managed: !business.isDemo, planAllows: true, waitingCount: 0, promise: 'within one business day' };
+    const rowProps = { onAction: campaignAction, busyId: savingDecision, canAct: canManageAds };
 
     const titles = {
       overview:    { title: 'Ads & Spend',        subtitle: 'Set monthly caps per platform, watch active campaigns, and tune budgets.' },
@@ -3570,7 +3592,7 @@
       { id: 'history',     label: 'History',     icon: 'clock' },
     ];
 
-    const activeCampaigns  = a.campaigns.filter(c => c.status === 'active' || c.status === 'scheduled');
+    const activeCampaigns  = a.campaigns.filter(c => c.status === 'active' || c.status === 'scheduled' || (c.status === 'paused' && c.openRequest));
     const pendingCampaigns = a.campaigns.filter(c => c.status === 'pending_approval');
     const pausedCampaigns  = a.campaigns.filter(c => c.status === 'paused');
 
@@ -3593,6 +3615,8 @@
                 </Button>
               )}
               <Button variant="primary" size="sm" icon="plus"
+                disabled={!a.planAllows || !canManageAds}
+                title={!a.planAllows ? a.planMessage : (!canManageAds ? 'Your role can look but not start campaigns.' : undefined)}
                 onClick={() => setNewCampaign({ platform: 'fb_ig', name: '', daily: '20', days: '7', audience: '' })}>
                 New campaign
               </Button>
@@ -3611,6 +3635,31 @@
           </div>
         )}
 
+        {notice && (
+          <div role="status" className="mx-4 md:mx-8 mt-5 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-900 flex items-start gap-2">
+            <Icon name="check" size={16} className="mt-0.5 shrink-0" />
+            <div className="flex-1">{notice}</div>
+            <button className="text-emerald-800/60 hover:text-emerald-900" aria-label="Dismiss" onClick={() => setNotice(null)}>
+              <Icon name="x" size={14} />
+            </button>
+          </div>
+        )}
+        {a.managed && !a.planAllows && (
+          <div className="mx-4 md:mx-8 mt-5 px-4 py-3 rounded-lg bg-brand-50 border border-brand-100 text-sm text-ink flex flex-wrap items-center gap-3">
+            <Icon name="sparkles" size={16} className="shrink-0 text-brand-600" />
+            <div className="flex-1 min-w-[14rem]">{a.planMessage}</div>
+            <button className="text-sm font-medium text-brand-700 hover:underline" onClick={() => onNavigate('billing')}>Plan &amp; billing →</button>
+          </div>
+        )}
+        {a.managed && a.waitingCount > 0 && (
+          <div className="mx-4 md:mx-8 mt-5 px-4 py-3 rounded-lg bg-sky-50 border border-sky-200 text-sm text-sky-900 flex items-start gap-2">
+            <Icon name="clock" size={16} className="mt-0.5 shrink-0" />
+            <div className="flex-1">
+              {a.waitingCount === 1 ? '1 campaign is' : `${a.waitingCount} campaigns are`} waiting for Amplafai to launch {a.waitingCount === 1 ? 'it' : 'them'} in your own ad account ({a.promise}). Nothing is spent until then.
+            </div>
+          </div>
+        )}
+
         <div className="px-4 md:px-8 py-5 md:py-7">
           {/* Top stat row — visible on all tabs */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -3620,7 +3669,7 @@
               positive={true} />
             <StatTile label="Active campaigns"
               value={String(a.activeCount)}
-              helper={a.pendingCount > 0 ? `+${a.pendingCount} pending approval` : (a.hasAnyCampaign ? 'all caught up' : 'none yet')}
+              helper={a.pendingCount > 0 ? `+${a.pendingCount} pending approval` : (a.waitingCount > 0 ? `+${a.waitingCount} waiting for launch` : (a.hasAnyCampaign ? 'all caught up' : 'none yet'))}
               positive={a.activeCount > 0} />
             <StatTile label="Total impressions"
               value={a.totalImpressions > 0 ? a.totalImpressions.toLocaleString() : '—'}
@@ -3742,14 +3791,14 @@
                             <th className="py-2 px-2">Platform</th>
                             <th className="py-2 px-2 text-right">Budget</th>
                             <th className="py-2 px-2 text-right">Spent</th>
-                            <th className="py-2 px-2 text-right">Impr.</th>
-                            <th className="py-2 px-2 text-right">CTR</th>
-                            <th className="py-2 px-2">Status</th>
+                            <th className="py-2 px-2 text-right hidden sm:table-cell">Impr.</th>
+                            <th className="py-2 px-2 text-right hidden sm:table-cell">CTR</th>
+                            <th className="py-2 px-2 hidden md:table-cell">Status</th>
                           </tr>
                         </thead>
                         <tbody>
                           {[...activeCampaigns, ...pendingCampaigns].map(c => (
-                            <CampaignRow key={c.id} c={c} />
+                            <CampaignRow key={c.id} c={c} {...rowProps} />
                           ))}
                         </tbody>
                       </table>
@@ -3831,13 +3880,13 @@
                         <th className="py-2 px-2">Platform</th>
                         <th className="py-2 px-2 text-right">Budget</th>
                         <th className="py-2 px-2 text-right">Spent</th>
-                        <th className="py-2 px-2 text-right">Impr.</th>
-                        <th className="py-2 px-2 text-right">CTR</th>
-                        <th className="py-2 px-2">Status</th>
+                        <th className="py-2 px-2 text-right hidden sm:table-cell">Impr.</th>
+                        <th className="py-2 px-2 text-right hidden sm:table-cell">CTR</th>
+                        <th className="py-2 px-2 hidden md:table-cell">Status</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {a.campaigns.map(c => <CampaignRow key={c.id} c={c} />)}
+                      {a.campaigns.map(c => <CampaignRow key={c.id} c={c} {...rowProps} />)}
                     </tbody>
                   </table>
                 </div>
@@ -3862,13 +3911,13 @@
                         <th className="py-2 px-2">Campaign</th>
                         <th className="py-2 px-2">Platform</th>
                         <th className="py-2 px-2 text-right">Final spend</th>
-                        <th className="py-2 px-2 text-right">Impr.</th>
-                        <th className="py-2 px-2 text-right">CTR</th>
-                        <th className="py-2 px-2">Status</th>
+                        <th className="py-2 px-2 text-right hidden sm:table-cell">Impr.</th>
+                        <th className="py-2 px-2 text-right hidden sm:table-cell">CTR</th>
+                        <th className="py-2 px-2 hidden md:table-cell">Status</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {a.campaigns.filter(c => ['completed','cancelled','paused'].includes(c.status)).map(c => <CampaignRow key={c.id} c={c} compact />)}
+                      {a.campaigns.filter(c => ['completed','cancelled','paused'].includes(c.status)).map(c => <CampaignRow key={c.id} c={c} compact {...rowProps} />)}
                     </tbody>
                   </table>
                 </div>
@@ -3891,7 +3940,7 @@
                 <Button icon="send" variant="primary"
                   onClick={createCampaign}
                   disabled={creatingCampaign || !newCampaign.name?.trim()}>
-                  {creatingCampaign ? 'Scheduling…' : 'Schedule campaign'}
+                  {creatingCampaign ? 'Sending…' : (business.isDemo ? 'Schedule campaign' : 'Send to Amplafai')}
                 </Button>
               </>
             )
@@ -3964,7 +4013,7 @@
                 {' '}over {parseInt(newCampaign.days || '0', 10) || 0} days.
                 {business.isDemo
                   ? <> The campaign will start immediately as <strong>scheduled</strong> and become <strong>active</strong> on the next 'Simulate today' tick.</>
-                  : <> It's saved as <strong>scheduled</strong>. Your Amplafai team launches it on the platform and reports the real spend here.</>}
+                  : <> Amplafai launches it in your own {AD_PLATFORM_BY_KEY[newCampaign.platform]?.label || ''} ad account {a.promise}, with a lifetime budget and an end date so it can't overspend. It shows <strong>Waiting for launch</strong> until then, and nothing is spent before it's live. The platform bills you for the ads.</>}
               </div>
             </div>
           )}
@@ -4170,15 +4219,75 @@
   };
 
   // Single campaign row component, reused across Overview/Campaigns/History tables.
-  const CampaignRow = ({ c, compact }) => {
+  // Phase 4: what the owner sees for a campaign. A real client's campaign
+  // says "Waiting for launch" / "Pause requested" until Amplafai has made the
+  // change on the platform; the demo's simulated campaigns change at once.
+  const CAMPAIGN_STAGE = {
+    needs_approval:     { label: 'Needs your approval', color: 'amber' },
+    waiting_for_launch: { label: 'Waiting for launch',  color: 'sky' },
+    scheduled:          { label: 'Scheduled',           color: 'sky' },
+    live:               { label: 'Live',                color: 'emerald' },
+    pause_requested:    { label: 'Pause requested',     color: 'amber' },
+    resume_requested:   { label: 'Restart requested',   color: 'amber' },
+    cancel_requested:   { label: 'Cancel requested',    color: 'amber' },
+    held:               { label: 'On hold',             color: 'slate' },
+    paused:             { label: 'Paused',              color: 'slate' },
+    completed:          { label: 'Completed',           color: 'violet' },
+    cancelled:          { label: 'Cancelled',           color: 'slate' },
+    draft:              { label: 'Draft',               color: 'slate' },
+  };
+
+  const CampaignRow = ({ c, compact, onAction, busyId, canAct }) => {
     const p = AD_PLATFORM_BY_KEY[c.platform];
     const perf = c.performance || {};
-    const statusColor = ({
-      active: 'emerald', scheduled: 'sky', pending_approval: 'amber',
-      paused: 'slate', completed: 'violet', cancelled: 'slate', draft: 'slate',
-    }[c.status]) || 'slate';
+    const [confirmCancel, setConfirmCancel] = useState(false);
+    const stageKey = c.stage || (c.status === 'active' ? 'live' : c.status);
+    const st = CAMPAIGN_STAGE[stageKey] || { label: String(c.status).replace('_', ' '), color: 'slate' };
+    const busy = busyId === c.id;
+    const req = c.openRequest;
+    const open = !['cancelled', 'completed', 'pending_approval'].includes(c.status);
+    // With a pause asked for, "Keep running" withdraws it; with a restart
+    // asked for, "Keep paused" does.
+    const actions = !onAction || !canAct || !open ? [] : [
+      ...(c.status === 'active' || c.status === 'scheduled'
+        ? [req?.kind === 'pause' ? ['resume', 'Keep running'] : (!req || req.kind === 'launch' ? ['pause', 'Pause'] : null)]
+        : []),
+      ...(c.status === 'paused'
+        ? [req?.kind === 'resume' ? ['pause', 'Keep paused'] : (!req ? ['resume', 'Restart'] : null)]
+        : []),
+      ...(req?.kind !== 'cancel' ? [['cancel', 'Cancel']] : []),
+    ].filter(Boolean);
+    const when = (iso) => iso ? new Date(iso + (iso.endsWith('Z') ? '' : 'Z')).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+    const statusBlock = (
+      <>
+        <Pill color={st.color}>{st.label}</Pill>
+        {req && req.kind !== 'launch' && (
+          <div className="mt-1 text-[10px] text-ink-faint">asked {when(req.requestedAt)}</div>
+        )}
+        {actions.length > 0 && !confirmCancel && (
+          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+            {actions.map(([act, label]) => (
+              <button key={act} type="button" disabled={busy}
+                onClick={() => act === 'cancel' ? setConfirmCancel(true) : onAction(c, act)}
+                className={`text-[11px] font-medium hover:underline disabled:opacity-50 ${act === 'cancel' ? 'text-bad' : 'text-brand-700'}`}>
+                {busy ? 'Saving…' : label}
+              </button>
+            ))}
+          </div>
+        )}
+        {confirmCancel && (
+          <div className="mt-1.5 text-[11px] text-ink-soft">
+            Cancel for good?{' '}
+            <button type="button" disabled={busy} className="font-medium text-bad hover:underline"
+              onClick={() => { setConfirmCancel(false); onAction(c, 'cancel'); }}>Yes, cancel</button>
+            {' · '}
+            <button type="button" className="font-medium text-ink-soft hover:underline" onClick={() => setConfirmCancel(false)}>Keep it</button>
+          </div>
+        )}
+      </>
+    );
     return (
-      <tr className="border-b border-surface-edge/60 hover:bg-surface/40">
+      <tr className="border-b border-surface-edge/60 hover:bg-surface/40 align-top">
         <td className="py-2.5 px-2">
           <div className="font-medium text-ink text-sm leading-tight">{c.name}</div>
           {!compact && (
@@ -4186,8 +4295,14 @@
               ${(c.dailyBudgetCents / 100).toFixed(0)}/day × {c.durationDays} days
               {c.origin === 'agent_autonomous' && <> · <span className="text-violet-600">auto-scheduled</span></>}
               {c.origin === 'agent_proposed' && <> · <span className="text-amber-600">agent proposed</span></>}
+              {c.launchedAt && <> · live since {when(c.launchedAt)}{c.endsAt ? `, ends ${when(c.endsAt)}` : ''}</>}
             </div>
           )}
+          {c.opsNote && (
+            <div className="mt-1 text-[11px] text-ink-soft"><span className="font-medium">From Amplafai:</span> {c.opsNote}</div>
+          )}
+          {/* Phones: status and actions sit under the name, not off-screen. */}
+          <div className="md:hidden mt-1.5">{statusBlock}</div>
         </td>
         <td className="py-2.5 px-2">
           <div className="flex items-center gap-1.5">
@@ -4195,11 +4310,11 @@
             <span className="text-xs text-ink-soft">{p?.label || c.platform}</span>
           </div>
         </td>
-        <td className="py-2.5 px-2 text-right tabular-nums text-ink-soft">{formatUSD(c.plannedTotalCents)}</td>
+        {!compact && <td className="py-2.5 px-2 text-right tabular-nums text-ink-soft">{formatUSD(c.plannedTotalCents)}</td>}
         <td className="py-2.5 px-2 text-right tabular-nums text-ink">{formatUSD(c.actualSpendCents)}</td>
-        <td className="py-2.5 px-2 text-right tabular-nums text-ink-soft">{(perf.impressions || 0).toLocaleString()}</td>
-        <td className="py-2.5 px-2 text-right tabular-nums text-ink-soft">{perf.ctr ? `${(perf.ctr * 100).toFixed(2)}%` : '—'}</td>
-        <td className="py-2.5 px-2"><Pill color={statusColor}>{c.status.replace('_', ' ')}</Pill></td>
+        <td className="py-2.5 px-2 text-right tabular-nums text-ink-soft hidden sm:table-cell">{(perf.impressions || 0).toLocaleString()}</td>
+        <td className="py-2.5 px-2 text-right tabular-nums text-ink-soft hidden sm:table-cell">{perf.ctr ? `${(perf.ctr * 100).toFixed(2)}%` : '—'}</td>
+        <td className="py-2.5 px-2 hidden md:table-cell">{statusBlock}</td>
       </tr>
     );
   };
@@ -6982,7 +7097,7 @@
 
                 <Card>
                   <SectionHeader title="Your publisher partner"
-                    subtitle="The local trust layer between you and the Popular Network." />
+                    subtitle="The local paper that brings Amplafai to your town." />
                   <div className="flex items-center gap-4">
                     <div className="shrink-0 w-14 h-14 rounded-xl bg-brand-50 text-brand-700 flex items-center justify-center font-serif font-bold text-lg border border-brand-100">
                       {(business.publisher || '').split(' ').filter(Boolean).slice(0, 3).map(w => w[0]).join('').toUpperCase() || '·'}
@@ -8463,7 +8578,7 @@ fetch('${location.origin}/api/chatbot/ingest', {
         ) : (
           <>
             <p className="text-sm text-ink-soft">
-              We'll get back to you within one business day. Your message goes to your publisher rep at the <span className="font-medium text-ink">{business.publisher}</span> and the Popular Network team.
+              We'll get back to you within one business day. Your message goes to your publisher rep at the <span className="font-medium text-ink">{business.publisher}</span> and the Amplafai team.
             </p>
             <div className="mt-4 space-y-3">
               <div>

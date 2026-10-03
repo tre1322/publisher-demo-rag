@@ -45,8 +45,9 @@ from sqlalchemy.orm import Session
 from ..agent.spend_policy import budget_row, current_month_year
 from ..auth.deps import get_tenant_id, require_capability
 from ..db import get_db
-from ..models import AdCampaign, AdPlatformBudget, Approval, Post, Review
-from .ads import AD_PLATFORMS, budget_payload, schedule_approved_campaign
+from ..models import AdCampaign, AdPlatformBudget, Approval, Business, Post, Review
+from .. import managed_ads
+from .ads import AD_PLATFORMS, actor, budget_payload, schedule_approved_campaign
 
 router = APIRouter()
 
@@ -138,7 +139,7 @@ def decide(
     # actually DO what the owner approved, and a failed platform call must
     # leave the approval undecided.
     if a.kind == "boost":
-        return _decide_ad_proposal(db, a, body)
+        return _decide_ad_proposal(db, a, body, by=actor(db, request))
 
     now = datetime.utcnow()
     a.decided_at = now
@@ -252,7 +253,7 @@ def _campaign_brief(c: AdCampaign | None) -> dict[str, Any] | None:
     return {"id": c.id, "status": c.status, "externalCampaignId": c.external_campaign_id}
 
 
-def _decide_ad_proposal(db: Session, a: Approval, body: DecideRequest) -> dict[str, Any]:
+def _decide_ad_proposal(db: Session, a: Approval, body: DecideRequest, *, by: str = "owner") -> dict[str, Any]:
     action = _ad_proposal_action(a)
     now = datetime.utcnow()
 
@@ -279,12 +280,20 @@ def _decide_ad_proposal(db: Session, a: Approval, body: DecideRequest) -> dict[s
         if campaign is not None and campaign.status == "pending_approval":
             # Same path as POST /ads/campaigns/{id}/approve. Raises 502 on a
             # platform failure BEFORE anything below is mutated.
-            schedule_approved_campaign(db, a.business_id, campaign)
+            schedule_approved_campaign(db, a.business_id, campaign, by=f"{by}, approving the agent's proposal")
         result["campaign"] = _campaign_brief(campaign)
     elif action == "pause":
         campaign = _campaign_for_proposal(db, a)
         if campaign is not None and campaign.status in ("active", "scheduled"):
-            campaign.status = "paused"
+            # Demo: pauses at once. Real client: Amplafai pauses it on the
+            # platform, so this becomes a pause request (app/managed_ads.py).
+            biz = db.get(Business, a.business_id)
+            try:
+                result["message"] = managed_ads.change(
+                    db, biz, campaign, "pause", by=f"{by}, approving the agent's proposal", source="agent",
+                )["message"]
+            except managed_ads.ManagedAdsError as e:
+                result["message"] = str(e)
         result["campaign"] = _campaign_brief(campaign)
     elif action == "allocate":
         payload = a.payload_json or {}

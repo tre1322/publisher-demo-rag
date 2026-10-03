@@ -84,7 +84,7 @@ def build_system_prompt(db: Session, business_id: int) -> str:
 
 def _role_section(biz: Business | None) -> str:
     if biz is None:
-        return "You are the AI Agent for a small business on the Popular Network."
+        return "You are the AI Agent for a small business on Amplafai."
     location_clause = f" in {biz.location}" if biz.location else ""
     return (
         f"You are the AI Agent for **{biz.name}**{location_clause}. "
@@ -313,6 +313,20 @@ def _ads_budget_section(db: Session, business_id: int, biz: Business | None) -> 
             "owner's Approvals queue. Nothing is spent or changed until they approve."
         )
 
+    # Phase 4: a real client's campaigns are launched and changed by hand.
+    from ..managed_ads import PLAN_MESSAGE, PROMISE, is_managed, plan_allows
+
+    if is_managed(biz):
+        if not plan_allows(biz):
+            tier_note += f" {PLAN_MESSAGE} Don't propose paid boosts; suggest unpaid posts instead."
+        else:
+            tier_note += (
+                " Amplafai runs this business's campaigns by hand in its own ad accounts: an "
+                f"approved campaign shows 'Waiting for launch' until Amplafai launches it ({PROMISE}), "
+                "and pausing, restarting or cancelling one that's running becomes a request Amplafai "
+                "carries out. Never say a campaign is live, paused or stopped until its status says so."
+            )
+
     if not any(b.monthly_cap_cents > 0 for b in budgets) and not active_campaigns:
         return (
             "## Ads & Spend\n\n"
@@ -344,7 +358,10 @@ def _ads_budget_section(db: Session, business_id: int, biz: Business | None) -> 
             lines.append(
                 f"- #{c.id} \"{c.name}\" on {label} — "
                 f"${c.daily_budget_cents/100:.0f}/day × {c.duration_days}d "
-                f"(${c.actual_spend_cents/100:.0f} spent so far, status={c.status})"
+                f"(${c.actual_spend_cents/100:.0f} spent so far, status="
+                + ("waiting for Amplafai to launch it" if c.status == "scheduled" and is_managed(biz)
+                   and not (c.external_campaign_id or "") else c.status)
+                + ")"
             )
 
     return "\n".join(lines)

@@ -420,6 +420,38 @@ class AdCampaign(Base):
     scheduled_for: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     last_ticked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # Phase 4 (managed ad budgets): when Amplafai confirmed the campaign is
+    # running on the platform (it entered the real campaign ID), and the
+    # latest note from Amplafai the owner should see (e.g. why a launch
+    # couldn't happen). Both NULL for demo campaigns.
+    launched_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    ops_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class AdOpsRequest(Base):
+    """Phase 4: work Amplafai must do by hand in a client's ad account.
+
+    Until each platform's API is approved, a real client's campaign changes
+    can't reach the platform from here. Launch, pause, resume and cancel
+    become requests; Amplafai does them in Ads Manager and marks them done in
+    the admin console. The owner sees "Pause requested" until then, so the
+    dashboard never claims a change the platform hasn't made.
+    """
+
+    __tablename__ = "ad_ops_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"), index=True)
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("ad_campaigns.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))  # launch | pause | resume | cancel
+    status: Mapped[str] = mapped_column(String(16), default="open")  # open | done | dropped
+    source: Mapped[str] = mapped_column(String(16), default="owner")  # owner | agent | cap
+    requested_by: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    done_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    done_by: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    done_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
 class AdConnection(Base):

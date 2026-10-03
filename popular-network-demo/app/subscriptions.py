@@ -60,11 +60,17 @@ EVERY_PLAN = [
     "Nothing is posted without your approval",
     "Reminders when drafts are waiting, and a Monday summary email",
 ]
+# Phase 4: Amplafai launches and watches paid campaigns by hand, in the
+# client's own ad accounts. The platforms bill the client for the ads.
+MANAGED_ADS = ("Paid ads run for you by Amplafai in your own Facebook, Instagram and Google ad accounts, "
+               "within the monthly caps you set (the platforms bill you for the ads)")
 TIER_FEATURES: dict[int, list[str]] = {
     1: EVERY_PLAN,
     2: EVERY_PLAN,
-    3: EVERY_PLAN + ["See the questions people ask your publisher's chatbot about your business"],
+    3: EVERY_PLAN + ["See the questions people ask your publisher's chatbot about your business",
+                     MANAGED_ADS],
     4: EVERY_PLAN + ["See the questions people ask your publisher's chatbot about your business",
+                     MANAGED_ADS,
                      "Your inventory listings, uploaded by spreadsheet"],
 }
 

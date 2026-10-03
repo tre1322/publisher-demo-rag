@@ -23,6 +23,7 @@ from typing import Any, Callable
 from sqlalchemy.orm import Session
 
 from . import spend_policy
+from .. import managed_ads
 from ..provisioning import is_demo
 from ..models import (
     AdCampaign,
@@ -624,6 +625,17 @@ def _exec_schedule_boost(
             is_error=True,
         )
 
+    # Phase 4: Amplafai runs a real client's paid campaigns from Tier 3 up.
+    biz = db.get(Business, business_id)
+    if not managed_ads.plan_allows(biz):
+        return ToolResult(
+            text=(f"Not scheduled. {managed_ads.PLAN_MESSAGE} Tell the owner that, and offer to "
+                  "draft an unpaid post instead."),
+            attachment={"kind": "tool-error", "tool": "schedule_boost", "reason": "plan"},
+            is_error=True,
+        )
+    managed = managed_ads.is_managed(biz)
+
     planned_total = daily_cents * days
     daily_dollars = daily_cents / 100
     total_dollars = planned_total / 100
@@ -690,6 +702,9 @@ def _exec_schedule_boost(
     )
     db.add(campaign)
     db.flush()
+    if autonomous:
+        managed_ads.request_launch(db, biz, campaign, by="AI agent, on its own within the owner's cap",
+                                   source="agent")
 
     if not autonomous:
         db.add(Approval(
@@ -708,7 +723,11 @@ def _exec_schedule_boost(
         ))
 
     text = (
-        f"Scheduled ${total_dollars:.0f} boost on {raw_platform} "
+        f"Sent a ${total_dollars:.0f} boost on {raw_platform} (${daily_dollars:.0f}/day × {days} days), "
+        f"campaign #{campaign.id}, to Amplafai to launch {managed_ads.PROMISE}, within the owner's cap. "
+        "Tell the owner it shows as 'Waiting for launch' until Amplafai confirms it's running."
+        if autonomous and managed
+        else f"Scheduled ${total_dollars:.0f} boost on {raw_platform} "
         f"(${daily_dollars:.0f}/day × {days} days), campaign #{campaign.id}, within the owner's cap."
         if autonomous
         else f"Proposal queued: ${total_dollars:.0f} boost on {raw_platform}. "
@@ -732,6 +751,7 @@ def _exec_schedule_boost(
             "audience": audience,
             "tierMode": "autonomous" if autonomous else "proposal",
             "status": status,
+            "managed": managed,
             "reason": reason,
             "reasonText": spend_policy.REASON_TEXT[reason],
         },
@@ -762,9 +782,21 @@ def _exec_pause_campaign(
         autonomy_enabled=spend_policy.autonomy_enabled(db, business_id),
     )
     if decision == "apply":
-        campaign.status = "paused"
+        # Demo: pauses at once. Real client: Amplafai pauses it on the
+        # platform, so this opens a pause request (app/managed_ads.py).
+        try:
+            outcome = managed_ads.change(db, db.get(Business, business_id), campaign, "pause",
+                                         by="AI agent, on its own", source="agent")
+        except managed_ads.ManagedAdsError as e:
+            return ToolResult(
+                text=f"Couldn't pause campaign #{campaign_id}: {e}",
+                attachment={"kind": "tool-error", "tool": "pause_campaign", "reason": "bad_status"},
+                is_error=True,
+            )
+        done = outcome["outcome"] == "applied"
         return ToolResult(
-            text=f"Paused campaign #{campaign_id} ({reason}).",
+            text=(f"Paused campaign #{campaign_id} ({reason})." if done
+                  else f"{outcome['message']} Tell the owner exactly that. ({reason})"),
             attachment={
                 "kind": "pause-campaign-card",
                 "campaignId": campaign_id,
@@ -772,6 +804,7 @@ def _exec_pause_campaign(
                 "platform": campaign.platform,
                 "reason": reason,
                 "tierMode": "autonomous",
+                "requested": not done,
             },
         )
 
