@@ -6,6 +6,8 @@ Run with:  uv run python -m app.scripts.smoke_dashboard_static
   A. Every JSX component the page renders is defined. In May a cleanup
      deleted PostDetail and DraftsTab while the Calendar still rendered
      them, so clicking any calendar post crashed the screen for four months.
+  C. The plain (non-React) scripts in the other pages parse. A stray
+     apostrophe in admin.html once broke the whole admin console.
   B. The page is built for phones: device-width viewport (it was a fixed
      1280px), the bottom tab bar and drawer exist, and dialogs render at
      the top of the page so they can't end up behind the tab bar.
@@ -64,6 +66,26 @@ def main() -> None:
     check("B4 the desktop sidebar hides on phones", '<Sidebar current={view} onNavigate={(v) => navigate(v)} className="hidden md:flex" />' in code)
     check("B5 dialogs portal to <body> (not trapped behind the tab bar)", "ReactDOM.createPortal(" in code)
     check("B6 main content clears the tab bar", "pb-20 md:pb-0" in code)
+
+    print("\nC. plain page scripts parse")
+    import shutil
+    import subprocess
+    import tempfile
+
+    node = shutil.which("node")
+    if node is None:
+        print("  --  node isn't installed here; skipped (CI runs it)")
+    else:
+        for page in ("admin.html", "invite.html", "login.html", "forgot-password.html", "reset-password.html"):
+            page_html = (ROOT / page).read_text(encoding="utf-8")
+            blocks = [b for attrs, b in re.findall(r"<script([^>]*)>(.*?)</script>", page_html, re.S)
+                      if "src=" not in attrs and "text/babel" not in attrs and b.strip()]
+            for n, block in enumerate(blocks):
+                with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as tmp:
+                    tmp.write(block)
+                res = subprocess.run([node, "--check", tmp.name], capture_output=True, text=True)
+                Path(tmp.name).unlink(missing_ok=True)
+                check(f"C1 {page} script {n + 1} parses", res.returncode == 0, res.stderr[-400:])
 
     print("\nPASS  dashboard static smoke green ✓")
 
