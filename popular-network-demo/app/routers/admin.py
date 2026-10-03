@@ -38,7 +38,7 @@ from ..data_lifecycle import cancel_deletion, export_business, purge_business, s
 from ..db import get_db
 from ..models import Business, BusinessUser, Escalation, Invite, User
 from ..provisioning import create_business
-from .. import subscriptions
+from .. import managed_ads, subscriptions
 from ..onboarding import get_state as get_onboarding_state
 from ..onboarding import save_state as save_onboarding_state
 from ..voice_brief import load_voice_brief, validate_brief
@@ -373,6 +373,67 @@ def mark_handled(escalation_id: int, db: Session = Depends(get_db)) -> dict[str,
         esc.handled_at = datetime.utcnow()
         db.commit()
     return {"ok": True, "business": _business_row(db, _get_business(db, esc.business_id))}
+
+
+# --------------------------------------------------------------------------- #
+# Phase 4: managed ad campaigns. Amplafai launches, pauses, restarts and
+# cancels real clients' campaigns by hand in Ads Manager, then confirms here.
+# --------------------------------------------------------------------------- #
+
+class AdRequestDoneBody(BaseModel):
+    external_campaign_id: Optional[str] = Field(default=None, max_length=80)
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
+class AdRequestDropBody(BaseModel):
+    note: str = Field(min_length=1, max_length=500)
+
+
+def _ads_queue(db: Session) -> dict[str, Any]:
+    return {"requests": managed_ads.admin_queue(db, "open"),
+            "recent": managed_ads.admin_queue(db, "closed", limit=20),
+            "promise": managed_ads.PROMISE,
+            "emailsTo": managed_ads.ops_recipients()}
+
+
+@router.get("/ads/requests")
+def ad_requests(db: Session = Depends(get_db)) -> dict[str, Any]:
+    if managed_ads.complete_finished(db):
+        db.commit()
+    return _ads_queue(db)
+
+
+@router.post("/ads/requests/{request_id}/done")
+def ad_request_done(
+    request_id: int,
+    body: AdRequestDoneBody,
+    user_id: int = Depends(require_superuser),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    me = db.get(User, user_id)
+    try:
+        managed_ads.confirm(db, request_id, by=me.email, external_campaign_id=body.external_campaign_id,
+                            note=body.note)
+    except managed_ads.ManagedAdsError as e:
+        raise HTTPException(status_code=e.status, detail=str(e))
+    db.commit()
+    return _ads_queue(db)
+
+
+@router.post("/ads/requests/{request_id}/drop")
+def ad_request_drop(
+    request_id: int,
+    body: AdRequestDropBody,
+    user_id: int = Depends(require_superuser),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    me = db.get(User, user_id)
+    try:
+        managed_ads.drop(db, request_id, by=me.email, note=body.note)
+    except managed_ads.ManagedAdsError as e:
+        raise HTTPException(status_code=e.status, detail=str(e))
+    db.commit()
+    return _ads_queue(db)
 
 
 @router.get("/businesses/{business_id}/export")

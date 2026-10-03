@@ -25,12 +25,13 @@ import random
 from datetime import datetime, timedelta
 from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from .. import managed_ads
 from ..auth.deps import get_tenant_id, require_capability
-from ..provisioning import require_demo
+from ..provisioning import is_demo, require_demo
 from ..db import get_db
 from ..models import (
     AdCampaign,
@@ -39,6 +40,7 @@ from ..models import (
     Approval,
     Business,
     Post,
+    User,
 )
 
 router = APIRouter()
@@ -125,7 +127,10 @@ def budget_payload(b: AdPlatformBudget) -> dict[str, Any]:
     }
 
 
-def campaign_payload(c: AdCampaign) -> dict[str, Any]:
+def campaign_payload(c: AdCampaign, req: Any = None, managed: bool = False) -> dict[str, Any]:
+    """`req` is the campaign's open Amplafai request, `managed` = real client
+    (see app/managed_ads.py); together they decide what the owner sees."""
+    end = managed_ads.ends_at(c)
     return {
         "id":                 c.id,
         "businessId":         c.business_id,
@@ -145,7 +150,21 @@ def campaign_payload(c: AdCampaign) -> dict[str, Any]:
         "createdAt":          c.created_at.isoformat() if c.created_at else None,
         "scheduledFor":       c.scheduled_for.isoformat() if c.scheduled_for else None,
         "endedAt":            c.ended_at.isoformat() if c.ended_at else None,
+        "managed":            managed,
+        "stage":              managed_ads.stage(c, req, managed),
+        "openRequest":        managed_ads.request_brief(req),
+        "launchedAt":         c.launched_at.isoformat() if c.launched_at else None,
+        "endsAt":             end.isoformat() if end else None,
+        "opsNote":            c.ops_note,
     }
+
+
+def actor(db: Session, request: Request) -> str:
+    """Who is asking, for Amplafai's request queue."""
+    user = db.get(User, getattr(request.state, "user_id", None)) if getattr(request.state, "user_id", None) else None
+    if user is None:
+        return "unknown"
+    return f"{user.email} (Amplafai staff)" if user.is_superuser else user.email
 
 
 def connection_payload(c: AdConnection) -> dict[str, Any]:
@@ -172,6 +191,10 @@ def get_ads(business_id: int = Depends(get_tenant_id), db: Session = Depends(get
     every mutation.
     """
     month = _current_month_year()
+    biz = db.get(Business, business_id)
+    managed = managed_ads.is_managed(biz)
+    if managed and managed_ads.complete_finished(db, business_id):
+        db.commit()
     budgets = (
         db.query(AdPlatformBudget)
         .filter(AdPlatformBudget.business_id == business_id, AdPlatformBudget.month_year == month)
@@ -192,6 +215,7 @@ def get_ads(business_id: int = Depends(get_tenant_id), db: Session = Depends(get
     total_cap     = sum(b.monthly_cap_cents for b in budgets)
     total_spend   = sum(b.spend_cents for b in budgets)
     active_count  = sum(1 for c in campaigns if c.status == "active")
+    open_reqs     = managed_ads.open_requests(db, business_id) if managed else {}
     pending_count = sum(1 for c in campaigns if c.status == "pending_approval")
 
     # Aggregate performance across all campaigns this month.
@@ -202,8 +226,14 @@ def get_ads(business_id: int = Depends(get_tenant_id), db: Session = Depends(get
     return {
         "monthYear":         month,
         "budgets":           [budget_payload(b) for b in budgets],
-        "campaigns":         [campaign_payload(c) for c in campaigns],
+        "campaigns":         [campaign_payload(c, open_reqs.get(c.id), managed) for c in campaigns],
         "connections":       [connection_payload(c) for c in connections],
+        # Phase 4: a real client's campaigns are run by hand by Amplafai.
+        "managed":           managed,
+        "planAllows":        managed_ads.plan_allows(biz),
+        "planMessage":       managed_ads.PLAN_MESSAGE,
+        "promise":           managed_ads.PROMISE,
+        "waitingCount":      sum(1 for c in campaigns if managed_ads.stage(c, open_reqs.get(c.id), managed) == "waiting_for_launch"),
         "totalCapCents":     total_cap,
         "totalSpendCents":   total_spend,
         "activeCount":       active_count,
@@ -284,18 +314,24 @@ def list_campaigns(
     if platform:
         q = q.filter(AdCampaign.platform == platform)
     rows = q.order_by(AdCampaign.created_at.desc()).all()
-    return [campaign_payload(c) for c in rows]
+    managed = managed_ads.is_managed(db.get(Business, business_id))
+    reqs = managed_ads.open_requests(db, business_id) if managed else {}
+    return [campaign_payload(c, reqs.get(c.id), managed) for c in rows]
 
 
 @router.post("/ads/campaigns", dependencies=[Depends(require_capability("manage_ads"))])
 def create_campaign(
     body: CampaignCreateBody,
+    request: Request,
     business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     biz = db.get(Business, business_id)
     if biz is None:
         raise HTTPException(status_code=404, detail=f"business {business_id} not found")
+    # Phase 4: Amplafai runs a real client's campaigns by hand, from Tier 3 up.
+    if not managed_ads.plan_allows(biz):
+        raise HTTPException(status_code=403, detail=managed_ads.PLAN_MESSAGE)
 
     # If post_id supplied, verify it belongs to this business.
     if body.post_id is not None:
@@ -323,8 +359,9 @@ def create_campaign(
         audience_json = {"hint": body.target_audience}
 
     # Provision the external campaign at schedule time. LinkedIn hits the real
-    # API when live+connected; everything else returns a mock id (see
-    # resolve_external_campaign_id). A real-platform failure surfaces as 502.
+    # API when live+connected; the demo gets a mock id; a managed client gets
+    # none until Amplafai launches it (see resolve_external_campaign_id). A
+    # real-platform failure surfaces as 502.
     external_id: Optional[str] = None
     if status == "scheduled":
         try:
@@ -357,6 +394,9 @@ def create_campaign(
     )
     db.add(campaign)
     db.flush()
+    if status == "scheduled":
+        managed_ads.request_launch(db, biz, campaign, by=actor(db, request),
+                                   source="agent" if body.origin == "agent_autonomous" else "owner")
 
     # Tier 2 proposal → also create an Approval row so the owner sees it
     # in the existing Approvals queue.
@@ -376,19 +416,25 @@ def create_campaign(
 
     db.commit()
     db.refresh(campaign)
-    return campaign_payload(campaign)
+    managed = managed_ads.is_managed(biz)
+    reqs = managed_ads.open_requests(db, business_id) if managed else {}
+    return campaign_payload(campaign, reqs.get(campaign.id), managed)
 
 
 @router.put("/ads/campaigns/{campaign_id}", dependencies=[Depends(require_capability("manage_ads"))])
 def update_campaign(
     campaign_id: int,
     body: CampaignUpdateBody,
+    request: Request,
     business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     c = db.get(AdCampaign, campaign_id)
     if c is None or c.business_id != business_id:
         raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
+    biz = db.get(Business, business_id)
+    managed = managed_ads.is_managed(biz)
+    message = None
 
     if body.status:
         # Status state machine: pending_approval is owner-approval-only via
@@ -398,29 +444,58 @@ def update_campaign(
                 status_code=409,
                 detail="Use POST /api/ads/campaigns/{id}/approve to advance from pending_approval.",
             )
-        c.status = body.status
-        if body.status == "cancelled":
-            c.ended_at = datetime.utcnow()
+        if managed and c.status != "pending_approval":
+            # Phase 4: a real client's campaign changes only when Amplafai
+            # makes the change on the platform. Pause / restart / cancel
+            # become requests; nothing here can mark a campaign live.
+            # Asking for active/scheduled = restart (or withdraw a pause
+            # request); only Amplafai's confirmation can make it live.
+            action = {"paused": "pause", "cancelled": "cancel"}.get(body.status, "resume")
+            try:
+                message = managed_ads.change(db, biz, c, action, by=actor(db, request))["message"]
+            except managed_ads.ManagedAdsError as e:
+                raise HTTPException(status_code=e.status, detail=str(e))
+        else:
+            c.status = body.status
+            if body.status == "cancelled":
+                c.ended_at = datetime.utcnow()
     if body.daily_budget_cents is not None:
         if c.status in ("active", "completed"):
             raise HTTPException(status_code=409, detail="Cannot change budget on active/completed campaigns.")
+        if managed and managed_ads.on_platform(c):
+            raise HTTPException(status_code=409, detail=(
+                "This campaign is already running on the platform. To spend differently, "
+                "cancel it and start a new one."))
         c.daily_budget_cents = body.daily_budget_cents
         c.planned_total_cents = c.daily_budget_cents * c.duration_days
 
     db.commit()
     db.refresh(c)
-    return campaign_payload(c)
+    reqs = managed_ads.open_requests(db, business_id) if managed else {}
+    out = campaign_payload(c, reqs.get(c.id), managed)
+    if message:
+        out["message"] = message
+    return out
 
 
 @router.delete("/ads/campaigns/{campaign_id}", dependencies=[Depends(require_capability("manage_ads"))])
 def delete_campaign(
     campaign_id: int,
+    request: Request,
     business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     c = db.get(AdCampaign, campaign_id)
     if c is None or c.business_id != business_id:
         raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
+    biz = db.get(Business, business_id)
+    if managed_ads.is_managed(biz) and c.status != "pending_approval":
+        try:
+            outcome = managed_ads.change(db, biz, c, "cancel", by=actor(db, request))
+        except managed_ads.ManagedAdsError as e:
+            raise HTTPException(status_code=e.status, detail=str(e))
+        db.commit()
+        return {"ok": True, "id": campaign_id, "status": c.status, "message": outcome["message"]}
     c.status = "cancelled"
     c.ended_at = datetime.utcnow()
     db.commit()
@@ -430,6 +505,7 @@ def delete_campaign(
 @router.post("/ads/campaigns/{campaign_id}/approve", dependencies=[Depends(require_capability("manage_ads"))])
 def approve_campaign(
     campaign_id: int,
+    request: Request,
     business_id: int = Depends(get_tenant_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -438,7 +514,7 @@ def approve_campaign(
         raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
     if c.status != "pending_approval":
         raise HTTPException(status_code=409, detail=f"campaign is {c.status}, not pending_approval")
-    schedule_approved_campaign(db, business_id, c)
+    schedule_approved_campaign(db, business_id, c, by=actor(db, request))
     # Also resolve the matching Approval row.
     approval = (
         db.query(Approval)
@@ -454,7 +530,9 @@ def approve_campaign(
         approval.decided_at = datetime.utcnow()
     db.commit()
     db.refresh(c)
-    return campaign_payload(c)
+    managed = managed_ads.is_managed(db.get(Business, business_id))
+    reqs = managed_ads.open_requests(db, business_id) if managed else {}
+    return campaign_payload(c, reqs.get(c.id), managed)
 
 
 @router.post("/ads/tick", dependencies=[Depends(require_capability("manage_ads"))])
@@ -643,14 +721,16 @@ def resolve_external_campaign_id(
     name: str,
     daily_budget_cents: int,
     duration_days: int,
-) -> str:
+) -> Optional[str]:
     """The mock→real swap point for campaign provisioning.
 
     LinkedIn hits the real Marketing API when (a) credentials are configured
     (`li.is_live()`) AND (b) the business has a live, token-valid connection —
-    returning the real campaign URN. In every other case (LinkedIn unconfigured
-    or not connected, or any non-LinkedIn platform) it returns a synthetic mock
-    id, exactly as Phase E always did.
+    returning the real campaign URN. Otherwise the demo account gets a
+    synthetic mock id (as Phase E always did) and a real client gets None:
+    Amplafai launches it by hand and enters the real id (Phase 4,
+    app/managed_ads.py). Before Oct 2026 real clients got mock ids too, so
+    the dashboard showed "scheduled" campaigns that existed nowhere.
 
     Raises LinkedInProvisioningError if the real call is attempted and fails —
     callers surface that rather than masking the failure with a mock id.
@@ -673,7 +753,9 @@ def resolve_external_campaign_id(
                     daily_budget_cents=daily_budget_cents,
                     duration_days=duration_days,
                 )
-    return _mock_external_id(platform)
+    if is_demo(db.get(Business, business_id)):
+        return _mock_external_id(platform)
+    return None
 
 
 def is_simulated_campaign(c: AdCampaign) -> bool:
@@ -685,7 +767,7 @@ def is_simulated_campaign(c: AdCampaign) -> bool:
     return not c.external_campaign_id or c.external_campaign_id.startswith("mock_")
 
 
-def schedule_approved_campaign(db: Session, business_id: int, c: AdCampaign) -> None:
+def schedule_approved_campaign(db: Session, business_id: int, c: AdCampaign, *, by: str = "owner") -> None:
     """Owner approved a pending campaign: provision it, then mark it scheduled.
 
     The ONE path for owner approval — used by POST /ads/campaigns/{id}/approve
@@ -695,7 +777,12 @@ def schedule_approved_campaign(db: Session, business_id: int, c: AdCampaign) -> 
     Provisioning runs BEFORE any mutation: the LinkedIn token refresh can
     commit mid-request, so a failed platform call must leave the campaign
     (and the caller's approval row) untouched. Raises HTTPException(502).
+    A managed client below Tier 3 gets 403 (Amplafai runs campaigns from
+    Tier 3 up); otherwise its campaign waits for Amplafai to launch it.
     """
+    biz = db.get(Business, business_id)
+    if not managed_ads.plan_allows(biz):
+        raise HTTPException(status_code=403, detail=managed_ads.PLAN_MESSAGE)
     try:
         external_id = resolve_external_campaign_id(
             db, business_id, c.platform,
@@ -709,6 +796,7 @@ def schedule_approved_campaign(db: Session, business_id: int, c: AdCampaign) -> 
     c.approved_by = "owner"
     c.scheduled_for = datetime.utcnow()
     c.external_campaign_id = external_id
+    managed_ads.request_launch(db, biz, c, by=by, source="owner")
 
 
 def _default_account_label(platform: str, business_name: str) -> str:

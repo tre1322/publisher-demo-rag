@@ -80,7 +80,7 @@ def main() -> int:
         r = client.get("/")
         check("5. GET / with cookie -> 200", r.status_code == 200, f"got {r.status_code}")
         check("5. GET / body looks like dashboard",
-              b"Popular Network" in r.content and b"dashboard" in r.content.lower(),
+              b"Amplafai" in r.content and b"dashboard" in r.content.lower(),
               "doesn't look like dashboard.html")
 
         # 6. Logged-in user on /login redirects to /

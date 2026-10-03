@@ -72,7 +72,7 @@ log = logging.getLogger("popular_network")
 # in production it would publish every endpoint to anyone.
 _API_DOCS = os.getenv("ENVIRONMENT", "development").lower() != "production"
 app = FastAPI(
-    title="Popular Network — Marketing Dashboard",
+    title="Amplafai — Marketing Dashboard",
     version="0.1.0",
     docs_url="/docs" if _API_DOCS else None,
     redoc_url="/redoc" if _API_DOCS else None,
@@ -121,6 +121,9 @@ def _startup() -> None:
     _add_col_if_missing("users", "terms_version", "VARCHAR(32)")
     _add_col_if_missing("users", "terms_accepted_at", "DATETIME")
     _add_col_if_missing("users", "terms_accepted_ip", "VARCHAR(64)")
+    # Phase 4: managed ad campaigns (launch confirmation + Amplafai's note).
+    _add_col_if_missing("ad_campaigns", "launched_at", "DATETIME")
+    _add_col_if_missing("ad_campaigns", "ops_note", "TEXT")
     inserted = seed_if_empty()
     if inserted:
         log.info("Seeded Quadd.ai (business_id=1) — Day-1 customer w/ voice brief loaded")
@@ -240,6 +243,11 @@ def _start_notify_loop() -> None:
             try:
                 with SessionLocal() as db:
                     run_due(db)
+                    # Phase 4: managed campaigns past their end date are over.
+                    from .managed_ads import complete_finished
+
+                    if complete_finished(db):
+                        db.commit()
             except Exception:  # housekeeping never takes the app down
                 log.exception("Notification run failed; will retry")
             time.sleep(15 * 60)

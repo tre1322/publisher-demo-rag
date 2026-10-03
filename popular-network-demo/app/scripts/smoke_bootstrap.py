@@ -192,7 +192,7 @@ def _run_assertions(client) -> None:
     html_resp = client.get("/dashboard.html")
     if html_resp.status_code != 200:
         _fail(f"dashboard.html: {html_resp.status_code}")
-    if b"Popular Network" not in html_resp.content:
+    if b"Amplafai" not in html_resp.content:
         _fail("dashboard.html does not look like the demo")
     _ok(f"dashboard.html served ({len(html_resp.content)} bytes)")
 
