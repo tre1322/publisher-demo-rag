@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from ..auth.deps import get_tenant_id, has_capability
+from ..onboarding import get_state as get_onboarding_state
 from ..voice_brief import load_voice_brief
 from ..auth.permissions import ALL_CAPABILITIES
 from ..db import get_db
@@ -175,7 +176,53 @@ def _approval_payload(a: Approval) -> dict[str, Any]:
     }
     if a.kind == "review":
         payload["original"] = a.original_review_text
+    planned = (a.payload_json or {}).get("plannedDate")
+    if planned:
+        payload["plannedDate"] = planned
     return payload
+
+
+# Phase 1's static first-day items, now computed live by _attention_payload.
+_LEGACY_SETUP_TITLES = frozenset({
+    "Your voice interview is next",
+    "Your first drafts will land in Approvals",
+})
+
+
+def _attention_payload(biz: Business, stored: Optional[list], onboarding: dict[str, Any],
+                       pending_posts: int) -> list[dict[str, Any]]:
+    """Home's "Needs your attention" feed.
+
+    The demo account keeps its curated feed. Real clients get items computed
+    from what's true right now (setup unfinished, drafts waiting), so the
+    feed never goes stale, followed by any stored items.
+    """
+    items = [i for i in (stored or []) if i.get("title") not in _LEGACY_SETUP_TITLES]
+    if biz.is_demo:
+        return items
+    live: list[dict[str, Any]] = []
+    status = onboarding["status"]
+    if status in ("drafting", "planning"):
+        live.append({"kind": "setup", "title": "Your agent is getting set up",
+                     "detail": "Claude is working on your voice brief and first week. It takes a minute or two.",
+                     "cta": "See progress", "icon": "sparkles", "tone": "teal", "target": "onboarding"})
+    elif status != "done":
+        started = status not in ("not_started",)
+        live.append({"kind": "setup", "title": "Finish setting up your agent" if started else "Set up your agent",
+                     "detail": "Answer a few questions so the agent writes the way you talk. "
+                               "It drafts your first week of posts when you're done.",
+                     "cta": "Continue setup" if started else "Start setup",
+                     "icon": "sparkles", "tone": "teal", "target": "onboarding"})
+    if pending_posts:
+        live.append({"kind": "pending",
+                     "title": f"{pending_posts} post{'s' if pending_posts != 1 else ''} waiting for your approval",
+                     "detail": "Approve, edit, or toss each one. Nothing is posted without your sign-off.",
+                     "cta": "Review drafts", "icon": "inbox", "tone": "amber", "target": "approvals"})
+    elif status == "done":
+        live.append({"kind": "idea", "title": "Ask the agent for your next post",
+                     "detail": "Tell it what's going on this week. Its drafts land in Approvals for your sign-off.",
+                     "cta": "Open AI agent", "icon": "sparkles", "tone": "teal", "target": "chat"})
+    return live + items
 
 
 def _review_payload(r: Review) -> dict[str, Any]:
@@ -421,13 +468,18 @@ def get_bootstrap(
         .count()
     )
 
+    onboarding_state = get_onboarding_state(biz)
     payload: dict[str, Any] = {
         "business": _business_payload(biz),
         # Who is looking. The server enforces every capability on its own;
         # this only lets the UI say "view-only" up front instead of after a 403.
         "access": _access_payload(request),
         "stats": _stats_payload(notices, agg, tier=biz.tier, chatbot_count=chatbot_total_count, posts=posts),
-        "attention": notices.attention_json if notices else [],
+        "attention": _attention_payload(
+            biz, notices.attention_json if notices else [], onboarding_state,
+            sum(1 for a in approvals if (a.kind or "post") == "post"),
+        ),
+        "onboarding": {"status": onboarding_state["status"], "needed": onboarding_state["status"] != "done"},
         "weekRecap": _week_recap_payload(notices.week_recap_json if notices else []),
         "posts": [_post_payload(p) for p in posts],
         "approvals": [_approval_payload(a) for a in approvals],

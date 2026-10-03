@@ -139,7 +139,7 @@
   // version your browser is showing (rendered in the sidebar footer).
   // Keep it ONE concise line: it renders in the sidebar, so a changelog here
   // leaks internal roadmap language to customers. History lives in git.
-  const BUILD_VERSION = '2026-10-02 · v54 — ops: nightly backups, uptime check, error alerts, CI.';
+  const BUILD_VERSION = '2026-10-03 · v55 — setup wizard: Claude drafts the voice brief and plans week one.';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -835,6 +835,8 @@
     { id: 'chatbotpreview', label: 'Chatbot',    icon: 'convo', minTier: 3 },
     { id: 'settings',    label: 'Settings',      icon: 'settings' }
   ];
+  // Every view a ?tab= link may open.
+  const VIEW_IDS = [...NAV_DEFS.map(n => n.id), 'onboarding'];
 
   const Sidebar = ({ current, onNavigate }) => {
     const { business, approvals, chatbot, access } = useDashboard();
@@ -844,7 +846,10 @@
     // Tier 4+, Chatbot = Tier 3+). The badge on Chatbot shows escalation
     // count so the owner spots prospects-needing-outreach at a glance.
     const tier = business?.tier || 0;
-    const nav = NAV_DEFS
+    const { onboarding } = useDashboard();
+    const setupItem = onboarding?.needed && !business?.isDemo
+      ? [{ id: 'onboarding', label: 'Finish setup', icon: 'sparkles', highlight: true }] : [];
+    const nav = [...setupItem, ...NAV_DEFS]
       .filter(n => !n.minTier || tier >= n.minTier)
       .map(n => {
         if (n.id === 'approvals') return { ...n, count: approvals?.length || 0 };
@@ -862,13 +867,13 @@
           </div>
         </div>
       </div>
-      <nav className="flex-1 py-3">
+      <nav className="flex-1 min-h-0 overflow-y-auto py-3">
         {nav.map(n => (
           <button key={n.id}
             className={`w-full text-left flex items-center gap-3 py-2.5 text-sm ${current === n.id ? 'nav-active text-white' : 'nav-inactive text-white/75 hover:text-white'}`}
             onClick={() => onNavigate(n.id)}>
             <Icon name={n.icon} size={17} strokeWidth={1.8} />
-            <span className="flex-1">{n.label}</span>
+            <span className={`flex-1 ${n.highlight ? 'text-accent font-medium' : ''}`}>{n.label}</span>
             {n.count > 0 && (
               <span className="bg-accent text-brand-800 text-[10px] font-semibold rounded-full px-1.5 py-0.5">{n.count}</span>
             )}
@@ -2018,7 +2023,7 @@
      VIEW: HOME / OVERVIEW
      ============================================================ */
   const HomeView = ({ onNavigate }) => {
-    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings, ads, chatbot } = useDashboard();
+    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings, ads, chatbot, onboarding } = useDashboard();
     // Phase G polish: tier-3+ owner with no active ingest key → prepend a
     // "Connect your publisher chatbot" nag to the attention feed. Cheap
     // client-side injection so we don't have to mutate DashboardNotices
@@ -2040,7 +2045,11 @@
           title={`Welcome back, ${business.owner.split(' ')[0]}`}
           right={business.voiceInterview === 'complete'
             ? <Pill color="emerald" icon="check">Voice interview complete</Pill>
-            : <Pill color="amber" icon="clock">Voice interview not done yet</Pill>}
+            : onboarding?.status === 'done'
+              ? <Pill color="emerald" icon="check">Voice brief ready</Pill>
+              : <button type="button" onClick={() => onNavigate('onboarding')} className="rounded-full">
+                  <Pill color="amber" icon="clock">Setup not finished</Pill>
+                </button>}
         />
         <div className="px-8 py-7 space-y-6 max-w-6xl">
           {/* Compose hero — the demo's primary CTA on Home */}
@@ -4354,8 +4363,8 @@
   /* ============================================================
      VIEW: MARKETING PLAN
      ============================================================ */
-  const MarketingPlanView = ({ pendingTrain, onClearTrain }) => {
-    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings, voiceBrief } = useDashboard();
+  const MarketingPlanView = ({ pendingTrain, onClearTrain, onNavigate }) => {
+    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings, voiceBrief, access } = useDashboard();
     const mutate = useDashboardMutate();
     const [tab, setTab] = useState('strategy');
     const [editing, setEditing] = useState(null);  // field key currently open for edit
@@ -4510,7 +4519,7 @@
                 <div className="flex-1">
                   <div className="text-[11px] uppercase tracking-wider font-semibold text-violet-700 mb-1.5">Your voice brief</div>
                   <h3 className="font-serif text-xl font-semibold text-ink leading-snug">
-                    Synthesized from your voice interview
+                    {voiceBrief._source === 'onboarding_wizard' ? 'Drafted from your setup answers' : 'Synthesized from your voice interview'}
                   </h3>
                   <p className="text-sm text-ink-soft mt-1">
                     This is the source the AI Agent reads on every turn — and what the rest of your Marketing Plan derives from. {(voiceBrief.amplify || []).length} things to play up · {(voiceBrief.maintain || []).length} at status quo · {(voiceBrief.mute || []).length} to play down · {(voiceBrief.customer_language || []).length} customer phrases captured.
@@ -4647,11 +4656,19 @@
                     </div>
                   )}
 
-                  {voiceBrief._source && (
+                  {voiceBrief._source && typeof voiceBrief._source === 'object' && (
                     <div className="pt-4 border-t border-violet-100 text-[11px] text-ink-faint">
                       Synthesized via <code className="font-mono">{voiceBrief._source.model || 'model'}</code> · {voiceBrief._source.input_tokens || 0} in / {voiceBrief._source.output_tokens || 0} out tokens
                     </div>
                   )}
+                </div>
+              )}
+              {voiceBrief._source === 'onboarding_wizard' && !business.isDemo && access?.can?.edit_marketing_plan && onNavigate && (
+                <div className="mt-4 pt-3 border-t border-violet-100 text-sm text-ink-soft flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span>Something off? Change your setup answers and Claude redrafts it.</span>
+                  <button type="button" className="text-brand-600 font-medium hover:underline" onClick={() => onNavigate('onboarding')}>
+                    Redo setup
+                  </button>
                 </div>
               )}
             </Card>
@@ -5359,6 +5376,7 @@
   const PLATFORM_LABEL = {
     facebook: 'Facebook', instagram: 'Instagram', google: 'Google Business',
     tiktok: 'TikTok', linkedin: 'LinkedIn', x: 'X',
+    fb: 'Facebook', ig: 'Instagram', gbp: 'Google Business', web: 'Website',
   };
 
   const DraftPostCard = ({ attachment, onNavigate }) => (
@@ -6374,7 +6392,7 @@
      VIEW: SETTINGS
      ============================================================ */
   const SettingsView = ({ onTalkToHuman, linkedinReturn }) => {
-    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings, voiceBrief, access } = useDashboard();
+    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings, voiceBrief, access, onboarding } = useDashboard();
     const firstPublished = (posts || []).filter(p => p.status === 'published').sort((a, b) => (a.date || '').localeCompare(b.date || ''))[0];
     const mutate = useDashboardMutate();
     const [tab, setTab] = useState('account');
@@ -6742,10 +6760,12 @@
                   <div className="mt-4 pt-4 border-t border-surface-edge">
                     <div className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-3">Onboarding milestones</div>
                     <div className="space-y-3">
-                      <Milestone {...(business.voiceInterview === 'complete' ? { done: true } : { current: true })}
-                        label="Voice interview" sub={business.voiceInterview === 'complete' ? 'done' : 'Amplafai will schedule it with you'} />
+                      <Milestone {...(onboarding?.status === 'done' ? { done: true } : { current: true })}
+                        label="Setup questions" sub={onboarding?.status === 'done' ? 'done' : 'about ten minutes, from Home or the sidebar'} />
                       <Milestone {...(voiceBrief ? { done: true } : { muted: true })}
-                        label="Voice brief synthesized" sub={voiceBrief ? 'the AI agent writes from it' : 'after the interview'} />
+                        label="Voice brief" sub={voiceBrief ? 'the AI agent writes from it' : 'drafted from your setup answers'} />
+                      <Milestone {...(business.voiceInterview === 'complete' ? { done: true } : { muted: true })}
+                        label="Recorded voice interview (optional)" sub={business.voiceInterview === 'complete' ? 'done' : 'sharpens the brief further; ask Amplafai'} />
                       <Milestone {...(firstPublished ? { done: true } : { current: true })}
                         label="First post published" sub={firstPublished ? firstPublished.date : 'approve a draft to publish it'} />
                       <Milestone current label="Day 90 — full pilot milestone"
@@ -7454,6 +7474,434 @@ fetch('${location.origin}/api/chatbot/ingest', {
     }
   }
 
+  /* ============================================================
+     VIEW: SETUP WIZARD (Phase 2) — answers → Claude drafts the voice
+     brief → owner edits it → Claude plans the first week into Approvals.
+     ============================================================ */
+  // JSON fetch for the wizard: returns the body, or throws an Error carrying
+  // the server's own detail text (a 422 detail can be a list).
+  const apiRequest = async (method, path, body) => {
+    const r = await fetch(path, {
+      method,
+      headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    if (r.status === 401) { window.location.href = '/login'; throw new Error('Signed out'); }
+    const json = await r.json().catch(() => null);
+    if (!r.ok) {
+      const d = json && json.detail;
+      throw new Error(typeof d === 'string' ? d : Array.isArray(d) ? d.map(x => x.msg).join('; ') : `HTTP ${r.status}`);
+    }
+    return json;
+  };
+
+  const ONBOARDING_BUSY = ['drafting', 'planning'];
+  const BRIEF_TEXT_KEYS = ['voice', 'audience', 'value_prop', 'notes'];
+  const BRIEF_LABELED_KEYS = ['amplify', 'maintain', 'mute', 'proof_points'];
+  const BRIEF_LINE_KEYS = ['customer_language', 'constraints', 'seasonal_patterns'];
+
+  // The editor keeps line lists as raw text so Enter can start a new line;
+  // they're split into items only when saved.
+  const briefToForm = (b) => {
+    const f = {};
+    BRIEF_TEXT_KEYS.forEach(k => { f[k] = (b && b[k]) || ''; });
+    BRIEF_LABELED_KEYS.forEach(k => {
+      f[k] = ((b && b[k]) || []).map(x => typeof x === 'string' ? { label: '', detail: x } : { label: x.label || '', detail: x.detail || '' });
+    });
+    BRIEF_LINE_KEYS.forEach(k => { f[k] = ((b && b[k]) || []).join('\n'); });
+    return f;
+  };
+  const formToBrief = (f) => {
+    const b = {};
+    BRIEF_TEXT_KEYS.forEach(k => { const v = (f[k] || '').trim(); if (v) b[k] = v; });
+    BRIEF_LABELED_KEYS.forEach(k => {
+      b[k] = f[k].map(x => ({ label: x.label.trim(), detail: x.detail.trim() })).filter(x => x.label || x.detail);
+    });
+    BRIEF_LINE_KEYS.forEach(k => { b[k] = f[k].split('\n').map(s => s.trim()).filter(Boolean); });
+    return b;
+  };
+
+  const FIELD_CLS = 'w-full px-3 py-2 rounded-lg border border-surface-edge bg-white text-[15px] leading-relaxed focus:outline-none focus:border-brand-500';
+
+  const SetupQuestion = ({ q, value, channels, onChange }) => (
+    <div>
+      <label className="block font-medium text-ink" htmlFor={`q-${q.id}`}>
+        {q.label}{q.required && <span className="text-bad" aria-label="required"> *</span>}
+      </label>
+      {q.help && <p className="text-sm text-ink-soft mt-0.5">{q.help}</p>}
+      {q.kind === 'channels' ? (
+        <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label={q.label}>
+          {channels.map(c => {
+            const on = (value || []).includes(c.key);
+            return (
+              <button type="button" key={c.key} aria-pressed={on}
+                onClick={() => onChange(cur => (cur || []).includes(c.key) ? (cur || []).filter(k => k !== c.key) : [...(cur || []), c.key])}
+                className={`px-3 py-2 rounded-lg border text-sm inline-flex items-center gap-2 ${on ? 'border-brand-500 bg-brand-50 text-brand-700 font-medium' : 'border-surface-edge bg-white text-ink-soft hover:border-brand-300'}`}>
+                <Icon name={on ? 'check' : 'plus'} size={14} strokeWidth={2.4} /> {c.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : q.kind === 'text' ? (
+        <input id={`q-${q.id}`} className={`mt-2 ${FIELD_CLS}`} value={value || ''} placeholder={q.placeholder}
+          maxLength={2000} onChange={e => onChange(e.target.value)} />
+      ) : (
+        <textarea id={`q-${q.id}`} rows={q.id === 'writing_sample' ? 6 : 3} className={`mt-2 ${FIELD_CLS}`}
+          value={value || ''} placeholder={q.placeholder} maxLength={2000} onChange={e => onChange(e.target.value)} />
+      )}
+    </div>
+  );
+
+  const LabeledListEditor = ({ items, onChange, addLabel, labelPlaceholder = 'Short name', detailPlaceholder = 'How to talk about it' }) => (
+    <div className="space-y-3">
+      {items.map((it, i) => (
+        <div key={i} className="flex flex-col sm:flex-row gap-2 sm:items-start">
+          <input aria-label={`${addLabel} ${i + 1} name`} className={`sm:w-52 shrink-0 ${FIELD_CLS}`} value={it.label} placeholder={labelPlaceholder}
+            onChange={e => onChange(items.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} />
+          <textarea aria-label={`${addLabel} ${i + 1} detail`} rows={2} className={`flex-1 min-w-0 ${FIELD_CLS}`} value={it.detail} placeholder={detailPlaceholder}
+            onChange={e => onChange(items.map((x, j) => j === i ? { ...x, detail: e.target.value } : x))} />
+          <button type="button" aria-label={`Remove ${it.label || 'item'}`}
+            className="self-end sm:self-center p-2 rounded-lg text-ink-faint hover:text-bad hover:bg-red-50"
+            onClick={() => onChange(items.filter((_, j) => j !== i))}>
+            <Icon name="x" size={16} />
+          </button>
+        </div>
+      ))}
+      <button type="button" className="text-sm text-brand-600 font-medium inline-flex items-center gap-1 hover:underline"
+        onClick={() => onChange([...items, { label: '', detail: '' }])}>
+        <Icon name="plus" size={14} /> {addLabel}
+      </button>
+    </div>
+  );
+
+  const BriefSection = ({ title, help, children }) => (
+    <section className="bg-white border border-surface-edge rounded-xl p-4 md:p-5">
+      <h3 className="font-semibold text-ink">{title}</h3>
+      {help && <p className="text-sm text-ink-soft mt-0.5 mb-3">{help}</p>}
+      <div className={help ? '' : 'mt-3'}>{children}</div>
+    </section>
+  );
+
+  const WizardError = ({ message }) => message ? (
+    <div role="alert" className="px-3 py-2.5 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-start gap-2">
+      <Icon name="alert" size={15} className="mt-0.5 shrink-0" />
+      <div className="flex-1">{message}</div>
+    </div>
+  ) : null;
+
+  const WizardWorking = ({ title, body, elapsed }) => (
+    <div className="px-4 md:px-8 py-16 max-w-xl mx-auto text-center">
+      <div className="mx-auto w-11 h-11 rounded-full border-2 border-brand-200 border-t-brand-600 animate-spin mb-5" aria-hidden="true"></div>
+      <h2 role="status" className="text-xl font-semibold text-ink">{title}</h2>
+      <p className="mt-2 text-sm text-ink-soft leading-relaxed">{body}</p>
+      <p className="mt-4 text-xs text-ink-faint tabular-nums">
+        {elapsed}s{elapsed > 120 ? ' · taking longer than usual, hang on' : ''}
+      </p>
+      <p className="mt-1 text-xs text-ink-faint">You can leave this page. It keeps going, and the result is here when you come back.</p>
+    </div>
+  );
+
+  const OnboardingView = ({ onNavigate, onReload }) => {
+    const { business } = useDashboard();
+    const rootRef = useRef(null);
+    const [meta, setMeta] = useState(null);
+    const [ob, setOb] = useState(null);
+    const [answers, setAnswers] = useState({});
+    const [website, setWebsite] = useState('');
+    const [step, setStep] = useState(1);
+    const [form, setForm] = useState(null);
+    const [editingAnswers, setEditingAnswers] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const [notice, setNotice] = useState(null);
+    const [loadError, setLoadError] = useState(null);
+    const [elapsed, setElapsed] = useState(0);
+
+    const toTop = () => {
+      try { rootRef.current?.closest('main')?.scrollTo({ top: 0 }); window.scrollTo({ top: 0 }); } catch {}
+    };
+
+    const adopt = (o) => {
+      setOb(o);
+      if (o.brief && ['review', 'plan_failed'].includes(o.status)) setForm(briefToForm(o.brief));
+      if (o.error) setError(o.error);
+    };
+
+    useEffect(() => {
+      let cancelled = false;
+      apiRequest('GET', '/api/onboarding')
+        .then(res => {
+          if (cancelled) return;
+          setMeta({ steps: res.steps, questions: res.questions, channels: res.channels });
+          setAnswers(res.onboarding.answers || {});
+          setWebsite(res.onboarding.website || '');
+          adopt(res.onboarding);
+        })
+        .catch(e => { if (!cancelled) { console.error('[onboarding] load failed', e); setLoadError(e.message); } });
+      return () => { cancelled = true; };
+    }, []);
+
+    // Each new screen starts at the top, wherever the last one was scrolled.
+    const status = ob?.status;
+    useEffect(() => { toTop(); }, [status, step, editingAnswers]);
+
+    // While Claude works, poll every 3 s and keep a visible clock running.
+    useEffect(() => {
+      if (!ONBOARDING_BUSY.includes(status)) return;
+      const started = Date.now();
+      setElapsed(0);
+      const tick = setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 1000);
+      const poll = setInterval(async () => {
+        try {
+          const res = await apiRequest('GET', '/api/onboarding');
+          if (!ONBOARDING_BUSY.includes(res.onboarding.status)) {
+            adopt(res.onboarding);
+            toTop();
+            if (res.onboarding.status === 'done' && onReload) onReload();
+          }
+        } catch (e) { console.error('[onboarding] poll failed', e); }
+      }, 3000);
+      return () => { clearInterval(tick); clearInterval(poll); };
+    }, [status]);
+
+    const run = async (fn) => {
+      setBusy(true); setError(null); setNotice(null);
+      try { await fn(); } catch (e) { console.error('[onboarding]', e); setError(e.message || String(e)); }
+      finally { setBusy(false); }
+    };
+    const saveAnswers = async () => {
+      const res = await apiRequest('PUT', '/api/onboarding/answers', { answers, website });
+      setOb(res.onboarding);
+      return res.onboarding;
+    };
+
+    if (loadError) {
+      return (
+        <div className="px-4 md:px-8 py-10 max-w-xl mx-auto">
+          <WizardError message={`Couldn't load setup (${loadError}). Reload the page to try again.`} />
+        </div>
+      );
+    }
+    if (!ob || !meta) {
+      return <WizardWorking title="Loading setup…" body="" elapsed={0} />;
+    }
+
+    if (!ob.canEdit && ob.status !== 'done') {
+      return (
+        <div className="fade-in">
+          <TopBar breadcrumb="Setup" title="Setting up the agent" />
+          <div className="px-4 md:px-8 py-8 max-w-2xl">
+            <EmptyNote icon="sparkles" title="The business owner is setting this up">
+              Once they've answered the setup questions, the agent writes in their voice and the first week of posts shows up in Approvals.
+            </EmptyNote>
+          </div>
+        </div>
+      );
+    }
+
+    const steps = meta.steps;
+    const stepMeta = steps.find(s => s.step === step) || steps[0];
+    const stepQuestions = meta.questions.filter(q => q.step === step);
+    const isAnswered = (q) => q.kind === 'channels' ? (answers[q.id] || []).length > 0 : !!(answers[q.id] || '').trim();
+    const missing = stepQuestions.filter(q => q.required && !isAnswered(q));
+    const siteHost = (() => { try { return new URL(/^https?:/.test(website) ? website : `https://${website}`).hostname; } catch { return ''; } })();
+
+    // ---- Claude is working ----------------------------------------------
+    if (ob.status === 'drafting') {
+      return (
+        <div ref={rootRef} className="fade-in">
+          <TopBar breadcrumb="Setup" title="Drafting your voice brief" />
+          <WizardWorking title="Claude is drafting your voice brief"
+            body={`It's reading your answers${siteHost ? ` and ${siteHost}` : ''}. This usually takes under a minute.`}
+            elapsed={elapsed} />
+        </div>
+      );
+    }
+    if (ob.status === 'planning') {
+      return (
+        <div ref={rootRef} className="fade-in">
+          <TopBar breadcrumb="Setup" title="Planning your first week" />
+          <WizardWorking title="Planning your first week"
+            body="Claude is writing your marketing plan and three first-week posts in your voice. They'll wait in Approvals for your sign-off."
+            elapsed={elapsed} />
+        </div>
+      );
+    }
+
+    // ---- Finished --------------------------------------------------------
+    if (ob.status === 'done') {
+      return (
+        <div ref={rootRef} className="fade-in">
+          <TopBar breadcrumb="Setup" title="Your agent is set up" />
+          <div className="px-4 md:px-8 py-10 max-w-xl mx-auto text-center">
+            <div className="mx-auto w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4">
+              <Icon name="check" size={24} strokeWidth={2.4} />
+            </div>
+            <h2 className="text-2xl font-semibold text-ink">You're all set</h2>
+            <p className="mt-2 text-ink-soft leading-relaxed">
+              {ob.planned
+                ? `Your first ${ob.planned} posts are waiting in Approvals. Approve, edit, or toss each one. Nothing is posted without you.`
+                : 'The agent now writes from your voice brief. Ask it for a post any time.'}
+            </p>
+            <div className="mt-6 flex flex-col sm:flex-row gap-2 justify-center">
+              <Button size="lg" icon="inbox" onClick={() => onNavigate('approvals')}>Review your first posts</Button>
+              <Button size="lg" variant="secondary" onClick={() => onNavigate('plan')}>See your marketing plan</Button>
+            </div>
+            <button type="button" className="mt-6 text-sm text-ink-faint hover:text-ink underline disabled:opacity-50" disabled={busy}
+              onClick={() => run(async () => { const res = await apiRequest('POST', '/api/onboarding/restart'); setEditingAnswers(false); setStep(1); adopt(res.onboarding); toTop(); })}>
+              Redo setup
+            </button>
+            <div className="mt-3"><WizardError message={error} /></div>
+          </div>
+        </div>
+      );
+    }
+
+    // ---- Review the draft brief -----------------------------------------
+    if (['review', 'plan_failed'].includes(ob.status) && !editingAnswers && form) {
+      const set = (k) => (v) => setForm(f => ({ ...f, [k]: v }));
+      const text = (k, rows = 3, placeholder = '') => (
+        <textarea aria-label={k} rows={rows} className={FIELD_CLS} value={form[k]} placeholder={placeholder}
+          onChange={e => set(k)(e.target.value)} />
+      );
+      const summary = ob.brief && ob.brief._website_summary;
+      return (
+        <div ref={rootRef} className="fade-in">
+          <TopBar breadcrumb="Setup · last step" title="Review your voice brief" />
+          <div className="px-4 md:px-8 py-6 md:py-8 max-w-3xl mx-auto space-y-4">
+            <p className="text-ink-soft leading-relaxed">
+              Claude drafted this from your answers{siteHost ? ` and ${siteHost}` : ''}. The agent writes every post from it, so fix anything that's off.
+            </p>
+            {ob.status === 'plan_failed' && <WizardError message={error || 'Planning your first week failed.'} />}
+            {summary && (
+              <div className="text-sm bg-brand-50 text-brand-800 rounded-lg px-3 py-2.5">
+                <span className="font-medium">From your website:</span> {summary}
+              </div>
+            )}
+            <BriefSection title="How you sound" help="Taken from your writing sample. The agent copies this style.">{text('voice', 6)}</BriefSection>
+            <BriefSection title="Who you're for">{text('audience', 3)}</BriefSection>
+            <BriefSection title="What makes you different">{text('value_prop', 3)}</BriefSection>
+            <BriefSection title="Push these" help="The agent leads with these.">
+              <LabeledListEditor items={form.amplify} onChange={set('amplify')} addLabel="Add something to push" />
+            </BriefSection>
+            <BriefSection title="Keep steady" help="Mentioned now and then, no push.">
+              <LabeledListEditor items={form.maintain} onChange={set('maintain')} addLabel="Add something to keep steady" />
+            </BriefSection>
+            <BriefSection title="Play down or leave out" help="The agent stays away from these.">
+              <LabeledListEditor items={form.mute} onChange={set('mute')} addLabel="Add something to leave out" />
+            </BriefSection>
+            <BriefSection title="Proof" help="Only real facts. The agent never makes up numbers.">
+              <LabeledListEditor items={form.proof_points} onChange={set('proof_points')} addLabel="Add proof" detailPlaceholder="The fact, e.g. 4.9 stars from 200 Google reviews" />
+            </BriefSection>
+            <BriefSection title="Words your customers use" help="One phrase per line.">{text('customer_language', 4)}</BriefSection>
+            <BriefSection title="Rules for the agent" help="One rule per line.">{text('constraints', 4)}</BriefSection>
+            <BriefSection title="Busy and slow seasons" help="One per line.">{text('seasonal_patterns', 3)}</BriefSection>
+            <BriefSection title="Other notes">{text('notes', 3)}</BriefSection>
+
+            {ob.status === 'review' && <WizardError message={error} />}
+            {notice && <div role="status" className="text-sm text-ok">{notice}</div>}
+            <div className="pt-2 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex flex-wrap gap-2">
+                <Button variant="ghost" disabled={busy} onClick={() => { setEditingAnswers(true); setStep(1); setError(null); toTop(); }}>
+                  Change my answers
+                </Button>
+                <Button variant="secondary" disabled={busy}
+                  onClick={() => run(async () => {
+                    const res = await apiRequest('PUT', '/api/onboarding/brief', { brief: formToBrief(form) });
+                    setOb(res.onboarding); setNotice('Saved.');
+                  })}>
+                  Save edits
+                </Button>
+              </div>
+              {ob.status === 'plan_failed' ? (
+                <Button size="lg" icon="refresh" disabled={busy}
+                  onClick={() => run(async () => {
+                    await apiRequest('PUT', '/api/onboarding/brief', { brief: formToBrief(form) });
+                    const res = await apiRequest('POST', '/api/onboarding/plan');
+                    adopt(res.onboarding); toTop();
+                  })}>
+                  {busy ? 'Starting…' : 'Try planning again'}
+                </Button>
+              ) : (
+                <Button size="lg" icon="sparkles" disabled={busy}
+                  onClick={() => run(async () => {
+                    const res = await apiRequest('POST', '/api/onboarding/finish', { brief: formToBrief(form) });
+                    adopt(res.onboarding); toTop();
+                  })}>
+                  {busy ? 'Saving…' : 'Looks right. Plan my first week'}
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ---- Questions -------------------------------------------------------
+    const lastStep = step >= steps.length;
+    const next = () => run(async () => {
+      await saveAnswers();
+      if (!lastStep) { setStep(step + 1); toTop(); return; }
+      const res = await apiRequest('POST', '/api/onboarding/draft');
+      setEditingAnswers(false);
+      adopt(res.onboarding);
+      toTop();
+    });
+    const later = () => run(async () => {
+      await saveAnswers();
+      if (ob.status !== 'review' || ob.redo) await apiRequest('POST', '/api/onboarding/skip');
+      if (onReload) onReload();
+      onNavigate('home');
+    });
+    return (
+      <div ref={rootRef} className="fade-in">
+        <TopBar breadcrumb={`Setup · step ${step} of ${steps.length}`} title="Set up your agent" />
+        <div className="px-4 md:px-8 py-6 md:py-8 max-w-3xl mx-auto">
+          <div className="flex items-center gap-2 mb-6" aria-hidden="true">
+            {steps.map(s => <div key={s.step} className={`h-1.5 flex-1 rounded-full ${s.step <= step ? 'bg-brand-500' : 'bg-surface-edge'}`} />)}
+          </div>
+          <h2 className="text-2xl font-semibold text-ink">{stepMeta.title}</h2>
+          <p className="text-sm text-ink-soft mt-1">{stepMeta.blurb}</p>
+          {step === 1 && (
+            <div className="mt-5 rounded-xl bg-brand-50 border border-brand-100 p-4 text-sm text-brand-900 leading-relaxed">
+              About ten minutes. Claude turns your answers{siteHost ? ` and ${siteHost}` : ' and your website'} into a voice brief, so the agent writes the way you talk.
+              You check the brief before anything is used, and nothing is ever posted without your approval.
+            </div>
+          )}
+          <div className="mt-6 space-y-6">
+            {step === 1 && (
+              <div>
+                <label className="block font-medium text-ink" htmlFor="q-website">Your website</label>
+                <p className="text-sm text-ink-soft mt-0.5">Optional. Claude reads it to learn what you sell.</p>
+                <input id="q-website" type="url" inputMode="url" autoComplete="url" className={`mt-2 ${FIELD_CLS}`}
+                  placeholder="yourbusiness.com" value={website} onChange={e => setWebsite(e.target.value)} />
+              </div>
+            )}
+            {stepQuestions.map(q => (
+              <SetupQuestion key={q.id} q={q} value={answers[q.id]} channels={meta.channels}
+                onChange={v => setAnswers(a => ({ ...a, [q.id]: typeof v === 'function' ? v(a[q.id]) : v }))} />
+            ))}
+          </div>
+          <div className="mt-6"><WizardError message={error} /></div>
+          <div className="mt-6 flex flex-col-reverse sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div className="flex flex-wrap gap-2">
+              {step > 1 && <Button variant="ghost" disabled={busy} onClick={() => { setStep(step - 1); toTop(); }}>Back</Button>}
+              {editingAnswers
+                ? <Button variant="ghost" disabled={busy} onClick={() => { setEditingAnswers(false); toTop(); }}>Back to my brief</Button>
+                : <Button variant="ghost" disabled={busy} onClick={later}>{ob.redo ? 'Keep my current brief' : "I'll finish later"}</Button>}
+            </div>
+            <div className="flex flex-col items-stretch sm:items-end gap-1">
+              <Button size="lg" icon={lastStep ? 'sparkles' : undefined} disabled={busy || missing.length > 0} onClick={next}>
+                {busy ? 'Saving…' : !lastStep ? 'Save and continue' : editingAnswers ? 'Redraft my voice brief' : 'Draft my voice brief'}
+              </Button>
+              {missing.length > 0 && <span className="text-xs text-ink-faint">Answer the questions marked * to continue.</span>}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Full-page state while the dashboard loads, or when it can't. Shows no
   // business data at all, so nothing from another account can leak in.
   const BootScreen = ({ error }) => (
@@ -7627,12 +8075,22 @@ fetch('${location.origin}/api/chatbot/ingest', {
   };
 
   const App = () => {
-    // Initial view honors ?tab=settings — the LinkedIn OAuth callback redirects
-    // back to /?tab=settings&li=<status> so the owner lands where they started.
-    const [view, setView] = useState(() => {
-      try { return new URLSearchParams(window.location.search).get('tab') === 'settings' ? 'settings' : 'home'; }
-      catch { return 'home'; }
+    // Initial view honors ?tab=<view>: the LinkedIn OAuth callback returns to
+    // /?tab=settings&li=<status>, and reminder emails link to /?tab=approvals.
+    const [linkedTab] = useState(() => {
+      try {
+        const t = new URLSearchParams(window.location.search).get('tab');
+        return VIEW_IDS.includes(t) ? t : null;
+      } catch { return null; }
     });
+    const [view, setView] = useState(() => linkedTab || 'home');
+    // Emails also carry ?b=<business id> so a person on several businesses
+    // lands on the right one. Read once.
+    const [linkedBusiness] = useState(() => {
+      try { return parseInt(new URLSearchParams(window.location.search).get('b') || '', 10) || null; }
+      catch { return null; }
+    });
+    const routedOnce = useRef(false);
     // The OAuth return status (?li=connected|denied|error|...). Read once, then
     // handed to SettingsView which toasts it and scrubs the URL.
     const [linkedinReturn] = useState(() => {
@@ -7660,9 +8118,21 @@ fetch('${location.origin}/api/chatbot/ingest', {
       navigate('plan');
     };
 
+    const [reloadKey, setReloadKey] = useState(0);
+    const reloadBootstrap = () => setReloadKey(k => k + 1);
     useEffect(() => {
       let cancelled = false;
-      fetch('/api/bootstrap', { headers: { 'Accept': 'application/json' } })
+      // A deep link for a different business switches to it first. A failed
+      // switch (not a member) just loads the current business.
+      const switchFirst = (reloadKey === 0 && linkedBusiness)
+        ? fetch('/api/auth/switch', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ business_id: linkedBusiness }),
+          }).then(r => { if (!r.ok) console.warn('[bootstrap] switch to linked business failed', r.status); })
+            .catch(e => console.warn('[bootstrap] switch failed', e))
+        : Promise.resolve();
+      switchFirst
+        .then(() => fetch('/api/bootstrap', { headers: { 'Accept': 'application/json' } }))
         .then(r => {
           // Signed out / session expired → back to the sign-in page rather
           // than an error screen the owner can't do anything about.
@@ -7680,6 +8150,16 @@ fetch('${location.origin}/api/chatbot/ingest', {
           }
           setBootstrap(data);
           setLoadError(null);
+          // A new owner lands in setup on first load (not when a link named
+          // a tab, and never on the demo account).
+          if (!routedOnce.current) {
+            routedOnce.current = true;
+            const ob = data.onboarding;
+            if (!linkedTab && ob?.needed && ob.status !== 'skipped' && !data.business?.isDemo
+                && data.access?.can?.edit_marketing_plan) {
+              setView('onboarding');
+            }
+          }
           try { document.title = `${data.business?.name || 'Your business'} — Marketing dashboard`; } catch {}
           console.log('[bootstrap] loaded', {
             posts: data.posts?.length,
@@ -7693,7 +8173,7 @@ fetch('${location.origin}/api/chatbot/ingest', {
           setLoadError(err.message || String(err));
         });
       return () => { cancelled = true; };
-    }, []);
+    }, [reloadKey]);
 
     // Phase 1: a signed-in client must never see Quadd's built-in sample
     // data. FALLBACK_DATA is only for an explicit offline design preview
@@ -7725,6 +8205,7 @@ fetch('${location.origin}/api/chatbot/ingest', {
           {bootstrap?.access && !bootstrap.access.can?.publish_post && <ViewOnlyNotice role={bootstrap.access.role} />}
           {bootstrap?.business?.deletionDueAt && <DeletionNotice due={bootstrap.business.deletionDueAt} />}
           <ViewErrorBoundary view={view}>
+          {view === 'onboarding'  && <OnboardingView onNavigate={navigate} onReload={reloadBootstrap} />}
           {view === 'home'        && <HomeView onNavigate={navigate} />}
           {view === 'compose'     && <ComposeView onNavigate={navigate} />}
           {view === 'calendar'    && <CalendarView onNavigate={navigate} />}
@@ -7732,7 +8213,7 @@ fetch('${location.origin}/api/chatbot/ingest', {
           {view === 'performance' && <PerformanceView />}
           {view === 'ads'         && <AdsView onNavigate={navigate} />}
           {view === 'reviews'     && <ReviewsView scrollToId={scrollToId} onScrollHandled={() => setScrollToId(null)} />}
-          {view === 'plan'        && <MarketingPlanView pendingTrain={pendingTrain} onClearTrain={() => setPendingTrain(null)} />}
+          {view === 'plan'        && <MarketingPlanView pendingTrain={pendingTrain} onClearTrain={() => setPendingTrain(null)} onNavigate={navigate} />}
           {view === 'inventory'   && <InventoryView onNavigate={navigate} />}
           {view === 'chat'        && <ChatView onNavigate={navigate} />}
           {view === 'chatbotpreview' && <ChatbotPreviewView onNavigate={navigate} onTrain={handleTrain} />}

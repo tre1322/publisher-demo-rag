@@ -362,4 +362,12 @@ def _event_generator(
         )
     except Exception as exc:
         log.exception("Chat stream failed")
+        # The global error handler never sees exceptions inside a stream, so
+        # alert from here (e.g. the API account running out of credit).
+        import threading
+
+        from ..alerts import notify_error
+
+        threading.Thread(target=notify_error, args=(exc,), kwargs={"method": "POST", "path": "/api/chat/turn"},
+                         daemon=True).start()
         yield _sse("error", {"detail": f"Claude call failed: {exc}"})

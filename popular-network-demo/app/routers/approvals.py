@@ -60,6 +60,20 @@ _DECIDE_CAPABILITY = {
 }
 
 
+def _post_date(a: Approval, now: datetime) -> str:
+    """The calendar day an approved post lands on: the day it was planned for
+    (first-week drafts carry one), unless that day has already passed."""
+    today = now.strftime("%Y-%m-%d")
+    planned = str((a.payload_json or {}).get("plannedDate") or "")
+    if len(planned) == 10 and planned > today:
+        try:
+            datetime.strptime(planned, "%Y-%m-%d")
+            return planned
+        except ValueError:
+            pass
+    return today
+
+
 class DecideRequest(BaseModel):
     decision: Literal["approve", "edit", "reject"]
     edited_draft: Optional[str] = Field(default=None, max_length=5000)
@@ -143,7 +157,7 @@ def decide(
     if a.kind == "post":
         new_post = Post(
             business_id=a.business_id,
-            date=now.strftime("%Y-%m-%d"),
+            date=_post_date(a, now),
             platform=a.platform,
             status="approved",
             title=a.title,

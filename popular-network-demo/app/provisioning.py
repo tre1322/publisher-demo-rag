@@ -151,15 +151,9 @@ def create_business(
     ))
     db.add(DashboardNotices(
         business_id=biz.id,
-        attention_json=[
-            {"kind": "gap", "title": "Your voice interview is next",
-             "detail": "Amplafai will set up a short interview so your AI agent writes the way you talk. "
-                       "Until then, drafts lean on your marketing plan.",
-             "cta": "Open marketing plan", "icon": "sparkles", "tone": "teal", "target": "plan"},
-            {"kind": "pending", "title": "Your first drafts will land in Approvals",
-             "detail": "Nothing is posted without your sign-off. Ask the AI agent for a first post any time.",
-             "cta": "Open AI agent", "icon": "inbox", "tone": "amber", "target": "chat"},
-        ],
+        # Setup and pending-draft items are computed live by bootstrap
+        # (_attention_payload), so nothing static goes stale here.
+        attention_json=[],
         week_recap_json=[{"when_iso": now.isoformat(), "text": f"{biz.name} joined Amplafai"}],
         # No overrides: the Home tiles are computed from real data.
         stats_overrides_json=None,

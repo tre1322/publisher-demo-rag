@@ -52,6 +52,7 @@ from .routers import (  # noqa: E402
     inventory,
     invites,
     marketing_plan,
+    onboarding,
     password_reset,
     performance,
     posts,
@@ -112,6 +113,8 @@ def _startup() -> None:
     _add_col_if_missing("businesses", "website", "VARCHAR(200)")
     _add_col_if_missing("businesses", "deletion_requested_at", "DATETIME")
     _add_col_if_missing("businesses", "deletion_due_at", "DATETIME")
+    # Phase 2: onboarding wizard progress.
+    _add_col_if_missing("businesses", "onboarding_json", "JSON")
     inserted = seed_if_empty()
     if inserted:
         log.info("Seeded Quadd.ai (business_id=1) — Day-1 customer w/ voice brief loaded")
@@ -562,6 +565,7 @@ app.include_router(inventory.router, prefix="/api", tags=["inventory"])
 app.include_router(billing.router, prefix="/api", tags=["billing"])
 app.include_router(chatbot.router, prefix="/api", tags=["chatbot"])
 app.include_router(compose.router, prefix="/api", tags=["compose"])
+app.include_router(onboarding.router, prefix="/api", tags=["onboarding"])
 
 
 # Phase H.1.5 — auth-gate the dashboard HTML.
