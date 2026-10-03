@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -388,6 +388,9 @@ class AdPlatformBudget(Base):
     # monthly_cap_cents at or below this on its own, never above it.
     # NULL = owner hasn't authorized anything this month.
     owner_cap_cents: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Phase 4b: cap alerts already sent this month, {"80": iso, "100": iso},
+    # so each level emails once.
+    alerts_json: Mapped[Any] = mapped_column(JSON, nullable=True)
 
 
 class AdCampaign(Base):
@@ -452,6 +455,44 @@ class AdOpsRequest(Base):
     done_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     done_by: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
     done_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class AdImport(Base):
+    """Phase 4b: one upload of a platform's results export (admin console)."""
+
+    __tablename__ = "ad_imports"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"), index=True)
+    platform: Mapped[str] = mapped_column(String(16))
+    filename: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    imported_by: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    date_from: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    date_to: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    rows: Mapped[int] = mapped_column(Integer, default=0)
+    total_spend_cents: Mapped[int] = mapped_column(Integer, default=0)
+    unmatched_json: Mapped[Any] = mapped_column(JSON, nullable=True)
+
+
+class AdSpendDay(Base):
+    """Phase 4b: a managed campaign's real results for one day, from the
+    platform's own export. Re-importing a day replaces it, so campaign and
+    monthly totals are always sums of these rows (never running counters)."""
+
+    __tablename__ = "ad_spend_days"
+    __table_args__ = (UniqueConstraint("campaign_id", "day", name="uq_ad_spend_day"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"), index=True)
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("ad_campaigns.id"), index=True)
+    platform: Mapped[str] = mapped_column(String(16))
+    day: Mapped[str] = mapped_column(String(10))  # YYYY-MM-DD, platform's reporting day
+    spend_cents: Mapped[int] = mapped_column(Integer, default=0)
+    impressions: Mapped[int] = mapped_column(Integer, default=0)
+    clicks: Mapped[int] = mapped_column(Integer, default=0)
+    import_id: Mapped[Optional[int]] = mapped_column(ForeignKey("ad_imports.id"), nullable=True)
+    imported_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
 class AdConnection(Base):

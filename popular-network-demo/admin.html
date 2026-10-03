@@ -171,6 +171,23 @@
         <button type="button" data-a="copy-embed" class="mt-2 px-3 py-1.5 rounded-lg border border-slate-300">Copy code</button>
       </div>
 
+      <div data-f="ad-results" class="hidden mt-4 pt-3 border-t border-slate-100 text-sm">
+        <div class="flex flex-wrap items-end gap-2">
+          <span class="text-slate-500 mr-1 self-center">Ad results</span>
+          <label>From
+            <select data-f="ad-platform" class="mt-1 block px-3 py-1.5 border border-slate-300 rounded-lg bg-white">
+              <option value="fb_ig">Meta Ads Manager</option><option value="google_ads">Google Ads</option>
+              <option value="linkedin">LinkedIn Campaign Manager</option><option value="tiktok">TikTok Ads Manager</option>
+            </select>
+          </label>
+          <label>Export (CSV, by day)<input data-f="ad-file" type="file" accept=".csv,.tsv,.txt,text/csv" class="mt-1 block text-sm" /></label>
+          <button type="button" data-a="ad-preview" class="px-3 py-1.5 rounded-lg border border-slate-300">Preview</button>
+        </div>
+        <p class="mt-1 text-xs text-slate-500">Download the campaign report broken down by day, with the Campaign ID column, for the days since the last upload (overlapping days are replaced, never double-counted).</p>
+        <p data-f="ad-last" class="mt-1 text-xs text-slate-500"></p>
+        <div data-f="ad-preview-box" class="hidden mt-3 rounded-lg border border-slate-200 p-3"></div>
+      </div>
+
       <div class="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-2 text-sm">
         <span class="text-slate-500 mr-1">Emails</span>
         <button type="button" data-a="preview-approvals" class="px-3 py-1.5 rounded-lg border border-slate-300">Email me the approvals reminder</button>
@@ -289,6 +306,7 @@ function renderCard(b) {
   }
   card.querySelector('[data-a="schedule-deletion"]').disabled = !!b.deletionDueAt;
   card.querySelector('[data-a="export"]').href = `/api/admin/businesses/${b.id}/export`;
+  if (!b.isDemo) wireAdResults(card, b);
   for (const kind of ['approvals', 'weekly']) {
     card.querySelector(`[data-a="preview-${kind}"]`).onclick = (ev) => withBusy(ev.currentTarget, async () => {
       try {
@@ -445,7 +463,7 @@ function ago(iso) {
   const hrs = Math.round(mins / 60);
   return hrs < 48 ? `${hrs} h ago` : `${Math.round(hrs / 24)} days ago`;
 }
-function usd(cents) { return '$' + (cents / 100).toLocaleString(undefined, {maximumFractionDigits: 2}); }
+function usd(cents) { return '$' + (cents / 100).toLocaleString(undefined, {minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: 2}); }
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -558,6 +576,103 @@ async function loadAds() {
   const status = document.getElementById('ads-status');
   try { renderAds(await api('GET', '/api/admin/ads/requests')); }
   catch (err) { status.textContent = `Couldn't load ad requests: ${err.message}`; status.className = 'text-sm text-red-700'; }
+}
+
+// ---------------------------------------------------------------- ad results (Phase 4b)
+function fileB64(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(',', 2)[1] || '');
+    r.onerror = () => reject(new Error("Couldn't read the file."));
+    r.readAsDataURL(file);
+  });
+}
+
+async function showLastImport(card, b) {
+  const el = card.querySelector('[data-f="ad-last"]');
+  try {
+    const res = await api('GET', `/api/admin/businesses/${b.id}/ads/imports`);
+    const last = res.imports[0];
+    el.textContent = last
+      ? `Last upload: ${last.filename || 'export'} (${last.dateFrom} to ${last.dateTo}, ${usd(last.totalSpendCents)}) by ${last.by}, ${ago(last.at)}.`
+      : 'No uploads yet.';
+  } catch (e) { el.textContent = `Couldn't load past uploads: ${e.message}`; }
+}
+
+function renderImportSummary(box, s, onImport) {
+  box.replaceChildren();
+  box.classList.remove('hidden');
+  const head = el('p', 'font-medium', s.committed
+    ? `Imported ${s.source}: ${s.dateFrom} to ${s.dateTo}, ${usd(s.totalSpendCents)}.`
+    : (s.campaigns.length ? `Preview of ${s.source}: ${s.dateFrom} to ${s.dateTo}, ${usd(s.totalSpendCents)} in the file. Nothing is saved yet.`
+                          : `Preview of ${s.source}: nothing to import.`));
+  box.append(head);
+  if (s.problem) box.append(el('p', 'mt-1 text-red-700', s.problem));
+  if (s.campaigns.length) {
+    const wrap = el('div', 'mt-2 overflow-x-auto');
+    const t = el('table', 'w-full text-sm');
+    const hr = el('tr', 'text-left text-xs text-slate-500');
+    for (const h of ['Campaign', 'Days', 'In file', 'Spend before', 'Spend after']) hr.append(el('th', 'py-1 pr-3 font-medium', h));
+    t.append(hr);
+    for (const c of s.campaigns) {
+      const tr = el('tr', 'border-t border-slate-100');
+      tr.append(el('td', 'py-1 pr-3', `${c.name} (${c.externalCampaignId})`),
+                el('td', 'py-1 pr-3 tabular-nums', `${c.days}${c.replacedDays ? ` (${c.replacedDays} replaced)` : ''}`),
+                el('td', 'py-1 pr-3 tabular-nums', usd(c.fileSpendCents)),
+                el('td', 'py-1 pr-3 tabular-nums', usd(c.beforeCents)),
+                el('td', 'py-1 pr-3 tabular-nums font-medium', usd(c.afterCents)));
+      t.append(tr);
+    }
+    wrap.append(t);
+    box.append(wrap);
+  }
+  if (s.unmatched.length) {
+    box.append(el('p', 'mt-2 text-amber-800', `Not imported (${s.unmatched.length}):`));
+    const ul = el('ul', 'list-disc pl-5 text-amber-800');
+    for (const u of s.unmatched) ul.append(el('li', '', `${u.campaign}${u.id && u.id !== u.campaign ? ` (${u.id})` : ''}: ${u.reason}; ${u.rows} row(s), ${usd(u.spendCents)}`));
+    box.append(ul);
+  }
+  const cols = Object.entries(s.columns || {}).map(([k, v]) => `${k.replace('_', ' ')} = "${v}"`).join(', ');
+  box.append(el('p', 'mt-2 text-xs text-slate-500', `Columns used: ${cols}. Currency: ${s.currency}.${s.skippedRows ? ` Skipped ${s.skippedRows} total row(s).` : ''}`));
+  for (const a of s.alerts || []) {
+    box.append(el('p', `mt-2 ${a.level >= 100 ? 'text-red-700' : 'text-amber-800'} font-medium`,
+      `${a.level}% of the monthly cap (${usd(a.spendCents)} of ${usd(a.capCents)}): owner and Amplafai emailed.` +
+      (a.pauseRequested.length ? ` Pause requested for: ${a.pauseRequested.join(', ')}.` : '')));
+  }
+  if (!s.committed && s.campaigns.length && onImport) {
+    const btn = el('button', 'mt-3 px-4 py-2 rounded-lg bg-slate-900 text-white', 'Import these numbers');
+    btn.type = 'button';
+    btn.onclick = () => withBusy(btn, onImport);
+    box.append(btn);
+  }
+}
+
+function wireAdResults(card, b) {
+  const f = (k) => card.querySelector(`[data-f="${k}"]`);
+  f('ad-results').classList.remove('hidden');
+  showLastImport(card, b);
+  const box = f('ad-preview-box');
+  const send = async (commit) => {
+    const file = f('ad-file').files[0];
+    if (!file) throw new Error('Choose the export file first.');
+    return api('POST', `/api/admin/businesses/${b.id}/ads/import`, {
+      platform: f('ad-platform').value, filename: file.name, commit, content_b64: await fileB64(file),
+    });
+  };
+  card.querySelector('[data-a="ad-preview"]').onclick = (ev) => withBusy(ev.currentTarget, async () => {
+    try {
+      renderImportSummary(box, await send(false), async () => {
+        try {
+          renderImportSummary(box, await send(true), null);
+          showLastImport(card, b);
+          loadAds();
+        } catch (e) { box.append(el('p', 'mt-2 text-red-700', `Not imported: ${e.message}`)); }
+      });
+    } catch (e) {
+      box.classList.remove('hidden');
+      box.replaceChildren(el('p', 'text-red-700', e.message));
+    }
+  });
 }
 
 async function loadList() {

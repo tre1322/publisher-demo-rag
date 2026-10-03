@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 from ..auth.permissions import VALID_ROLES
 from ..auth.sessions import COOKIE_NAME, lookup_session
 from ..data_lifecycle import cancel_deletion, export_business, purge_business, schedule_deletion
-from ..db import get_db
+from ..db import current_tenant_id, get_db
 from ..models import Business, BusinessUser, Escalation, Invite, User
 from ..provisioning import create_business
 from .. import managed_ads, subscriptions
@@ -434,6 +434,69 @@ def ad_request_drop(
         raise HTTPException(status_code=e.status, detail=str(e))
     db.commit()
     return _ads_queue(db)
+
+
+class AdImportBody(BaseModel):
+    platform: str = Field(max_length=16)
+    filename: str = Field(default="export.csv", max_length=200)
+    content_b64: str = Field(max_length=5_000_000)
+    commit: bool = False
+
+
+@router.post("/businesses/{business_id}/ads/import")
+def ad_import(
+    business_id: int,
+    body: AdImportBody,
+    user_id: int = Depends(require_superuser),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Phase 4b: preview (commit=false) or apply a platform's results export."""
+    import base64
+    import binascii
+
+    from .. import ad_imports
+
+    biz = _get_business(db, business_id)
+    try:
+        data = base64.b64decode(body.content_b64, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=422, detail="The file didn't upload cleanly. Try choosing it again.")
+    me = db.get(User, user_id)
+    # Scope every query in the import to the client's business (the admin's
+    # own session points at whichever business they last opened).
+    token = current_tenant_id.set(business_id)
+    try:
+        summary = ad_imports.run_import(db, biz, body.platform, data, filename=body.filename,
+                                        by=me.email, commit=body.commit)
+    except ad_imports.ImportProblem as e:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(e))
+    finally:
+        current_tenant_id.reset(token)
+    if summary["committed"]:
+        db.commit()
+    else:
+        db.rollback()
+    return summary
+
+
+@router.get("/businesses/{business_id}/ads/imports")
+def ad_import_history(business_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    from sqlalchemy import select
+
+    from ..models import AdImport
+
+    _get_business(db, business_id)
+    rows = db.execute(
+        select(AdImport).where(AdImport.business_id == business_id)
+        .order_by(AdImport.imported_at.desc()).limit(20)
+        .execution_options(include_all_tenants=True)
+    ).scalars()
+    return {"imports": [{
+        "id": r.id, "platform": r.platform, "filename": r.filename, "by": r.imported_by,
+        "at": r.imported_at.isoformat(), "dateFrom": r.date_from, "dateTo": r.date_to,
+        "rows": r.rows, "totalSpendCents": r.total_spend_cents, "unmatched": len(r.unmatched_json or []),
+    } for r in rows]}
 
 
 @router.get("/businesses/{business_id}/export")
