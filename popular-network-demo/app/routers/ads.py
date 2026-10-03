@@ -36,6 +36,7 @@ from ..db import get_db
 from ..models import (
     AdCampaign,
     AdConnection,
+    AdImport,
     AdPlatformBudget,
     Approval,
     Business,
@@ -159,6 +160,24 @@ def campaign_payload(c: AdCampaign, req: Any = None, managed: bool = False) -> d
     }
 
 
+def _last_imports(db: Session, business_id: int) -> dict[str, Any]:
+    from ..ad_imports import SOURCE_LABELS
+
+    from sqlalchemy import func
+
+    from ..models import AdSpendDay
+
+    through = dict(db.query(AdSpendDay.platform, func.max(AdSpendDay.day))
+                   .filter(AdSpendDay.business_id == business_id).group_by(AdSpendDay.platform).all())
+    out: dict[str, Any] = {}
+    for r in (db.query(AdImport).filter(AdImport.business_id == business_id)
+              .order_by(AdImport.imported_at.desc()).limit(50)):
+        if r.platform not in out:
+            out[r.platform] = {"at": r.imported_at.isoformat(), "through": through.get(r.platform),
+                               "source": SOURCE_LABELS.get(r.platform, r.platform)}
+    return out
+
+
 def actor(db: Session, request: Request) -> str:
     """Who is asking, for Amplafai's request queue."""
     user = db.get(User, getattr(request.state, "user_id", None)) if getattr(request.state, "user_id", None) else None
@@ -234,6 +253,8 @@ def get_ads(business_id: int = Depends(get_tenant_id), db: Session = Depends(get
         "planMessage":       managed_ads.PLAN_MESSAGE,
         "promise":           managed_ads.PROMISE,
         "waitingCount":      sum(1 for c in campaigns if managed_ads.stage(c, open_reqs.get(c.id), managed) == "waiting_for_launch"),
+        # Phase 4b: where each platform's real numbers came from, and when.
+        "lastImports":       _last_imports(db, business_id) if managed else {},
         "totalCapCents":     total_cap,
         "totalSpendCents":   total_spend,
         "activeCount":       active_count,

@@ -427,7 +427,7 @@ def _money(cents: int) -> str:
 
 def _queue_email(db: Session, what: str, req: AdOpsRequest, c: AdCampaign, biz: Business) -> None:
     db.info.setdefault(_OUTBOX, []).append({
-        "what": what, "kind": req.kind, "source": req.source, "by": req.requested_by,
+        "type": "request", "what": what, "kind": req.kind, "source": req.source, "by": req.requested_by,
         "business": biz.name, "owner": biz.owner, "location": biz.location,
         "campaign": c.name, "campaignId": c.id, "platform": c.platform,
         "external": c.external_campaign_id, "daily": c.daily_budget_cents, "days": c.duration_days,
@@ -468,20 +468,76 @@ def build_email(item: dict[str, Any], base: str) -> tuple[str, str]:
     return f"[Amplafai ads] {verb} needed: {item['business']} · {money}", "\n".join(lines) + "\n"
 
 
+def owners_emailable() -> bool:
+    """Client-facing alert emails go out from production only
+    (POPULAR_EMAIL_OWNERS=1/0 overrides), like the reminder loop."""
+    default = "1" if os.getenv("ENVIRONMENT", "").lower() == "production" else "0"
+    return os.getenv("POPULAR_EMAIL_OWNERS", default) == "1"
+
+
+def queue_cap_alert(db: Session, biz: Business, alert: dict[str, Any]) -> None:
+    """Phase 4b: a monthly cap crossed 80% or 100%. Emails the owner(s) and
+    Amplafai after the import commits."""
+    from .notifications import recipients
+
+    db.info.setdefault(_OUTBOX, []).append({
+        "type": "cap", **alert, "business": biz.name, "businessId": biz.id,
+        "owners": recipients(db, biz.id),
+    })
+
+
+def build_cap_email(item: dict[str, Any], base: str) -> tuple[str, str, list[str]]:
+    """(subject, text, recipients) for a cap alert."""
+    label = PLATFORM_LABELS.get(item["platform"], item["platform"])
+    spend, cap = _money(item["spendCents"]), _money(item["capCents"])
+    pct = int(item["spendCents"] * 100 / item["capCents"]) if item["capCents"] else 0
+    lines = [f"{item['business']} has spent {spend} of its {cap} monthly cap on {label} ({pct}%), "
+             f"according to the latest numbers from the platform.", ""]
+    if item["level"] >= 100:
+        paused = item.get("pauseRequested") or []
+        lines += [("Amplafai has been asked to pause what's still running there: " + ", ".join(paused) + ". "
+                   f"That happens {PROMISE}; until then those campaigns keep running inside their own budgets and end dates.")
+                  if paused else "Nothing else is running there right now.", "",
+                  "To keep going, raise the cap in Ads & Spend, then restart the campaigns you want."]
+    else:
+        lines += ["Nothing changes yet. At 100%, Amplafai is asked to pause the campaigns still running on this platform.",
+                  "To spend more this month, raise the cap in Ads & Spend."]
+    lines += ["", f"Ads & Spend: {base}/?tab=ads&b={item['businessId']}",
+              "", "Spending alerts always go to the business's owners and editors, and to Amplafai."]
+    if item["level"] >= 100:
+        subject = f"{label} ads: monthly cap reached (100%) — {item['business']}"
+    else:
+        subject = f"{label} ads: {item['level']}% of your {cap} monthly cap used — {item['business']}"
+    to = list(dict.fromkeys([*item.get("owners", []), *ops_recipients()]))
+    return subject, "\n".join(lines) + "\n", to
+
+
 def _deliver(items: list[dict[str, Any]]) -> None:
     from .email import _send
     from .notifications import base_url
 
-    to = ops_recipients()
-    if not to:
-        log.warning("Ad request emails skipped: set ADS_OPS_EMAIL or ALERT_EMAIL (%d waiting in the queue)", len(items))
-        return
     base = base_url()
     for item in items:
-        subject, text = build_email(item, base)
+        if item.get("type") == "cap":
+            subject, text, to = build_cap_email(item, base)
+            kind = "ads-cap-alert"
+            if not owners_emailable():
+                # Same rule as the reminder emails: a dev server with a
+                # Postmark key and a copy of the data must not email clients.
+                skipped = [a for a in to if a not in ops_recipients()]
+                to = [a for a in to if a in ops_recipients()]
+                if skipped:
+                    log.info("Cap alert to owners skipped outside production: %s", ", ".join(skipped))
+        else:
+            to = ops_recipients()
+            if not to:
+                log.warning("Ad request email skipped: set ADS_OPS_EMAIL or ALERT_EMAIL (it's still in the queue)")
+                continue
+            subject, text = build_email(item, base)
+            kind = "ads-ops"
         body = "".join(f"<p>{html.escape(p).replace(chr(10), '<br>')}</p>" for p in text.strip().split("\n\n"))
         for addr in to:
-            _send(addr, subject, body, text, kind="ads-ops")
+            _send(addr, subject, body, text, kind=kind)
 
 
 def _dispatch(items: list[dict[str, Any]]) -> None:

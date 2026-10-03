@@ -145,7 +145,7 @@
   // version your browser is showing (rendered in the sidebar footer).
   // Keep it ONE concise line: it renders in the sidebar, so a changelog here
   // leaks internal roadmap language to customers. History lives in git.
-  const BUILD_VERSION = '2026-10-03 · v59 — managed ad campaigns: Amplafai launches and pauses by hand; Waiting for launch, Pause requested.';
+  const BUILD_VERSION = '2026-10-03 · v60 — real ad spend from the platforms\' exports; cap alerts at 80% and 100%.';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -3420,6 +3420,13 @@
   ];
   const AD_PLATFORM_BY_KEY = Object.fromEntries(AD_PLATFORMS.map(p => [p.key, p]));
 
+  // "2026-10-03" → "Oct 3" (a platform's reporting day, no time zone shift)
+  const fmtDay = (ymd) => {
+    if (!ymd) return '';
+    const [y, m, d] = ymd.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
+
   const formatUSD = (cents, options = {}) => {
     const { showCents = false } = options;
     return '$' + (cents / 100).toLocaleString(undefined, {
@@ -3696,6 +3703,8 @@
                       const pctUsed = capCents > 0 ? Math.min(100, (spendCents / capCents) * 100) : 0;
                       const draftValue = draftCaps[p.key] ?? (capCents > 0 ? (capCents / 100).toString() : '');
                       const isConnected = conn?.status === 'connected';
+                      // Real spend from a platform export: show it to the cent, like Ads Manager.
+                      const realSpend = !!(a.managed && (a.lastImports || {})[p.key]);
                       return (
                         <div key={p.key} className="rounded-lg border border-surface-edge p-3">
                           <div className="flex items-center gap-3 mb-2">
@@ -3734,14 +3743,30 @@
                           {capCents > 0 && (
                             <div className="mt-2">
                               <div className="flex items-center justify-between text-[11px] text-ink-faint mb-1">
-                                <span>{formatUSD(spendCents)} spent</span>
+                                <span>{formatUSD(spendCents, { showCents: realSpend })} spent</span>
                                 <span>{pctUsed.toFixed(0)}%</span>
-                                <span>{formatUSD(capCents - spendCents)} left</span>
+                                <span>{spendCents > capCents ? `${formatUSD(spendCents - capCents, { showCents: realSpend })} over` : `${formatUSD(capCents - spendCents, { showCents: realSpend })} left`}</span>
                               </div>
                               <div className="h-1.5 bg-surface rounded overflow-hidden">
-                                <div className={`h-full rounded transition-all bg-${p.accent}-500`}
+                                <div className={`h-full rounded transition-all ${spendCents >= capCents ? 'bg-red-500' : (spendCents >= capCents * 0.8 ? 'bg-amber-500' : `bg-${p.accent}-500`)}`}
                                   style={{ width: `${pctUsed}%` }} />
                               </div>
+                              {a.managed && spendCents >= capCents && (
+                                <div className="mt-1 text-[11px] text-bad">Cap reached. Amplafai has been asked to pause what's still running here; raise the cap to keep going.</div>
+                              )}
+                              {a.managed && spendCents >= capCents * 0.8 && spendCents < capCents && (
+                                <div className="mt-1 text-[11px] text-amber-700">Over 80% of this month's cap. At 100%, Amplafai pauses what's still running here.</div>
+                              )}
+                            </div>
+                          )}
+                          {a.managed && (a.lastImports || {})[p.key] && (
+                            <div className="mt-1 text-[11px] text-ink-faint">
+                              Real spend from your {(a.lastImports[p.key].source || '').replace(' export', '')}, through {fmtDay(a.lastImports[p.key].through)}.
+                            </div>
+                          )}
+                          {a.managed && capCents > 0 && !(a.lastImports || {})[p.key] && (
+                            <div className="mt-1 text-[11px] text-ink-faint">
+                              Spend appears once a campaign is running and Amplafai uploads the platform's numbers (every day or two).
                             </div>
                           )}
                           {capCents === 0 && !isConnected && (
@@ -4262,7 +4287,7 @@
       <>
         <Pill color={st.color}>{st.label}</Pill>
         {req && req.kind !== 'launch' && (
-          <div className="mt-1 text-[10px] text-ink-faint">asked {when(req.requestedAt)}</div>
+          <div className="mt-1 text-[10px] text-ink-faint">asked {when(req.requestedAt)}{req.source === 'cap' ? ' · monthly cap reached' : ''}</div>
         )}
         {actions.length > 0 && !confirmCancel && (
           <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
@@ -4298,6 +4323,12 @@
               {c.launchedAt && <> · live since {when(c.launchedAt)}{c.endsAt ? `, ends ${when(c.endsAt)}` : ''}</>}
             </div>
           )}
+          {!compact && perf.source && (
+            <div className="text-[11px] text-ink-faint">Spend from {perf.source.replace(' export', '')}, through {fmtDay(perf.through)}</div>
+          )}
+          {!compact && c.managed && c.launchedAt && !perf.source && (
+            <div className="text-[11px] text-ink-faint">Spend shows after Amplafai's first upload of the platform's numbers</div>
+          )}
           {c.opsNote && (
             <div className="mt-1 text-[11px] text-ink-soft"><span className="font-medium">From Amplafai:</span> {c.opsNote}</div>
           )}
@@ -4311,7 +4342,7 @@
           </div>
         </td>
         {!compact && <td className="py-2.5 px-2 text-right tabular-nums text-ink-soft">{formatUSD(c.plannedTotalCents)}</td>}
-        <td className="py-2.5 px-2 text-right tabular-nums text-ink">{formatUSD(c.actualSpendCents)}</td>
+        <td className="py-2.5 px-2 text-right tabular-nums text-ink">{formatUSD(c.actualSpendCents, { showCents: !!perf.source })}</td>
         <td className="py-2.5 px-2 text-right tabular-nums text-ink-soft hidden sm:table-cell">{(perf.impressions || 0).toLocaleString()}</td>
         <td className="py-2.5 px-2 text-right tabular-nums text-ink-soft hidden sm:table-cell">{perf.ctr ? `${(perf.ctr * 100).toFixed(2)}%` : '—'}</td>
         <td className="py-2.5 px-2 hidden md:table-cell">{statusBlock}</td>
