@@ -145,7 +145,7 @@
   // version your browser is showing (rendered in the sidebar footer).
   // Keep it ONE concise line: it renders in the sidebar, so a changelog here
   // leaks internal roadmap language to customers. History lives in git.
-  const BUILD_VERSION = '2026-10-03 · v57 — works on phones: bottom tabs, menu drawer, phone layouts for the main screens.';
+  const BUILD_VERSION = '2026-10-03 · v58 — plans and card billing (Stripe): choose a plan, manage billing, payment banners.';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -849,7 +849,7 @@
     { id: 'settings',    label: 'Settings',      icon: 'settings' }
   ];
   // Every view a ?tab= link may open.
-  const VIEW_IDS = [...NAV_DEFS.map(n => n.id), 'onboarding'];
+  const VIEW_IDS = [...NAV_DEFS.map(n => n.id), 'onboarding', 'billing'];
 
   const Sidebar = ({ current, onNavigate, className = 'flex', onClose }) => {
     const { business, approvals, chatbot, access } = useDashboard();
@@ -859,10 +859,13 @@
     // Tier 4+, Chatbot = Tier 3+). The badge on Chatbot shows escalation
     // count so the owner spots prospects-needing-outreach at a glance.
     const tier = business?.tier || 0;
-    const { onboarding } = useDashboard();
+    const { onboarding, billing } = useDashboard();
     const setupItem = onboarding?.needed && !business?.isDemo
       ? [{ id: 'onboarding', label: 'Finish setup', icon: 'sparkles', highlight: true }] : [];
-    const nav = [...setupItem, ...NAV_DEFS]
+    const billingItem = billing?.enforced && billing.state !== 'ok'
+      ? [{ id: 'billing', label: billing.state === 'needs_payment' ? 'Choose a plan' : billing.state === 'canceled' ? 'Restart plan' : 'Fix billing',
+           icon: 'dollar', highlight: true }] : [];
+    const nav = [...billingItem, ...setupItem, ...NAV_DEFS]
       .filter(n => !n.minTier || tier >= n.minTier)
       .map(n => {
         if (n.id === 'approvals') return { ...n, count: approvals?.length || 0 };
@@ -6584,7 +6587,9 @@
   };
 
   const SettingsView = ({ onTalkToHuman, linkedinReturn }) => {
-    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings, voiceBrief, access, onboarding } = useDashboard();
+    const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings, voiceBrief, access, onboarding, billing } = useDashboard();
+    const goTo = useContext(NavContext);
+    const planOf = (t) => (billing?.plans || []).find(p => p.tier === t);
     const firstPublished = (posts || []).filter(p => p.status === 'published').sort((a, b) => (a.date || '').localeCompare(b.date || ''))[0];
     const mutate = useDashboardMutate();
     const [tab, setTab] = useState('account');
@@ -6942,12 +6947,17 @@
                     <div className="text-xs text-white/70 uppercase tracking-wider font-medium">Current plan</div>
                     <div className="font-serif text-2xl font-semibold mt-1">Tier {business.tier}</div>
                     <div className="text-sm mt-0.5">{(business.tierLabel || '').replace(/^Tier \d+ . /, '')} — ${business.monthlyPrice}/month</div>
-                    <div className="text-xs text-white/70 mt-3">Joined {business.joinedDate} · annual contract</div>
+                    <div className="text-xs text-white/70 mt-3">Joined {business.joinedDate} · billed monthly · no setup fee</div>
                   </div>
                   <div className="mt-4 pt-4 border-t border-surface-edge text-sm space-y-2">
-                    <div className="flex items-center justify-between"><span className="text-ink-soft">Setup fee</span><span className="font-medium text-ink">{business.tier >= 4 ? '$0 (inventory tier)' : business.tier >= 3 ? '$0 (concierge tier)' : '$299 · credits back day 90'}</span></div>
-                    <div className="flex items-center justify-between"><span className="text-ink-soft">Renews</span><span className="font-medium text-ink">{business.joinedDaysAgo === 0 ? '1 year from today' : 'annual cycle'}</span></div>
+                    <div className="flex items-center justify-between gap-3"><span className="text-ink-soft">Billing</span>
+                      <span className="font-medium text-ink text-right">{!billing?.enforced
+                        ? (business.isDemo ? 'Demo (no charges)' : 'Billed by Amplafai')
+                        : billing.state === 'ok' && billing.currentPeriodEnd
+                          ? `${billing.cancelAtPeriodEnd ? 'Ends' : 'Next charge'} ${fmtLongDate(billing.currentPeriodEnd)}`
+                          : (PLAN_STATUS[billing.state] || {}).label}</span></div>
                     <div className="flex items-center justify-between"><span className="text-ink-soft">Publisher</span><span className="font-medium text-ink">{business.publisher}</span></div>
+                    {goTo && <div className="pt-1"><button type="button" className="text-brand-600 font-medium hover:underline" onClick={() => goTo('billing')}>Plan &amp; billing →</button></div>}
                   </div>
                   <div className="mt-4 pt-4 border-t border-surface-edge">
                     <div className="text-xs uppercase tracking-wider font-semibold text-ink-faint mb-3">Onboarding milestones</div>
@@ -6992,39 +7002,20 @@
               {/* Tier 3 upsell — only for businesses BELOW tier 3. A Tier 4
                   customer must never see a pitch to "upgrade" to a cheaper
                   plan (this card was previously unconditioned). */}
-              {business.tier < 3 && (
+              {business.tier < 3 && planOf(3) && (
               <Card>
-                <SectionHeader title="What's in Tier 3"
-                  subtitle="The full Marketing Agent + Business Concierge experience."
+                <SectionHeader title={`What's in ${planOf(3).label}`}
+                  subtitle="Everything in your plan, plus the items below."
                   right={
                     <div className="flex items-center gap-2">
-                      <Pill color="violet" icon="sparkles">$499 / month</Pill>
-                      <Button variant="primary" size="sm" icon="sparkles">Upgrade</Button>
+                      <Pill color="violet" icon="sparkles">${planOf(3).price} / month</Pill>
+                      <Button variant="primary" size="sm" icon="sparkles"
+                        onClick={() => (billing?.enforced && goTo ? goTo('billing') : onTalkToHuman())}>Upgrade</Button>
                     </div>
                   } />
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                  {[
-                    { icon: 'msg',   title: 'Dedicated business chatbot',
-                      body: `When customers ask about ${business.name} in the Popular Network, they enter a focused conversation about your services, pricing, and how to get started.` },
-                    { icon: 'phone', title: 'Owner SMS escalation',
-                      body: 'When the chatbot needs a human, it texts you and hands the conversation off cleanly.' },
-                    { icon: 'eye',   title: 'Competitive intelligence',
-                      body: 'Monthly report on what others in your category are posting and promoting.' },
-                    { icon: 'user',  title: 'Quarterly business review',
-                      body: `A 60-minute review with your ${business.publisher} partner every quarter. We bring the data; you bring the questions.` }
-                  ].map((c, i) => (
-                    <div key={i} className="bg-surface border border-surface-edge rounded-lg p-4">
-                      <div className="w-9 h-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center mb-3">
-                        <Icon name={c.icon} size={18} />
-                      </div>
-                      <div className="font-semibold text-sm text-ink mb-1">{c.title}</div>
-                      <div className="text-xs text-ink-soft leading-relaxed">{c.body}</div>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-4 pt-4 border-t border-surface-edge flex items-center justify-between text-xs text-ink-soft">
-                  <div>Upgrade prorates against your annual contract — no penalty for moving up mid-year.</div>
-                  <a className="text-brand-600 font-medium hover:underline cursor-pointer">Full feature comparison →</a>
+                <PlanFeatures features={planOf(3).features.filter(f => !(planOf(business.tier)?.features || []).includes(f))} />
+                <div className="mt-4 pt-4 border-t border-surface-edge text-xs text-ink-soft">
+                  Upgrades are prorated: you pay the difference for the rest of the month.
                 </div>
               </Card>
               )}
@@ -7094,9 +7085,15 @@
               {billingLoading && !billingState && (
                 <div className="text-ink-soft text-sm">Loading billing data…</div>
               )}
+              {billing?.enforced && (
+                (billing.state === 'needs_payment' || billing.state === 'canceled')
+                  ? <PlanPicker billing={billing} business={business} canPay={!!access?.can?.manage_billing} restarting={billing.state === 'canceled'} />
+                  : <ManagePlan billing={billing} business={business} canPay={!!access?.can?.manage_billing} />
+              )}
               {billingState && (
                 <>
-                  {/* Plan card + tier options */}
+                  {/* Plan card + tier options (billed outside the app: a request Amplafai follows up) */}
+                  {!billing?.enforced && (
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
                     <Card className="lg:col-span-1 bg-gradient-to-br from-brand-700 to-brand-900 text-white">
                       <div className="text-xs text-white/70 uppercase tracking-wider font-medium">Current plan</div>
@@ -7134,6 +7131,7 @@
                       )}
                     </Card>
                   </div>
+                  )}
 
                   {/* Usage table */}
                   <Card>
@@ -7158,7 +7156,8 @@
                   <Card padded={false}>
                     <div className="px-5 py-4 border-b border-surface-edge">
                       <SectionHeader title="Invoice history"
-                        subtitle={business.isDemo ? 'Mocked in this demo — Stripe integration is on the V2 roadmap.' : 'Amplafai emails your invoices for now; they will appear here once online billing is switched on.'} />
+                        subtitle={billing?.enforced ? 'Your invoices and receipts are on Stripe\'s billing page: Plan & billing → Manage billing.'
+                          : business.isDemo ? 'Sample invoices on the demo account.' : 'Amplafai emails your invoices.'} />
                     </div>
                     {billingState.invoices.length === 0 ? (
                       <div className="p-6 text-center text-sm text-ink-soft">
@@ -8094,6 +8093,235 @@ fetch('${location.origin}/api/chatbot/ingest', {
     );
   };
 
+  /* ============================================================
+     VIEW: PLAN & BILLING (Phase 3) — pick a plan and pay through Stripe
+     Checkout; afterwards, manage it in Stripe's customer portal. Stripe's
+     webhook is what marks the business paid; this page only waits for it.
+     ============================================================ */
+  const fmtLongDate = (iso) => {
+    if (!iso) return '';
+    try { return new Date(iso.endsWith('Z') ? iso : `${iso}Z`).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }); }
+    catch { return iso; }
+  };
+  const goToStripe = async (path, body, setBusy, setError) => {
+    setBusy(true); setError(null);
+    try {
+      const res = await apiRequest('POST', path, body);
+      window.location.href = res.url;   // Stripe's own page; it sends them back here
+    } catch (e) {
+      console.error('[billing]', e);
+      setError(e.message || String(e));
+      setBusy(false);
+    }
+  };
+
+  const PLAN_STATUS = {
+    ok:            { color: 'emerald', label: 'Active' },
+    grace:         { color: 'amber',   label: 'Payment overdue' },
+    read_only:     { color: 'red',     label: 'Read-only: payment overdue' },
+    canceled:      { color: 'red',     label: 'Ended' },
+    needs_payment: { color: 'amber',   label: 'Not started' },
+  };
+
+  const PlanFeatures = ({ features }) => (
+    <ul className="space-y-1.5">
+      {(features || []).map((f, i) => (
+        <li key={i} className="flex items-start gap-2 text-sm text-ink-soft">
+          <Icon name="check" size={14} strokeWidth={2.4} className="text-ok mt-0.5 shrink-0" /> <span>{f}</span>
+        </li>
+      ))}
+    </ul>
+  );
+
+  const PlanPicker = ({ billing, business, canPay, restarting }) => {
+    const [chosen, setChosen] = useState(business.tier || 2);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    return (
+      <div className="space-y-5">
+        <div>
+          <h2 className="text-2xl font-semibold text-ink">{restarting ? 'Restart your plan' : 'Choose your plan'}</h2>
+          <p className="text-sm text-ink-soft mt-1">Billed monthly. No setup fee. Cancel any time; your plan runs to the end of the month you've paid for.</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3" role="radiogroup" aria-label="Plans">
+          {(billing.plans || []).map(p => {
+            const on = chosen === p.tier;
+            return (
+              <button key={p.tier} type="button" role="radio" aria-checked={on} onClick={() => setChosen(p.tier)}
+                className={`text-left rounded-xl border-2 p-4 bg-white transition-colors flex flex-col gap-3 ${on ? 'border-brand-500 ring-2 ring-brand-100' : 'border-surface-edge hover:border-brand-300'}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wider font-semibold text-ink-faint">Tier {p.tier}</div>
+                    <div className="font-semibold text-ink leading-tight">{p.name}</div>
+                  </div>
+                  <span className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center ${on ? 'border-brand-500 bg-brand-500 text-white' : 'border-surface-edge'}`}>
+                    {on && <Icon name="check" size={12} strokeWidth={3} />}
+                  </span>
+                </div>
+                <div className="font-serif text-3xl font-semibold text-ink tabular-nums">${p.price}<span className="text-sm font-sans font-normal text-ink-faint">/month</span></div>
+                <PlanFeatures features={p.features} />
+              </button>
+            );
+          })}
+        </div>
+        <WizardError message={error} />
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <Button size="lg" icon="dollar" disabled={busy || !canPay}
+            onClick={() => goToStripe('/api/billing/checkout', { tier: chosen }, setBusy, setError)}>
+            {busy ? 'Opening secure payment…' : 'Continue to secure payment'}
+          </Button>
+          <p className="text-xs text-ink-faint">
+            {canPay
+              ? <>Card payment is handled by Stripe. By continuing you agree to the <a className="underline" href={billing.termsUrl} target="_blank" rel="noopener">Terms of Service</a>.</>
+              : 'Only the business owner can choose the plan.'}
+          </p>
+        </div>
+      </div>
+    );
+  };
+
+  const ManagePlan = ({ billing, business, canPay }) => {
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const plan = (billing.plans || []).find(p => p.tier === billing.tier) || {};
+    const st = PLAN_STATUS[billing.state] || PLAN_STATUS.ok;
+    return (
+      <Card>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-[11px] uppercase tracking-wider font-semibold text-ink-faint">Your plan</div>
+            <div className="text-xl font-semibold text-ink mt-0.5">{plan.label || business.tierLabel}</div>
+            <div className="font-serif text-2xl font-semibold text-ink mt-1 tabular-nums">${plan.price ?? business.monthlyPrice}<span className="text-sm font-sans font-normal text-ink-faint">/month</span></div>
+          </div>
+          <Pill color={billing.cancelAtPeriodEnd && billing.state === 'ok' ? 'amber' : st.color}>
+            {billing.cancelAtPeriodEnd && billing.state === 'ok' ? 'Cancels at period end' : st.label}
+          </Pill>
+        </div>
+        <div className="mt-4 text-sm text-ink-soft space-y-1">
+          {billing.state === 'ok' && billing.currentPeriodEnd && (
+            <div>{billing.cancelAtPeriodEnd
+              ? <>Your plan ends on <b className="text-ink">{fmtLongDate(billing.currentPeriodEnd)}</b>. Changed your mind? Use Manage billing to keep it.</>
+              : <>Next charge on <b className="text-ink">{fmtLongDate(billing.currentPeriodEnd)}</b>.</>}</div>
+          )}
+          {billing.state === 'grace' && <div>The last payment didn't go through. Update your card by <b className="text-ink">{fmtLongDate(billing.graceEndsAt)}</b> to keep full access.</div>}
+          {billing.state === 'read_only' && <div>A payment is overdue, so the dashboard is read-only. Updating your card restores everything right away.</div>}
+        </div>
+        <div className="mt-4"><PlanFeatures features={plan.features} /></div>
+        <div className="mt-5 pt-4 border-t border-surface-edge flex flex-col sm:flex-row sm:items-center gap-3">
+          <Button icon="settings" disabled={busy || !canPay || !billing.hasCustomer}
+            onClick={() => goToStripe('/api/billing/portal', undefined, setBusy, setError)}>
+            {busy ? 'Opening…' : billing.state === 'ok' ? 'Manage billing' : 'Update card'}
+          </Button>
+          <p className="text-xs text-ink-faint">
+            {canPay
+              ? 'Update your card, see invoices, switch plans, or cancel, on Stripe\'s secure billing page. Switching plans is prorated for the rest of the month.'
+              : 'Only the business owner can manage billing.'}
+          </p>
+        </div>
+        <div className="mt-3"><WizardError message={error} /></div>
+      </Card>
+    );
+  };
+
+  const BillingView = ({ onNavigate, onReload, onTalkToHuman }) => {
+    const { business, billing, access, onboarding } = useDashboard();
+    const canPay = !!access?.can?.manage_billing;
+    const [returned] = useState(() => {
+      try { return new URLSearchParams(window.location.search).get('checkout'); } catch { return null; }
+    });
+    const [confirm, setConfirm] = useState(returned === 'success' ? 'waiting' : null);
+    // Don't redo the check (or re-show "canceled") on a refresh.
+    useEffect(() => {
+      if (!returned) return;
+      try { const u = new URL(window.location.href); u.searchParams.delete('checkout'); window.history.replaceState({}, '', u); } catch {}
+    }, []);
+    // Back from Stripe: wait for Stripe's confirmation (the webhook), then
+    // carry on to setup. Usually a few seconds.
+    useEffect(() => {
+      if (confirm !== 'waiting') return;
+      let tries = 0;
+      const t = setInterval(async () => {
+        tries += 1;
+        try {
+          const s = await apiRequest('GET', '/api/billing/status');
+          if (s.state === 'ok' || s.state === 'grace') {
+            clearInterval(t);
+            setConfirm('done');
+            if (onReload) onReload();
+            return;
+          }
+        } catch (e) { console.error('[billing] status poll failed', e); }
+        if (tries >= 30) { clearInterval(t); setConfirm('slow'); }
+      }, 2000);
+      return () => clearInterval(t);
+    }, [confirm]);
+
+    let body;
+    if (!billing?.enforced) {
+      body = (
+        <Card>
+          <div className="text-[11px] uppercase tracking-wider font-semibold text-ink-faint">Your plan</div>
+          <div className="text-xl font-semibold text-ink mt-0.5">{business.tierLabel}</div>
+          <p className="text-sm text-ink-soft mt-2">
+            {business.isDemo ? 'This is the demo account, so nothing is charged.'
+              : billing?.mode === 'stripe' ? 'Card payments aren\'t switched on yet. Amplafai bills you directly for now.'
+              : 'Amplafai bills you directly for this plan.'}
+          </p>
+          <div className="mt-4"><Button variant="secondary" icon="phone" onClick={onTalkToHuman}>Questions about your plan</Button></div>
+        </Card>
+      );
+    } else if (confirm === 'waiting') {
+      body = <WizardWorking title="Payment received. Confirming with Stripe…" body="This usually takes a few seconds." elapsed={0} />;
+    } else if (confirm === 'slow') {
+      body = <WizardError message="Stripe hasn't confirmed the payment yet. Refresh in a minute. If you were charged and this doesn't change, use Talk to a human and Amplafai will sort it out." />;
+    } else if (billing.state === 'needs_payment' || billing.state === 'canceled') {
+      body = <PlanPicker billing={billing} business={business} canPay={canPay} restarting={billing.state === 'canceled'} />;
+    } else {
+      body = <ManagePlan billing={billing} business={business} canPay={canPay} />;
+    }
+    return (
+      <div className="fade-in">
+        <TopBar breadcrumb="Account" title="Plan & billing" />
+        <div className="px-4 md:px-8 py-5 md:py-7 max-w-5xl space-y-5">
+          {returned === 'canceled' && billing?.state === 'needs_payment' && (
+            <div role="status" className="px-4 py-3 rounded-lg bg-surface border border-surface-edge text-sm text-ink-soft">Payment canceled. Nothing was charged.</div>
+          )}
+          {confirm === 'done' && (
+            <div role="status" className="px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 flex flex-wrap items-center gap-3 justify-between">
+              <span>You're all set. Your plan is active.</span>
+              {onboarding?.needed && <Button size="sm" icon="sparkles" onClick={() => onNavigate('onboarding')}>Set up your agent</Button>}
+            </div>
+          )}
+          {body}
+        </div>
+      </div>
+    );
+  };
+
+  // App-wide strip when payment needs attention (shown on every screen but
+  // the billing page itself).
+  const BillingNotice = ({ billing, canPay, onOpen }) => {
+    if (!billing?.enforced) return null;
+    const s = billing.state;
+    let tone = 'amber', text = null, cta = canPay ? 'Update card' : null;
+    if (s === 'needs_payment') { text = 'Choose a plan to start using the dashboard.'; cta = canPay ? 'Choose a plan' : null; if (!canPay) text += ' The business owner needs to do this.'; }
+    else if (s === 'grace') text = `The last payment didn't go through. Update the card by ${fmtLongDate(billing.graceEndsAt)} to keep full access.`;
+    else if (s === 'read_only') { tone = 'red'; text = 'A payment is overdue, so the dashboard is read-only until the card is updated.'; }
+    else if (s === 'canceled') { tone = 'red'; text = 'Your plan has ended, so the dashboard is read-only. Your data is deleted 30 days after the plan ended unless you restart it.'; cta = canPay ? 'Restart plan' : null; }
+    else if (billing.cancelAtPeriodEnd && billing.currentPeriodEnd) { tone = 'slate'; text = `Your plan ends on ${fmtLongDate(billing.currentPeriodEnd)}.`; cta = canPay ? 'Keep my plan' : null; }
+    if (!text) return null;
+    const cls = { amber: 'bg-amber-50 border-amber-200 text-amber-900', red: 'bg-red-50 border-red-200 text-bad', slate: 'bg-surface-card border-surface-edge text-ink-soft' }[tone];
+    return (
+      <div role={tone === 'slate' ? 'status' : 'alert'} className="mx-auto max-w-[1600px] px-4 md:px-8 pt-4">
+        <div className={`px-4 py-2.5 rounded-lg border text-sm flex flex-wrap items-center gap-x-3 gap-y-2 ${cls}`}>
+          <Icon name="dollar" size={15} strokeWidth={2} className="shrink-0" />
+          <span className="flex-1 min-w-[12rem]">{text}</span>
+          {cta && <Button size="sm" variant="secondary" onClick={onOpen}>{cta}</Button>}
+        </div>
+      </div>
+    );
+  };
+
   // Full-page state while the dashboard loads, or when it can't. Shows no
   // business data at all, so nothing from another account can leak in.
   const BootScreen = ({ error }) => (
@@ -8385,7 +8613,9 @@ fetch('${location.origin}/api/chatbot/ingest', {
           if (!routedOnce.current) {
             routedOnce.current = true;
             const ob = data.onboarding;
-            if (!linkedTab && ob?.needed && ob.status !== 'skipped' && !data.business?.isDemo
+            if (!linkedTab && data.billing?.enforced && data.billing.state === 'needs_payment') {
+              setView('billing');   // pay first; setup comes right after
+            } else if (!linkedTab && ob?.needed && ob.status !== 'skipped' && !data.business?.isDemo
                 && data.access?.can?.edit_marketing_plan) {
               setView('onboarding');
             }
@@ -8440,10 +8670,14 @@ fetch('${location.origin}/api/chatbot/ingest', {
           </div>
         )}
         <main className={`flex-1 min-w-0 overflow-y-auto pb-20 md:pb-0 ${loadError ? 'pt-9' : ''}`}>
-          {bootstrap?.access && !bootstrap.access.can?.publish_post && <ViewOnlyNotice role={bootstrap.access.role} />}
-          {bootstrap?.business?.deletionDueAt && <DeletionNotice due={bootstrap.business.deletionDueAt} />}
+          {bootstrap?.access && !(bootstrap.access.canByRole || bootstrap.access.can)?.publish_post && <ViewOnlyNotice role={bootstrap.access.role} />}
+          {view !== 'billing' && (
+            <BillingNotice billing={bootstrap?.billing} canPay={!!bootstrap?.access?.can?.manage_billing} onOpen={() => navigate('billing')} />
+          )}
+          {bootstrap?.business?.deletionDueAt && bootstrap?.billing?.state !== 'canceled' && <DeletionNotice due={bootstrap.business.deletionDueAt} />}
           <ViewErrorBoundary view={view}>
           {view === 'onboarding'  && <OnboardingView onNavigate={navigate} onReload={reloadBootstrap} />}
+          {view === 'billing'     && <BillingView onNavigate={navigate} onReload={reloadBootstrap} onTalkToHuman={() => setHumanOpen(true)} />}
           {view === 'home'        && <HomeView onNavigate={navigate} />}
           {view === 'compose'     && <ComposeView onNavigate={navigate} />}
           {view === 'calendar'    && <CalendarView onNavigate={navigate} />}

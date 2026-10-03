@@ -50,6 +50,30 @@ NOT_STARTED = (None, "incomplete", "incomplete_expired")
 WRITE_BLOCKING = ("needs_payment", "read_only", "canceled")
 
 
+# What each plan includes, shown on the plan picker and in Settings. Only
+# features that work today: sales copy must not promise what isn't built.
+# Tiers 1 and 2 unlock the same features in the app right now; Trevor is
+# deciding what separates them. Edit here; nothing else needs to change.
+EVERY_PLAN = [
+    "Your AI marketing agent, set up from a few questions about your business",
+    "Posts drafted in your voice for Facebook, Instagram, Google and your website",
+    "Nothing is posted without your approval",
+    "Reminders when drafts are waiting, and a Monday summary email",
+]
+TIER_FEATURES: dict[int, list[str]] = {
+    1: EVERY_PLAN,
+    2: EVERY_PLAN,
+    3: EVERY_PLAN + ["See the questions people ask your publisher's chatbot about your business"],
+    4: EVERY_PLAN + ["See the questions people ask your publisher's chatbot about your business",
+                     "Your inventory listings, uploaded by spreadsheet"],
+}
+
+
+def plans() -> list[dict[str, Any]]:
+    return [{"tier": t, "label": TIER_LABELS[t], "name": TIER_LABELS[t].split("— ", 1)[-1],
+             "price": TIER_PRICES[t], "features": TIER_FEATURES[t]} for t in TIERS]
+
+
 class BillingError(Exception):
     """A billing failure with a message fit to show the owner."""
 
@@ -107,8 +131,7 @@ def billing_state(db: Session, biz: Business, now: Optional[datetime] = None) ->
         "hasCustomer": bool(sub and sub.stripe_customer_id),
         "graceEndsAt": None,
         "termsUrl": TERMS_URL,
-        "prices": {str(t): TIER_PRICES[t] for t in TIERS},
-        "labels": {str(t): TIER_LABELS[t] for t in TIERS},
+        "plans": plans(),
     }
     if not out["enforced"]:
         out["state"] = "ok"

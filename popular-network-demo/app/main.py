@@ -157,6 +157,7 @@ def _startup() -> None:
     _backfill_attention_copy()
     # Phase 1: run any deletion whose 30-day clock has run out, now and then
     # every few hours while the server is up (there's no cron in the image).
+    _backfill_tier_labels()
     _purge_due_businesses()
     _start_purge_loop()
     # Phase 2: approval reminders and the Monday summary.
@@ -194,6 +195,21 @@ def _start_purge_loop() -> None:
             _purge_due_businesses()
 
     threading.Thread(target=_loop, name="purge-due-businesses", daemon=True).start()
+
+
+def _backfill_tier_labels() -> None:
+    """Phase 3: tiers took the business plan's names. Rows created under the
+    old names (Self-serve / Surfaced / Concierge) get the new ones."""
+    from .db import SessionLocal
+    from .models import Business
+    from .routers.billing import TIER_LABELS
+
+    with SessionLocal() as db:
+        for biz in db.query(Business).all():
+            want = TIER_LABELS.get(biz.tier)
+            if want and biz.tier_label != want:
+                biz.tier_label = want
+        db.commit()
 
 
 _NOTIFY_LOOP_STARTED = False

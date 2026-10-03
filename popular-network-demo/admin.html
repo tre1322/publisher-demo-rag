@@ -49,10 +49,16 @@
         <label class="text-sm">Phone<input name="phone" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg" /></label>
         <label class="text-sm">Plan
           <select name="tier" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg bg-white">
-            <option value="1">Tier 1 — Self-serve ($30/mo)</option>
-            <option value="2" selected>Tier 2 — Surfaced ($75/mo)</option>
-            <option value="3">Tier 3 — Concierge ($150/mo)</option>
+            <option value="1">Tier 1 — Network Presence ($30/mo)</option>
+            <option value="2" selected>Tier 2 — Marketing Agent ($75/mo)</option>
+            <option value="3">Tier 3 — Marketing Agent + Concierge ($150/mo)</option>
             <option value="4">Tier 4 — Inventory ($799/mo)</option>
+          </select>
+        </label>
+        <label class="text-sm">How they pay
+          <select name="billing_mode" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg bg-white">
+            <option value="stripe" selected>By card in the app, monthly (they choose a plan after accepting the invite)</option>
+            <option value="outside">Billed outside the app (Amplafai or the publisher invoices them)</option>
           </select>
         </label>
         <div class="md:col-span-2 flex items-center gap-3">
@@ -101,6 +107,7 @@
         <div><dt class="text-slate-500">Pending invites</dt><dd data-f="invites"></dd></div>
         <div><dt class="text-slate-500">Voice brief</dt><dd data-f="brief"></dd></div>
         <div><dt class="text-slate-500">Owner setup</dt><dd data-f="setup"></dd></div>
+        <div><dt class="text-slate-500">Billing</dt><dd><span data-f="billing"></span> <a data-f="stripe-link" class="hidden underline text-slate-600" target="_blank" rel="noopener">Open in Stripe</a></dd></div>
       </dl>
       <form data-p="invite" class="mt-3 flex flex-wrap items-end gap-2 text-sm">
         <label>Invite someone<input name="email" type="email" required placeholder="name@business.com" class="mt-1 block px-3 py-1.5 border border-slate-300 rounded-lg" /></label>
@@ -121,8 +128,13 @@
         <label>Phone<input name="phone" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg" /></label>
         <label>Plan
           <select name="tier" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg bg-white">
-            <option value="1">Tier 1 — Self-serve</option><option value="2">Tier 2 — Surfaced</option>
-            <option value="3">Tier 3 — Concierge</option><option value="4">Tier 4 — Inventory</option>
+            <option value="1">Tier 1 — Network Presence</option><option value="2">Tier 2 — Marketing Agent</option>
+            <option value="3">Tier 3 — Marketing Agent + Concierge</option><option value="4">Tier 4 — Inventory</option>
+          </select>
+        </label>
+        <label>How they pay
+          <select name="billing_mode" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg bg-white">
+            <option value="stripe">By card in the app</option><option value="outside">Billed outside the app</option>
           </select>
         </label>
         <label class="flex items-center gap-2 mt-6"><input type="checkbox" name="demo" /> Demo account (allows the simulator and sample data)</label>
@@ -162,12 +174,27 @@
   </template>
 
 <script>
+function billingSummary(b) {
+  const x = b.billing || {};
+  if (b.isDemo) return 'Demo account: never charged';
+  if (x.mode !== 'stripe') return 'Billed outside the app';
+  if (!x.configured) return 'Card billing (Stripe not switched on yet)';
+  const day = (iso) => iso ? new Date(iso + 'Z').toLocaleDateString() : '';
+  return ({
+    needs_payment: "Card billing: hasn't chosen a plan yet",
+    ok: x.cancelAtPeriodEnd ? `Paid; cancels ${day(x.currentPeriodEnd)}` : `Paid; next charge ${day(x.currentPeriodEnd)}`,
+    grace: `Payment failed; read-only after ${day(x.graceEndsAt)}`,
+    read_only: 'Payment overdue: read-only',
+    canceled: 'Plan ended: read-only, deletion clock running',
+  })[x.state] || x.state;
+}
+
 const SETUP_LABELS = {
   not_started: 'Not started', answering: 'Answering questions', drafting: 'Drafting brief…',
   review: 'Reviewing draft brief', planning: 'Planning first week…', plan_failed: 'First-week plan failed (owner can retry)',
   skipped: 'Skipped for now', done: 'Done',
 };
-const TIER_NAMES = {1: 'Tier 1 — Self-serve', 2: 'Tier 2 — Surfaced', 3: 'Tier 3 — Concierge', 4: 'Tier 4 — Inventory'};
+const TIER_NAMES = {1: 'Tier 1 — Network Presence', 2: 'Tier 2 — Marketing Agent', 3: 'Tier 3 — Marketing Agent + Concierge', 4: 'Tier 4 — Inventory'};
 
 function detailOf(body, status) {
   if (!body) return `HTTP ${status}`;
@@ -236,6 +263,11 @@ function renderCard(b) {
     ? b.pendingInvites.map(i => `${i.email} (${i.role})`).join(', ') : 'None';
   f('brief').textContent = b.hasVoiceBrief ? 'Loaded' : 'Not yet — the agent writes from the marketing plan only';
   f('setup').textContent = SETUP_LABELS[b.onboardingStatus] || b.onboardingStatus || '—';
+  f('billing').textContent = billingSummary(b);
+  if (b.billing && b.billing.stripeCustomerUrl) {
+    f('stripe-link').href = b.billing.stripeCustomerUrl;
+    f('stripe-link').classList.remove('hidden');
+  }
   f('deletion').classList.toggle('hidden', !b.deletionDueAt);
   if (b.deletionDueAt) {
     f('deletion-text').textContent = `Scheduled for deletion on ${new Date(b.deletionDueAt + 'Z').toLocaleDateString()}. The owner sees a warning in their dashboard.`;
@@ -304,6 +336,7 @@ function renderCard(b) {
   for (const k of ['name', 'owner', 'website', 'location', 'publisher', 'phone']) edit.elements[k].value = b[k] || '';
   edit.elements.tier.value = String(b.tier);
   edit.elements.demo.checked = !!b.isDemo;
+  edit.elements.billing_mode.value = (b.billing && b.billing.mode) || 'outside';
 
   const toggle = (panel) => card.querySelector(`[data-p="${panel}"]`).classList.toggle('hidden');
   card.querySelector('[data-a="toggle-edit"]').onclick = () => toggle('edit');
@@ -335,7 +368,7 @@ function renderCard(b) {
         const res = await api('PUT', `/api/admin/businesses/${b.id}`, {
           name: el.name.value, owner: el.owner.value, website: el.website.value,
           location: el.location.value, publisher: el.publisher.value, phone: el.phone.value,
-          tier: Number(el.tier.value), demo: el.demo.checked,
+          tier: Number(el.tier.value), demo: el.demo.checked, billing_mode: el.billing_mode.value,
         });
         replaceCard(card, res.business, 'Saved.');
       } catch (err) { setMsg(card, `Not saved: ${err.message}`, false); }
@@ -413,6 +446,7 @@ document.getElementById('create-form').onsubmit = (ev) => {
       name: el.name.value, owner: el.owner.value, website: el.website.value || null,
       location: el.location.value, publisher: el.publisher.value, phone: el.phone.value,
       tier: Number(el.tier.value), owner_email: el.owner_email.value || null,
+      billing_mode: el.billing_mode.value,
     };
     try {
       const res = await api('POST', '/api/admin/businesses', body);

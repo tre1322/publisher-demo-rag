@@ -44,10 +44,12 @@ TIER_PRICES = {
     4: 799,
 }
 
+# Names from the Amplora business plan; prices are the dashboard's own
+# (Trevor's choice, 2026-10-03, when the two documents disagreed).
 TIER_LABELS = {
-    1: "Tier 1 — Self-serve",
-    2: "Tier 2 — Surfaced",
-    3: "Tier 3 — Concierge",
+    1: "Tier 1 — Network Presence",
+    2: "Tier 2 — Marketing Agent",
+    3: "Tier 3 — Marketing Agent + Concierge",
     4: "Tier 4 — Inventory",
 }
 
