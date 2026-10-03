@@ -23,9 +23,13 @@ _FIELDS = ("impressions", "clicks", "costInLocalCurrency", "pivotValues")
 
 
 def _cost_to_cents(cost: object) -> int:
+    """Decimal, not float: "12.345" must round to 1235 cents, the way the
+    platform's own invoice would."""
+    from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+
     try:
-        return int(round(float(cost) * 100))
-    except (TypeError, ValueError):
+        return int((Decimal(str(cost)) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    except (InvalidOperation, TypeError, ValueError):
         return 0
 
 
@@ -79,6 +83,47 @@ def fetch_campaign_analytics(
             "ctr": (clicks / impressions) if impressions else 0.0,
             "spend_cents": _cost_to_cents(row.get("costInLocalCurrency")),
         }
+    return out
+
+
+def fetch_daily_analytics(
+    client: LinkedInClient,
+    *,
+    campaign_urns: list[str],
+    start: date,
+    end: date,
+) -> list[dict]:
+    """Phase 5a: one row per campaign per day:
+    [{campaign_urn, day: "YYYY-MM-DD", impressions, clicks, spend_cents}].
+    Same finder as fetch_campaign_analytics with timeGranularity=DAILY; each
+    row's dateRange.start is its day. UNTESTED AGAINST THE LIVE API."""
+    if not campaign_urns:
+        return []
+    params: dict[str, object] = {
+        "q": "analytics", "pivot": "CAMPAIGN", "timeGranularity": "DAILY",
+        "dateRange.start.year": start.year, "dateRange.start.month": start.month, "dateRange.start.day": start.day,
+        "dateRange.end.year": end.year, "dateRange.end.month": end.month, "dateRange.end.day": end.day,
+        "fields": ",".join(_FIELDS + ("dateRange",)),
+    }
+    for i, urn in enumerate(campaign_urns):
+        params[f"campaigns[{i}]"] = urn
+    try:
+        data = client.get("/rest/adAnalytics", params=params)
+    except LinkedInAPIError as e:
+        raise LinkedInError(f"analytics fetch failed: {e}") from e
+    out: list[dict] = []
+    for row in data.get("elements", []):
+        pivots = row.get("pivotValues") or []
+        d = ((row.get("dateRange") or {}).get("start") or {})
+        if not pivots or not d:
+            continue
+        out.append({
+            "campaign_urn": pivots[0],
+            "day": f"{int(d['year']):04d}-{int(d['month']):02d}-{int(d['day']):02d}",
+            "impressions": int(row.get("impressions", 0) or 0),
+            "clicks": int(row.get("clicks", 0) or 0),
+            "spend_cents": _cost_to_cents(row.get("costInLocalCurrency")),
+        })
     return out
 
 

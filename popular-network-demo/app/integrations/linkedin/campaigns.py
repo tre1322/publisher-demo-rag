@@ -49,10 +49,14 @@ def create_boost_campaign(
     currency: str = "USD",
     geo_urns: Optional[list[str]] = None,
     started_at: Optional[datetime] = None,
+    status: str = "PAUSED",
 ) -> str:
     """Create a sponsored campaign and return its URN. Raises
     LinkedInProvisioningError on any API failure so the caller can surface it
-    rather than silently mock."""
+    rather than silently mock.
+
+    Phase 5a: created PAUSED by default. Turning it on is a separate, logged
+    step (set_campaign_status ACTIVE) that a person takes."""
     start = started_at or datetime.utcnow()
     end = start + timedelta(days=duration_days)
     geos = geo_urns or [_DEFAULT_GEO_URN]
@@ -89,9 +93,8 @@ def create_boost_campaign(
                         ]
                     }
                 },
-                # Created PAUSED would be safer, but we want the boost live on
-                # schedule. The owner's monthly cap + tick/poll still bound spend.
-                "status": "ACTIVE",
+                # Phase 5a: never spends on creation; see set_campaign_status.
+                "status": status,
             },
         )
         return campaign_urn
@@ -99,17 +102,22 @@ def create_boost_campaign(
         raise LinkedInProvisioningError(f"campaign create failed: {e}") from e
 
 
-def pause_campaign(client: LinkedInClient, campaign_urn: str) -> None:
-    """Pause a live campaign. campaign_urn → urn:li:sponsoredCampaign:NNN."""
+def set_campaign_status(client: LinkedInClient, campaign_urn: str, status: str) -> None:
+    """ACTIVE / PAUSED / ARCHIVED a campaign. campaign_urn → urn:li:sponsoredCampaign:NNN."""
     campaign_id = campaign_urn.rsplit(":", 1)[-1]
     try:
         client.post(
             f"/rest/adCampaigns/{campaign_id}",
             headers={"X-RestLi-Method": "PARTIAL_UPDATE"},
-            json={"patch": {"$set": {"status": "PAUSED"}}},
+            json={"patch": {"$set": {"status": status}}},
         )
     except LinkedInAPIError as e:
-        raise LinkedInProvisioningError(f"campaign pause failed: {e}") from e
+        raise LinkedInProvisioningError(f"campaign {status.lower()} failed: {e}") from e
+
+
+def pause_campaign(client: LinkedInClient, campaign_urn: str) -> None:
+    """Pause a live campaign."""
+    set_campaign_status(client, campaign_urn, "PAUSED")
 
 
 def list_campaigns(client: LinkedInClient, account_urn: str) -> list[dict]:

@@ -626,12 +626,15 @@ def _exec_schedule_boost(
         )
 
     # Phase 4: Amplafai runs a real client's paid campaigns from Tier 3 up.
+    # Phase 5a: and nothing new starts while "Pause all paid ads" is on.
     biz = db.get(Business, business_id)
-    if not managed_ads.plan_allows(biz):
+    block = managed_ads.spend_block(db, biz)
+    if block:
+        plan = block == managed_ads.PLAN_MESSAGE
         return ToolResult(
-            text=(f"Not scheduled. {managed_ads.PLAN_MESSAGE} Tell the owner that, and offer to "
-                  "draft an unpaid post instead."),
-            attachment={"kind": "tool-error", "tool": "schedule_boost", "reason": "plan"},
+            text=(f"Not scheduled. {block} Tell the owner that"
+                  + (", and offer to draft an unpaid post instead." if plan else ".")),
+            attachment={"kind": "tool-error", "tool": "schedule_boost", "reason": "plan" if plan else "halted"},
             is_error=True,
         )
     managed = managed_ads.is_managed(biz)
@@ -667,6 +670,8 @@ def _exec_schedule_boost(
                 name=f"Boost: {post.title}",
                 daily_budget_cents=daily_cents,
                 duration_days=days,
+                audience=audience,
+                by="AI agent, on its own within the owner's cap",
             )
         except Exception as e:
             return ToolResult(
@@ -723,7 +728,11 @@ def _exec_schedule_boost(
         ))
 
     text = (
-        f"Sent a ${total_dollars:.0f} boost on {raw_platform} (${daily_dollars:.0f}/day × {days} days), "
+        f"Created a ${total_dollars:.0f} boost on {raw_platform} (${daily_dollars:.0f}/day × {days} days), "
+        f"campaign #{campaign.id}, PAUSED on the platform, within the owner's cap. Nothing spends until the "
+        "owner presses 'Turn on' in Ads & Spend; tell them exactly that."
+        if autonomous and managed and external_id
+        else f"Sent a ${total_dollars:.0f} boost on {raw_platform} (${daily_dollars:.0f}/day × {days} days), "
         f"campaign #{campaign.id}, to Amplafai to launch {managed_ads.PROMISE}, within the owner's cap. "
         "Tell the owner it shows as 'Waiting for launch' until Amplafai confirms it's running."
         if autonomous and managed

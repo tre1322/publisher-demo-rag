@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from .. import managed_ads
-from ..auth.deps import get_tenant_id, require_capability
+from ..auth.deps import billing_blocks, get_tenant_id, require_capability
 from ..provisioning import is_demo, require_demo
 from ..db import get_db
 from ..models import (
@@ -252,6 +252,8 @@ def get_ads(business_id: int = Depends(get_tenant_id), db: Session = Depends(get
         "planAllows":        managed_ads.plan_allows(biz),
         "planMessage":       managed_ads.PLAN_MESSAGE,
         "promise":           managed_ads.PROMISE,
+        # Phase 5a: "Pause all paid ads" ({scope, at, by} or None).
+        "halt":              managed_ads.halt_state(db, business_id),
         "waitingCount":      sum(1 for c in campaigns if managed_ads.stage(c, open_reqs.get(c.id), managed) == "waiting_for_launch"),
         # Phase 4b: where each platform's real numbers came from, and when.
         "lastImports":       _last_imports(db, business_id) if managed else {},
@@ -351,8 +353,10 @@ def create_campaign(
     if biz is None:
         raise HTTPException(status_code=404, detail=f"business {business_id} not found")
     # Phase 4: Amplafai runs a real client's campaigns by hand, from Tier 3 up.
-    if not managed_ads.plan_allows(biz):
-        raise HTTPException(status_code=403, detail=managed_ads.PLAN_MESSAGE)
+    # Phase 5a: nothing new starts while "Pause all paid ads" is on.
+    block = managed_ads.spend_block(db, biz)
+    if block:
+        raise HTTPException(status_code=403 if block == managed_ads.PLAN_MESSAGE else 409, detail=block)
 
     # If post_id supplied, verify it belongs to this business.
     if body.post_id is not None:
@@ -391,6 +395,8 @@ def create_campaign(
                 name=body.name,
                 daily_budget_cents=body.daily_budget_cents,
                 duration_days=body.duration_days,
+                audience=body.target_audience,
+                by=actor(db, request),
             )
         except Exception as e:  # LinkedInProvisioningError or transport failure
             raise HTTPException(status_code=502, detail=f"ad platform error: {e}")
@@ -442,7 +448,7 @@ def create_campaign(
     return campaign_payload(campaign, reqs.get(campaign.id), managed)
 
 
-@router.put("/ads/campaigns/{campaign_id}", dependencies=[Depends(require_capability("manage_ads"))])
+@router.put("/ads/campaigns/{campaign_id}", dependencies=[Depends(require_capability("manage_ads", billing=False))])
 def update_campaign(
     campaign_id: int,
     body: CampaignUpdateBody,
@@ -456,6 +462,11 @@ def update_campaign(
     biz = db.get(Business, business_id)
     managed = managed_ads.is_managed(biz)
     message = None
+    # Phase 5a: stopping spend never waits on billing; starting it does.
+    if (body.status not in (None, "paused", "cancelled") or body.daily_budget_cents is not None):
+        blocked = billing_blocks(request) if not getattr(request.state, "is_superuser", False) else None
+        if blocked:
+            raise HTTPException(status_code=402, detail=blocked)
 
     if body.status:
         # Status state machine: pending_approval is owner-approval-only via
@@ -499,7 +510,7 @@ def update_campaign(
     return out
 
 
-@router.delete("/ads/campaigns/{campaign_id}", dependencies=[Depends(require_capability("manage_ads"))])
+@router.delete("/ads/campaigns/{campaign_id}", dependencies=[Depends(require_capability("manage_ads", billing=False))])
 def delete_campaign(
     campaign_id: int,
     request: Request,
@@ -554,6 +565,91 @@ def approve_campaign(
     managed = managed_ads.is_managed(db.get(Business, business_id))
     reqs = managed_ads.open_requests(db, business_id) if managed else {}
     return campaign_payload(c, reqs.get(c.id), managed)
+
+
+@router.post("/ads/campaigns/{campaign_id}/turn-on", dependencies=[Depends(require_capability("manage_ads"))])
+def turn_on_campaign(
+    campaign_id: int,
+    request: Request,
+    business_id: int = Depends(get_tenant_id),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Phase 5a: the separate, logged step that starts a campaign created
+    PAUSED through a platform's API. Only a person does this."""
+    from .. import ad_platforms
+
+    c = db.get(AdCampaign, campaign_id)
+    if c is None or c.business_id != business_id:
+        raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
+    biz = db.get(Business, business_id)
+    if c.status != "scheduled" or c.launched_at is not None or not managed_ads.on_platform(c):
+        raise HTTPException(status_code=409, detail="Only a campaign created on the platform and not yet turned on can be turned on here.")
+    block = managed_ads.spend_block(db, biz)
+    if block:
+        raise HTTPException(status_code=403 if block == managed_ads.PLAN_MESSAGE else 409, detail=block)
+    label = ad_platforms.LABELS.get(c.platform, c.platform)
+    adapter = ad_platforms.adapter_for(db, business_id, c.platform)
+    if adapter is None:
+        raise HTTPException(status_code=409, detail=f"{label} isn't connected right now. Reconnect it in Settings, or ask Amplafai.")
+    who = actor(db, request)
+    now = datetime.utcnow()
+    ends = now + timedelta(days=c.duration_days)
+    try:
+        adapter.activate(c.external_campaign_id, ends_at=ends)
+    except ad_platforms.PlatformError as e:
+        ad_platforms.record(db, business_id=business_id, campaign_id=c.id, platform=c.platform, action="activate",
+                            actor=who, source="owner", ok=False, detail=str(e))
+        db.commit()
+        raise HTTPException(status_code=502, detail=f"{label} didn't turn it on: {e}")
+    finally:
+        adapter.close()
+    c.status, c.launched_at, c.scheduled_for = "active", now, c.scheduled_for or now
+    ad_platforms.record(db, business_id=business_id, campaign_id=c.id, platform=c.platform, action="activate",
+                        actor=who, source="owner", detail=f"Turned on; ends {ends:%b %d}.")
+    db.commit()
+    db.refresh(c)
+    out = campaign_payload(c, None, managed_ads.is_managed(biz))
+    out["message"] = f"Turned on. It runs until {ends:%b %d} or its budget is spent, whichever comes first."
+    return out
+
+
+@router.post("/ads/halt", dependencies=[Depends(require_capability("manage_ads", billing=False))])
+def halt_paid_ads(
+    request: Request,
+    business_id: int = Depends(get_tenant_id),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Phase 5a: "Pause all paid ads" for this business. Always allowed
+    (stopping spend never waits on billing)."""
+    biz = db.get(Business, business_id)
+    counts = managed_ads.halt_business(db, biz, by=actor(db, request))
+    db.commit()
+    parts = []
+    if counts["paused"]:
+        parts.append(f"{counts['paused']} paused on the platform")
+    if counts["requested"]:
+        parts.append(f"{counts['requested']} sent to Amplafai to pause by hand ({managed_ads.PROMISE})")
+    if counts["held"]:
+        parts.append(f"{counts['held']} not yet started, now on hold")
+    summary = "; ".join(parts)
+    return {"ok": True, "counts": counts, "halt": managed_ads.halt_state(db, business_id),
+            "message": "Paid ads are paused. " + (summary[:1].upper() + summary[1:] + "." if parts else "Nothing was running.")}
+
+
+@router.post("/ads/allow", dependencies=[Depends(require_capability("authorize_ad_autonomy"))])
+def allow_paid_ads(
+    request: Request,
+    business_id: int = Depends(get_tenant_id),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Owner only: lift this business's switch. Nothing restarts on its own."""
+    biz = db.get(Business, business_id)
+    managed_ads.allow_business(db, biz, by=actor(db, request))
+    db.commit()
+    state = managed_ads.halt_state(db, business_id)
+    return {"ok": state is None, "halt": state,
+            "message": (managed_ads.halt_message(state) if state else
+                        "Paid ads are allowed again. Restart the campaigns you want, one by one.")}
 
 
 @router.post("/ads/tick", dependencies=[Depends(require_capability("manage_ads"))])
@@ -742,6 +838,8 @@ def resolve_external_campaign_id(
     name: str,
     daily_budget_cents: int,
     duration_days: int,
+    audience: Optional[str] = None,
+    by: str = "owner",
 ) -> Optional[str]:
     """The mock→real swap point for campaign provisioning.
 
@@ -753,27 +851,33 @@ def resolve_external_campaign_id(
     app/managed_ads.py). Before Oct 2026 real clients got mock ids too, so
     the dashboard showed "scheduled" campaigns that existed nowhere.
 
-    Raises LinkedInProvisioningError if the real call is attempted and fails —
-    callers surface that rather than masking the failure with a mock id.
+    Phase 5a: any platform with a live adapter (app/ad_platforms.py) creates
+    the campaign there PAUSED; a person turns it on as a separate, logged step
+    (POST /ads/campaigns/{id}/turn-on). A failed platform call is logged and
+    raised (ad_platforms.PlatformError) so callers surface it rather than
+    masking it with a mock id.
 
     Used by all three campaign-scheduling paths: the manual New-Campaign modal,
     the Tier-2 approve transition, and the agent's schedule_boost tool. One seam,
     so going live is a credential drop with no behavioral fork to maintain.
     """
-    if platform == "linkedin":
-        from ..integrations import linkedin as li
+    from .. import ad_platforms
 
-        if li.is_live():
-            from ..integrations import linkedin_store as store
-
-            if store.connection_is_live(store.get_connection(db, business_id)):
-                return store.provision_linkedin_campaign(
-                    db,
-                    business_id,
-                    name=name,
-                    daily_budget_cents=daily_budget_cents,
-                    duration_days=duration_days,
-                )
+    adapter = ad_platforms.adapter_for(db, business_id, platform)
+    if adapter is not None:
+        try:
+            ext = adapter.create_paused(name=name, daily_budget_cents=daily_budget_cents,
+                                        duration_days=duration_days, audience=audience)
+        except ad_platforms.PlatformError as e:
+            ad_platforms.record(db, business_id=business_id, platform=platform, action="create_paused",
+                                actor=by, source="system", ok=False, detail=f"{name}: {e}")
+            db.commit()
+            raise
+        finally:
+            adapter.close()
+        ad_platforms.record(db, business_id=business_id, platform=platform, action="create_paused",
+                            actor=by, source="system", detail=f"{name}: created paused as {ext}")
+        return ext
     if is_demo(db.get(Business, business_id)):
         return _mock_external_id(platform)
     return None
@@ -802,14 +906,17 @@ def schedule_approved_campaign(db: Session, business_id: int, c: AdCampaign, *, 
     Tier 3 up); otherwise its campaign waits for Amplafai to launch it.
     """
     biz = db.get(Business, business_id)
-    if not managed_ads.plan_allows(biz):
-        raise HTTPException(status_code=403, detail=managed_ads.PLAN_MESSAGE)
+    block = managed_ads.spend_block(db, biz)
+    if block:
+        raise HTTPException(status_code=403 if block == managed_ads.PLAN_MESSAGE else 409, detail=block)
     try:
         external_id = resolve_external_campaign_id(
             db, business_id, c.platform,
             name=c.name,
             daily_budget_cents=c.daily_budget_cents,
             duration_days=c.duration_days,
+            audience=(c.target_audience_json or {}).get("hint"),
+            by=by,
         )
     except Exception as e:  # LinkedInProvisioningError or transport failure
         raise HTTPException(status_code=502, detail=f"ad platform error: {e}")

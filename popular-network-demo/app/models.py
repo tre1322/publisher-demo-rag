@@ -16,6 +16,7 @@ from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, Stri
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
+from .token_crypto import EncryptedText
 
 
 class Business(Base):
@@ -208,6 +209,23 @@ class SettingsRow(Base):
     # Phase 2: when reminder/summary emails last went out, so the loop sends
     # each one once ({"approvalsAt": iso, "weeklyWeek": "2026-W41"}).
     notify_state_json: Mapped[Any] = mapped_column(JSON, nullable=True)
+    # Phase 5a: "Pause all paid ads" for this business. Set = nothing new
+    # starts spending (no launch, turn-on or restart) until someone with
+    # owner rights allows paid ads again.
+    ads_halted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    ads_halted_by: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+
+
+class AppFlag(Base):
+    """Phase 5a: app-wide switches Amplafai flips from the admin console,
+    e.g. "ads_halted" = pause paid ads for every business."""
+
+    __tablename__ = "app_flags"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[Any] = mapped_column(JSON, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_by: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
 
 
 class Connection(Base):
@@ -495,6 +513,24 @@ class AdSpendDay(Base):
     imported_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
+class AdActionLog(Base):
+    """Phase 5a: every change sent to an ad platform (or to Amplafai's hand
+    queue), who asked, and what the platform said. The audit trail for money."""
+
+    __tablename__ = "ad_action_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"), index=True)
+    campaign_id: Mapped[Optional[int]] = mapped_column(ForeignKey("ad_campaigns.id"), nullable=True, index=True)
+    platform: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    action: Mapped[str] = mapped_column(String(24))  # create_paused|activate|pause|resume|cancel|halt|unhalt|sync
+    actor: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    source: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)  # owner|agent|cap|halt|system
+    ok: Mapped[bool] = mapped_column(Boolean, default=True)
+    detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class AdConnection(Base):
     """Ad-platform account connection (distinct from social presence Connection).
 
@@ -524,12 +560,13 @@ class AdConnection(Base):
     platform: Mapped[str] = mapped_column(String(16))  # fb_ig | google_ads | tiktok | linkedin
     account_label: Mapped[str] = mapped_column(String(160))
     external_account_id: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
-    oauth_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # access token (real for linkedin)
+    # Phase 5a: encrypted at rest (app/token_crypto.py); reads back as plain text.
+    oauth_token: Mapped[Optional[str]] = mapped_column(EncryptedText, nullable=True)  # access token (real for linkedin)
     status: Mapped[str] = mapped_column(String(20), default="disconnected")  # connected|disconnected|pending|error
     last_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # --- Phase I.1: real LinkedIn OAuth lifecycle (NULL for mock platforms) ---
-    refresh_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    refresh_token: Mapped[Optional[str]] = mapped_column(EncryptedText, nullable=True)
     token_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     refresh_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     scope: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # space-delimited granted scopes

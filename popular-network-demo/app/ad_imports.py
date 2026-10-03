@@ -311,6 +311,20 @@ def run_import(db: Session, biz: Business, platform: str, data: bytes, *, filena
                    unmatched_json=unmatched)
     db.add(imp)
     db.flush()
+    summary["alerts"] = store_days(db, biz, platform, matched, campaigns, source=SOURCE_LABELS[platform],
+                                   import_id=imp.id, now=now, by=by)
+    summary["committed"] = True
+    summary["importId"] = imp.id
+    return summary
+
+
+def store_days(db: Session, biz: Business, platform: str, matched: dict[int, dict[str, dict[str, int]]],
+               campaigns: dict[int, AdCampaign], *, source: str, import_id: Optional[int], now: datetime,
+               by: str) -> list[dict[str, Any]]:
+    """Write per-day results (replacing those days), recompute each campaign's
+    totals and each touched month's platform spend, then check the caps.
+    Shared by export uploads (4b) and the platforms' API sync (5a)."""
+    days = {d for per in matched.values() for d in per}
     for cid, per in matched.items():
         old = {d.day: d for d in db.query(AdSpendDay).filter(AdSpendDay.campaign_id == cid,
                                                               AdSpendDay.day.in_(list(per)))}
@@ -320,15 +334,14 @@ def run_import(db: Session, biz: Business, platform: str, data: bytes, *, filena
                 row = AdSpendDay(business_id=biz.id, campaign_id=cid, platform=platform, day=day)
                 db.add(row)
             row.spend_cents, row.impressions, row.clicks = v["spend_cents"], v["impressions"], v["clicks"]
-            row.import_id, row.imported_at = imp.id, now
+            row.import_id, row.imported_at = import_id, now
         db.flush()
         c = campaigns[cid]
         spend, imps, clicks = _campaign_totals(db, cid)
         c.actual_spend_cents = spend
         latest = db.query(func.max(AdSpendDay.day)).filter(AdSpendDay.campaign_id == cid).scalar()
         c.performance_json = {"impressions": imps, "clicks": clicks, "ctr": (clicks / imps) if imps else 0.0,
-                              "source": SOURCE_LABELS[platform], "importedAt": now.isoformat(),
-                              "through": latest}
+                              "source": source, "importedAt": now.isoformat(), "through": latest}
     for month in sorted({d[:7] for d in days}):
         row = (db.query(AdPlatformBudget)
                .filter(AdPlatformBudget.business_id == biz.id, AdPlatformBudget.platform == platform,
@@ -340,10 +353,7 @@ def run_import(db: Session, biz: Business, platform: str, data: bytes, *, filena
         row.spend_cents = month_spend(db, biz.id, platform, month)
         row.updated_at = now
     db.flush()
-    summary["alerts"] = check_caps(db, biz, platform, now=now, by=by)
-    summary["committed"] = True
-    summary["importId"] = imp.id
-    return summary
+    return check_caps(db, biz, platform, now=now, by=by)
 
 
 # --------------------------------------------------------------------------- #

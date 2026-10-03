@@ -56,6 +56,11 @@ def _ok(msg: str) -> None:
 def _set_live() -> None:
     os.environ["LINKEDIN_CLIENT_ID"] = "test_client_id_123"
     os.environ["LINKEDIN_CLIENT_SECRET"] = "test_client_secret_456"
+    # Phase 5a: real tokens are stored encrypted, so live mode needs the key.
+    if not os.environ.get("TOKEN_ENCRYPTION_KEY"):
+        from cryptography.fernet import Fernet
+
+        os.environ["TOKEN_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
 
 
 def _set_mock() -> None:
