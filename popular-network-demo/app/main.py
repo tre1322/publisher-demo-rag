@@ -60,6 +60,7 @@ from .routers import (  # noqa: E402
     reviews,
     settings,
     widget,
+    posting,
 )
 from .seed import seed_if_empty  # noqa: E402
 
@@ -129,6 +130,12 @@ def _startup() -> None:
     # Phase 5a: "Pause all paid ads" per business; tokens encrypted at rest.
     _add_col_if_missing("settings", "ads_halted_at", "DATETIME")
     _add_col_if_missing("settings", "ads_halted_by", "VARCHAR(160)")
+    # Phase 5b: automatic posting.
+    _add_col_if_missing("posts", "publish_at", "DATETIME")
+    _add_col_if_missing("posts", "publish_state", "VARCHAR(16)")
+    _add_col_if_missing("posts", "publish_result_json", "JSON")
+    _add_col_if_missing("businesses", "posting_profile_key", "TEXT")
+    _add_col_if_missing("businesses", "posting_profile_ref", "VARCHAR(64)")
     from .db import engine as _engine
     from .token_crypto import encrypt_existing
 
@@ -259,6 +266,10 @@ def _start_notify_loop() -> None:
 
                     if complete_finished(db):
                         db.commit()
+                    # Phase 5b: approved posts whose time has come.
+                    from .auto_posting import publish_due
+
+                    publish_due(db)
             except Exception:  # housekeeping never takes the app down
                 log.exception("Notification run failed; will retry")
             time.sleep(15 * 60)
@@ -678,6 +689,7 @@ app.include_router(billing.router, prefix="/api", tags=["billing"])
 app.include_router(chatbot.router, prefix="/api", tags=["chatbot"])
 app.include_router(compose.router, prefix="/api", tags=["compose"])
 app.include_router(onboarding.router, prefix="/api", tags=["onboarding"])
+app.include_router(posting.router, prefix="/api", tags=["posting"])
 
 
 # Phase H.1.5 — auth-gate the dashboard HTML.

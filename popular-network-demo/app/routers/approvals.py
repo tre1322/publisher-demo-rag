@@ -170,6 +170,10 @@ def decide(
         db.add(new_post)
         db.flush()  # populate new_post.id
         a.post_id = new_post.id
+        # Phase 5b: Tier 2+ with linked accounts → it publishes on its day.
+        from .. import auto_posting
+
+        auto_posting.queue(db, db.get(Business, a.business_id), new_post)
         db.commit()
         return {
             "ok": True,

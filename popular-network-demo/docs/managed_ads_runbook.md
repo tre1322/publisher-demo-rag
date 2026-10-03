@@ -115,3 +115,24 @@ next), the dashboard talks to the platform directly. The safety rules:
 - **Tokens are encrypted.** Ad-account sign-in tokens are stored encrypted with `TOKEN_ENCRYPTION_KEY`
   (server `.env`, never in the database or its backups). Connecting a real ad account is refused until
   the key is set. Losing the key means every client reconnects; keep a copy somewhere safe.
+
+## Automatic posting (Phase 5b, Tier 2 and up)
+
+Approved posts publish themselves through Ayrshare, the posting service (decision 4). Tier 1 keeps copy
+and paste.
+
+1. **Switch it on once (Trevor):** sign up for an Ayrshare plan that allows multiple client profiles
+   (Launch: up to 10 clients; Business: up to 30), copy the API key from the Ayrshare dashboard, and add
+   `AYRSHARE_API_KEY=...` to the server's `.env`. Then ask Claude to restart the dashboard.
+2. **Each client links their accounts once:** Settings → Connections → **Link Facebook, Instagram &
+   Google**. It opens Ayrshare's secure page in a new tab (the link is valid for 5 minutes; press the
+   button again if it expires). Amplafai can do it with the owner on a call.
+3. **From then on:** approving a post queues it for its planned day (around 10am Central), or right
+   away if that day is today. The calendar shows *Posts automatically on…*, then *Posted* with a link
+   to the live post, or what went wrong with **Try again**.
+4. **Never posted automatically:** the website (no posting connection), Instagram posts without a
+   photo, and platforms the owner hasn't linked. Each says so on the post, so nothing silently
+   disappears.
+
+The posting service's profile key for each client is encrypted like ad tokens and left out of data
+exports. If Ayrshare rate-limits a client, posts wait 30 minutes instead of retrying immediately.

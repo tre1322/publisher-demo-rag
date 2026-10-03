@@ -69,6 +69,10 @@ class Business(Base):
     # follows payment) or "outside" (billed outside the app, or the demo).
     # NULL = "outside" for rows that predate billing.
     billing_mode: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    # Phase 5b: this business's profile at the posting service (Ayrshare).
+    # The key acts as the business there, so it's encrypted like ad tokens.
+    posting_profile_key: Mapped[Optional[str]] = mapped_column(EncryptedText, nullable=True)
+    posting_profile_ref: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     # Phase H.2.2 — widget CORS allowlist. JSON list of allowed origins
     # (e.g. ["https://cottonwoodcountycitizen.com", "https://staging.example.com"]).
     # When null/empty, /api/widget/chat accepts any Origin (v1 default — most
@@ -93,6 +97,12 @@ class Post(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     published_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # Phase 5b: automatic posting through the posting service (Tier 2+).
+    # publish_state: NULL (copy and paste) | queued | posted | partial |
+    # failed | manual (needs doing by hand, with the reason in the result).
+    publish_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    publish_state: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    publish_result_json: Mapped[Any] = mapped_column(JSON, nullable=True)
 
 
 class Approval(Base):

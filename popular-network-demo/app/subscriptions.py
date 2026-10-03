@@ -64,12 +64,17 @@ EVERY_PLAN = [
 # client's own ad accounts. The platforms bill the client for the ads.
 MANAGED_ADS = ("Paid ads run for you by Amplafai in your own Facebook, Instagram and Google ad accounts, "
                "within the monthly caps you set (the platforms bill you for the ads)")
+# Phase 5b: Tier 2 and up post automatically; Tier 1 copies and pastes.
+AUTO_POSTING = "Approved posts publish themselves to Facebook, Instagram and Google on their planned day"
+COPY_POSTING = "Copy each approved post to your accounts with one tap"
 TIER_FEATURES: dict[int, list[str]] = {
-    1: EVERY_PLAN,
-    2: EVERY_PLAN,
-    3: EVERY_PLAN + ["See the questions people ask your publisher's chatbot about your business",
+    1: EVERY_PLAN + [COPY_POSTING],
+    2: EVERY_PLAN + [AUTO_POSTING],
+    3: EVERY_PLAN + [AUTO_POSTING,
+                     "See the questions people ask your publisher's chatbot about your business",
                      MANAGED_ADS],
-    4: EVERY_PLAN + ["See the questions people ask your publisher's chatbot about your business",
+    4: EVERY_PLAN + [AUTO_POSTING,
+                     "See the questions people ask your publisher's chatbot about your business",
                      MANAGED_ADS,
                      "Your inventory listings, uploaded by spreadsheet"],
 }

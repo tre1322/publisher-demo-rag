@@ -149,6 +149,12 @@ def _business_payload(biz: Business) -> dict[str, Any]:
     }
 
 
+def _publish_payload(p: Post) -> Any:
+    from ..auto_posting import payload
+
+    return payload(p)
+
+
 def _post_payload(p: Post) -> dict[str, Any]:
     return {
         "id": p.external_id or f"p{p.id}",
@@ -159,6 +165,8 @@ def _post_payload(p: Post) -> dict[str, Any]:
         "title": p.title,
         "draft": p.draft,
         "reasoning": p.reasoning,
+        # Phase 5b: automatic posting state (None = copy and paste).
+        "publish": _publish_payload(p),
     }
 
 
