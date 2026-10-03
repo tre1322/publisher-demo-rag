@@ -31,7 +31,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=1280, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
@@ -89,7 +89,11 @@
   </script>
 
   <style>
-    html { font-size: 19px; }
+    /* 19px suits Trevor's big desktop monitor; phones get the normal 16px. */
+    html { font-size: 16px; }
+    @media (min-width: 768px) { html { font-size: 19px; } }
+    /* Typing into a field under 16px makes iOS zoom the whole page. */
+    @media (max-width: 767px) { input, textarea, select { font-size: 16px !important; } }
     html, body { background: #F7F7F5; color: #1A2A2E; font-family: 'Inter', system-ui, sans-serif; }
     body { -webkit-font-smoothing: antialiased; }
     .scroll-fade { mask-image: linear-gradient(to bottom, black 90%, transparent); }
@@ -110,6 +114,8 @@
     .fade-in { animation: fadeIn 220ms ease-out both; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(2px);} to { opacity: 1; transform: none; } }
     .slide-in-right { animation: slideInRight 220ms ease-out both; }
+    .slide-in-left { animation: slideInLeft 200ms ease-out both; }
+    @keyframes slideInLeft { from { transform: translateX(-100%); } to { transform: none; } }
     @keyframes slideInRight { from { opacity: 0; transform: translateX(8px);} to { opacity: 1; transform: none; } }
     /* hide babel transform flash */
     #root:empty::before {
@@ -139,7 +145,7 @@
   // version your browser is showing (rendered in the sidebar footer).
   // Keep it ONE concise line: it renders in the sidebar, so a changelog here
   // leaks internal roadmap language to customers. History lives in git.
-  const BUILD_VERSION = '2026-10-03 · v56 — approval reminders + Monday summary emails; links land on the right screen.';
+  const BUILD_VERSION = '2026-10-03 · v57 — works on phones: bottom tabs, menu drawer, phone layouts for the main screens.';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -149,6 +155,8 @@
   // ----------------------------------------------------------------
   const DashboardContext = createContext(null);
   const useDashboard = () => useContext(DashboardContext) || FALLBACK_DATA;
+  // navigate(view) for chrome that isn't handed it as a prop (TopBar's bell).
+  const NavContext = createContext(null);
 
   // Sibling context for optimistic mutations. Views call mutate(updater) with
   // a function (prevData → nextData). When the backend is offline and
@@ -573,17 +581,22 @@
       return () => window.removeEventListener('keydown', onKey);
     }, [open, onClose]);
     if (!open) return null;
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/30 fade-in overflow-y-auto" onClick={onClose}>
-        <div className="bg-white rounded-xl shadow-modal max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+    // Portaled to <body>: inside a view, the view's fade-in animation makes
+    // `fixed` relative to the view and traps z-index, so on a phone the
+    // dialog's buttons ended up off-screen behind the bottom tab bar.
+    return ReactDOM.createPortal(
+      <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-ink/30 fade-in" onClick={onClose}>
+        <div className="bg-white rounded-t-2xl sm:rounded-xl shadow-modal max-w-lg w-full max-h-[92dvh] sm:max-h-[90vh] flex flex-col overflow-hidden"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }} onClick={(e) => e.stopPropagation()}>
           <div className="px-6 py-4 border-b border-surface-edge flex items-center justify-between shrink-0">
             <h3 className="font-semibold text-ink">{title}</h3>
             <button className="text-ink-faint hover:text-ink rounded-lg p-1 hover:bg-surface" onClick={onClose}><Icon name="x" size={18} /></button>
           </div>
           <div className="px-6 py-5 overflow-y-auto">{children}</div>
-          {footer && <div className="px-6 py-4 border-t border-surface-edge bg-surface flex items-center justify-end gap-2 shrink-0">{footer}</div>}
+          {footer && <div className="px-6 py-4 border-t border-surface-edge bg-surface flex flex-wrap items-center justify-end gap-2 shrink-0">{footer}</div>}
         </div>
-      </div>
+      </div>,
+      document.body
     );
   };
 
@@ -838,7 +851,7 @@
   // Every view a ?tab= link may open.
   const VIEW_IDS = [...NAV_DEFS.map(n => n.id), 'onboarding'];
 
-  const Sidebar = ({ current, onNavigate }) => {
+  const Sidebar = ({ current, onNavigate, className = 'flex', onClose }) => {
     const { business, approvals, chatbot, access } = useDashboard();
     // Phase B.7: derive Approvals badge from the live queue length so it
     // shrinks/grows as the owner works through it.
@@ -857,7 +870,7 @@
         return n;
       });
     return (
-    <aside className="w-60 shrink-0 bg-brand-700 text-white flex flex-col h-full">
+    <aside className={`w-60 shrink-0 bg-brand-700 text-white flex-col h-full ${className}`}>
       <div className="px-5 pt-6 pb-5 border-b border-white/10">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-lg bg-accent flex items-center justify-center font-serif font-bold text-brand-800 text-base">P</div>
@@ -865,6 +878,12 @@
             <div className="font-serif font-semibold text-base">Popular Network</div>
             <div className="text-[11px] text-white/60 tracking-wide uppercase">Marketing Agent</div>
           </div>
+          {onClose && (
+            <button type="button" onClick={onClose} aria-label="Close menu"
+              className="ml-auto p-2 -mr-2 rounded-lg text-white/80 hover:text-white hover:bg-white/10">
+              <Icon name="x" size={20} />
+            </button>
+          )}
         </div>
       </div>
       <nav className="flex-1 min-h-0 overflow-y-auto py-3">
@@ -911,9 +930,13 @@
   /* ============================================================
      TOP BAR (per page)
      ============================================================ */
-  const TopBar = ({ title, subtitle, breadcrumb, right }) => (
+  const TopBar = ({ title, subtitle, breadcrumb, right }) => {
+    const { approvals } = useDashboard();
+    const goTo = useContext(NavContext);
+    const waiting = (approvals || []).length;
+    return (
     <header className="bg-white border-b border-surface-edge sticky top-0 z-30">
-      <div className="px-8 h-16 flex items-center justify-between gap-6">
+      <div className="px-4 md:px-8 py-2 md:py-0 min-h-[3.5rem] md:h-16 flex flex-wrap md:flex-nowrap items-center justify-between gap-x-3 gap-y-2 md:gap-6">
         <div className="min-w-0">
           {breadcrumb && (
             <div className="text-xs uppercase tracking-wider text-ink-faint font-medium">{breadcrumb}</div>
@@ -921,19 +944,22 @@
           <h1 className="text-lg font-semibold text-ink truncate">{title}</h1>
           {subtitle && <div className="text-sm text-ink-soft">{subtitle}</div>}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button className="px-3 py-2 rounded-lg text-ink-soft hover:bg-surface-edge inline-flex items-center gap-2 text-sm">
-            <Icon name="search" size={16} /><span className="hidden md:inline">Search</span>
-          </button>
-          <button className="p-2 rounded-lg text-ink-soft hover:bg-surface-edge relative">
-            <Icon name="bell" size={18} />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-accent rounded-full"></span>
-          </button>
+        <div className="flex flex-wrap items-center gap-2 md:shrink-0 max-w-full [&>div]:flex-wrap">
+          {goTo && (
+            <button type="button" onClick={() => goTo('approvals')}
+              aria-label={waiting ? `${waiting} waiting for approval` : 'Approvals (nothing waiting)'}
+              title={waiting ? `${waiting} waiting for your approval` : 'Nothing waiting for approval'}
+              className="hidden md:inline-flex p-2 rounded-lg text-ink-soft hover:bg-surface-edge relative">
+              <Icon name="bell" size={18} />
+              {waiting > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-accent rounded-full"></span>}
+            </button>
+          )}
           {right}
         </div>
       </div>
     </header>
-  );
+    );
+  };
 
   /* ============================================================
      VIEW: COMPOSE — brief + per-platform editor + live preview
@@ -1303,7 +1329,7 @@
           subtitle="One brief. Platform-tuned drafts on each channel — and your website."
           right={
             <div className="flex items-center gap-2">
-              <Pill color="violet" icon="sparkles">AI-drafted</Pill>
+              <span className="hidden md:inline-flex"><Pill color="violet" icon="sparkles">AI-drafted</Pill></span>
               {/* Save = stash. Distinct icon (bookmark), grey, on the left. */}
               <Button variant="secondary" size="sm" icon="bookmark"
                 onClick={() => submit('draft')}
@@ -1311,7 +1337,7 @@
                 {saving === 'draft' ? 'Saving…' : `Save as draft${chosen.length > 1 ? `s (${chosen.length})` : ''}`}
               </Button>
               {/* Visual gap so Send doesn't sit immediately next to Save. */}
-              <div className="w-px h-8 bg-surface-edge mx-2" aria-hidden="true" />
+              <div className="hidden md:block w-px h-8 bg-surface-edge mx-2" aria-hidden="true" />
               {/* Send = commit to review. Different icon (paper plane), blue, on the right. */}
               <Button variant="primary" icon="send"
                 onClick={() => setConfirmSend(true)}
@@ -1322,7 +1348,7 @@
           }
         />
         {saveError && (
-          <div className="mx-8 mt-5 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-start gap-2">
+          <div className="mx-4 md:mx-8 mt-5 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-start gap-2">
             <Icon name="alert" size={16} className="mt-0.5 shrink-0" />
             <div className="flex-1">{saveError}</div>
             <button className="text-bad/60 hover:text-bad" onClick={() => setSaveError(null)}>
@@ -1331,7 +1357,7 @@
           </div>
         )}
         {saveToast && (
-          <div className="mx-8 mt-5 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 flex items-start gap-2">
+          <div className="mx-4 md:mx-8 mt-5 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 flex items-start gap-2">
             <Icon name="check" size={16} className="mt-0.5 shrink-0" />
             <div className="flex-1">{saveToast}</div>
             <button className="text-emerald-700/60 hover:text-emerald-800" onClick={() => setSaveToast(null)}>
@@ -1339,7 +1365,7 @@
             </button>
           </div>
         )}
-        <div className="px-8 py-7 grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)_420px] gap-6 max-w-[1600px] mx-auto">
+        <div className="px-4 md:px-8 py-5 md:py-7 grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)_420px] gap-6 max-w-[1600px] mx-auto">
 
           {/* LEFT: brief */}
           <div className="space-y-4">
@@ -2030,13 +2056,13 @@
     // for what's really a transient onboarding state.
     const needsChatbotKey = (chatbot?.tierEligible) && !(chatbot?.hasAnyKey);
     const effectiveAttention = needsChatbotKey
-      ? [{
+      ? [...attention, {
           kind: 'chatbot-key',
           title: 'Connect your publisher chatbot',
           detail: 'Your plan includes the consumer chatbot preview, but no ingestion key is configured yet. Mint a key in Settings → Integrations and paste it into your publisher\'s chatbot config — sessions stream into this dashboard within seconds.',
           cta: 'Open Integrations', icon: 'key', tone: 'teal',
           target: 'settings',
-        }, ...attention]
+        }]  // after today's to-dos (setup, drafts waiting), not ahead of them
       : attention;
     return (
       <div className="fade-in">
@@ -2051,9 +2077,9 @@
                   <Pill color="amber" icon="clock">Setup not finished</Pill>
                 </button>}
         />
-        <div className="px-8 py-7 space-y-6 max-w-6xl">
+        <div className="px-4 md:px-8 py-5 md:py-7 flex flex-col gap-6 max-w-6xl">
           {/* Compose hero — the demo's primary CTA on Home */}
-          <div className="rounded-xl bg-gradient-to-br from-brand-700 to-brand-900 text-white p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-card">
+          <div className="order-1 md:order-none rounded-xl bg-gradient-to-br from-brand-700 to-brand-900 text-white p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-card">
             <div className="flex-1">
               <div className="text-xs uppercase tracking-wider font-semibold text-accent mb-1 inline-flex items-center gap-1.5">
                 <Icon name="sparkles" size={14} /> AI-drafted posts
@@ -2071,7 +2097,7 @@
           </div>
 
           {/* Stat tiles */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="order-3 md:order-none grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
             <StatTile label="Posts this month" value={stats.posts.value} delta={stats.posts.delta}
               positive={!String(stats.posts.delta || '').startsWith('-')} helper={stats.posts.helper} />
             <StatTile label="Engagement" value={stats.engagement.value} positive={stats.engagement.positive !== false}
@@ -2112,8 +2138,8 @@
             <StatTile label="Chatbot conversations" value={stats.chatbot.value} helper={stats.chatbot.helper || 'included in higher plans'} />
           </div>
 
-          {/* Hero: Needs your attention — full width */}
-          <Card padded={false}>
+          {/* Hero: Needs your attention — full width. Second on phones. */}
+          <Card padded={false} className="order-2 md:order-none">
             <div className="px-6 pt-6 pb-2 flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-ink">Needs your attention</h2>
@@ -2134,7 +2160,7 @@
                 }[a.tone];
                 return (
                   <button key={i} onClick={() => onNavigate(a.target, a.targetId || null)}
-                    className="flex items-start gap-4 w-full text-left py-4 px-4 hover:bg-surface rounded-lg transition-all">
+                    className="flex items-start gap-3 md:gap-4 w-full text-left py-4 px-2 md:px-4 hover:bg-surface rounded-lg transition-all">
                     <div className={`shrink-0 w-10 h-10 rounded-lg ${tone.bg} flex items-center justify-center ${tone.icon}`}>
                       <Icon name={a.icon} size={20} />
                     </div>
@@ -2143,7 +2169,7 @@
                       <div className="text-sm text-ink-soft mt-0.5">{a.detail}</div>
                     </div>
                     <div className="shrink-0 self-center text-sm text-brand-600 font-medium inline-flex items-center gap-1">
-                      {a.cta} <Icon name="chevR" size={14} />
+                      <span className="hidden sm:inline">{a.cta}</span> <Icon name="chevR" size={14} />
                     </div>
                   </button>
                 );
@@ -2180,14 +2206,156 @@
             <Button icon="sparkles" variant="primary" onClick={() => onNavigate && onNavigate('compose')}>Compose new post</Button>
           }
         />
-        <div className="px-8 pt-2">
+        <div className="px-4 md:px-8 pt-2">
           <TabBar tabs={tabs} value={tab} onChange={setTab} />
         </div>
-        <div className="px-8 py-7">
+        <div className="px-4 md:px-8 py-5 md:py-7">
           {tab === 'schedule' && <ScheduleTab />}
           {tab === 'drafts'   && <DraftsTab />}
         </div>
       </div>
+    );
+  };
+
+  // The post a calendar click opens. Restored 2026-10-03: commit 706a116
+  // (May 26) deleted it along with dead code, so every calendar click since
+  // then crashed the Calendar screen.
+  const PostDetail = ({ post, onEdit }) => {
+    const canEdit = post.status !== 'published';
+    const [copied, setCopied] = useState(false);
+    useEffect(() => { setCopied(false); }, [post.id]);
+    return (
+      <Card className="slide-in-right" padded={false}>
+        <div className="px-4 md:px-6 py-4 border-b border-surface-edge flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <PlatformChip platform={post.platform} />
+            <StatusChip status={post.status} />
+          </div>
+          <span className="text-xs text-ink-faint">{post.date}</span>
+        </div>
+        <div className="px-4 md:px-6 py-5 space-y-4">
+          <div>
+            <div className="text-xs uppercase tracking-wider text-ink-faint font-medium mb-1.5">Headline</div>
+            <h3 className="font-semibold text-ink leading-tight">{post.title}</h3>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wider text-ink-faint font-medium mb-1.5">Draft</div>
+            <p className="text-sm text-ink leading-relaxed bg-surface rounded-lg p-3 border border-surface-edge whitespace-pre-line">{post.draft}</p>
+          </div>
+          {post.reasoning && (
+            <div>
+              <div className="text-xs uppercase tracking-wider text-ink-faint font-medium mb-1.5 inline-flex items-center gap-1.5">
+                <Icon name="sparkles" size={12} className="text-brand-500" /> Agent's reasoning
+              </div>
+              <p className="text-sm text-ink-soft leading-relaxed italic border-l-2 border-brand-500 pl-3">
+                {post.reasoning}
+              </p>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2 pt-2">
+            {canEdit && <Button icon="edit" variant="secondary" className="flex-1" onClick={onEdit}>Edit draft</Button>}
+            <Button icon="copy" variant="ghost"
+              onClick={() => copyTextToClipboard(post.draft, () => setCopied(true), () => setCopied(false))}>
+              {copied ? 'Copied ✓' : 'Copy text'}
+            </Button>
+          </div>
+          {!canEdit && (
+            <div className="flex items-center gap-2 text-sm text-ink-faint">
+              <Icon name="check" size={14} className="text-ok" /> Published. Published posts can't be edited here.
+            </div>
+          )}
+        </div>
+      </Card>
+    );
+  };
+
+  // Calendar → Drafts. Also restored 2026-10-03 (deleted in 706a116, so the
+  // tab crashed). Its old "Send to queue" button never did anything, so it's
+  // gone; drafts are edited here or copied.
+  const DraftsTab = () => {
+    const { posts } = useDashboard();
+    const [editing, setEditing] = useState(null);
+    const [copiedId, setCopiedId] = useState(null);
+    const draftPosts = posts.filter(p => p.status === 'draft');
+    return (
+      <div className="space-y-3 max-w-4xl">
+        <Card>
+          <div className="flex items-start gap-3">
+            <div className="shrink-0 w-9 h-9 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center"><Icon name="edit" size={18} /></div>
+            <div className="flex-1">
+              <div className="font-semibold text-ink">{draftPosts.length} draft{draftPosts.length === 1 ? '' : 's'} saved</div>
+              <div className="text-sm text-ink-soft">Drafts you saved from Compose wait here. Nothing posts publicly from this list.</div>
+            </div>
+          </div>
+        </Card>
+        {draftPosts.map(p => (
+          <Card key={p.id}>
+            <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                  <PlatformChip platform={p.platform} />
+                  <StatusChip status={p.status} />
+                  <span className="text-xs text-ink-faint">For {p.date}</span>
+                </div>
+                <div className="font-semibold text-ink">{p.title}</div>
+                <p className="text-sm text-ink-soft mt-1 line-clamp-2">{p.draft}</p>
+              </div>
+              <div className="shrink-0 flex sm:flex-col gap-1.5">
+                <Button icon="edit" variant="secondary" size="sm" onClick={() => setEditing(p)}>Edit</Button>
+                <Button icon="copy" variant="ghost" size="sm"
+                  onClick={() => copyTextToClipboard(p.draft, () => setCopiedId(p.id), () => setCopiedId(null))}>
+                  {copiedId === p.id ? 'Copied ✓' : 'Copy'}
+                </Button>
+              </div>
+            </div>
+          </Card>
+        ))}
+        <PostEditModal post={editing} onClose={() => setEditing(null)} />
+      </div>
+    );
+  };
+
+  // Phone version of the month: only the days that have posts, in order.
+  const MonthList = ({ cursor, postsByDay, isThisMonth, today, selectedId, onSelect }) => {
+    const days = Object.keys(postsByDay).map(Number).sort((a, b) => a - b);
+    const monthName = cursor.toLocaleDateString(undefined, { month: 'long' });
+    if (!days.length) {
+      return (
+        <div className="md:hidden px-4 py-8 text-center text-sm text-ink-soft">
+          Nothing on the calendar in {monthName}. Approved posts land on their day.
+        </div>
+      );
+    }
+    return (
+      <ul className="md:hidden divide-y divide-surface-edge">
+        {days.map(d => {
+          const date = new Date(cursor.getFullYear(), cursor.getMonth(), d);
+          const isToday = isThisMonth && d === today.getDate();
+          return (
+            <li key={d} className={`px-4 py-3 flex gap-3 ${isToday ? 'bg-brand-50/40' : ''}`}>
+              <div className="w-12 shrink-0 text-center">
+                <div className="text-[11px] uppercase tracking-wider text-ink-faint">{date.toLocaleDateString(undefined, { weekday: 'short' })}</div>
+                <div className={`text-lg font-semibold ${isToday ? 'text-brand-600' : 'text-ink'}`}>{d}</div>
+              </div>
+              <div className="flex-1 min-w-0 space-y-1.5">
+                {postsByDay[d].map(p => {
+                  const plat = platformMeta(p.platform);
+                  const stat = STATUSES[p.status] || STATUSES.draft;
+                  return (
+                    <button key={p.id} type="button" onClick={() => onSelect(p.id)}
+                      className={`w-full text-left rounded-lg px-3 py-2 flex items-center gap-2 ${selectedId === p.id ? 'ring-2 ring-brand-500' : ''}`}
+                      style={{ background: stat.dot + '1f' }}>
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: plat.dot }}></span>
+                      <span className="flex-1 min-w-0 truncate text-sm text-ink">{p.title}</span>
+                      <span className="text-[11px] shrink-0" style={{ color: stat.dot }}>{stat.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     );
   };
 
@@ -2228,31 +2396,36 @@
     return (
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_400px] gap-6">
         <Card padded={false}>
-          <div className="px-6 py-4 border-b border-surface-edge flex items-center justify-between">
-            <div className="flex items-center gap-3">
+          <div className="px-4 md:px-6 py-3 md:py-4 border-b border-surface-edge flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 md:gap-3">
               <button onClick={() => shiftMonth(-1)} aria-label="Previous month"
-                className="w-7 h-7 rounded-md border border-surface-edge text-ink-soft hover:text-ink">‹</button>
+                className="w-9 h-9 md:w-7 md:h-7 rounded-md border border-surface-edge text-ink-soft hover:text-ink">‹</button>
               <h2 className="font-serif text-lg font-semibold min-w-[9rem] text-center">{monthLabel}</h2>
               <button onClick={() => shiftMonth(1)} aria-label="Next month"
-                className="w-7 h-7 rounded-md border border-surface-edge text-ink-soft hover:text-ink">›</button>
+                className="w-9 h-9 md:w-7 md:h-7 rounded-md border border-surface-edge text-ink-soft hover:text-ink">›</button>
               {isThisMonth ? (
-                <Pill color="slate">Today: {today.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</Pill>
+                <Pill color="slate" className="whitespace-nowrap">Today: {today.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</Pill>
               ) : (
                 <button onClick={() => setCursor(new Date(today.getFullYear(), today.getMonth(), 1))}
                   className="text-xs text-brand-600 hover:underline">Back to today</button>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="hidden md:flex items-center gap-2">
               <Pill color="teal"><span className="w-1.5 h-1.5 rounded-full bg-brand-600"></span>Published</Pill>
               <Pill color="amber"><span className="w-1.5 h-1.5 rounded-full bg-warn"></span>Pending</Pill>
               <Pill color="emerald"><span className="w-1.5 h-1.5 rounded-full bg-ok"></span>Approved</Pill>
               <Pill color="slate"><span className="w-1.5 h-1.5 rounded-full bg-ink-faint"></span>Draft</Pill>
             </div>
           </div>
-          <div className="grid grid-cols-7 text-center text-[11px] uppercase tracking-wider font-medium text-ink-faint border-b border-surface-edge">
+          <div className="hidden md:grid grid-cols-7 text-center text-[11px] uppercase tracking-wider font-medium text-ink-faint border-b border-surface-edge">
             {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <div key={d} className="py-2">{d}</div>)}
           </div>
-          <div className="grid grid-cols-7 grid-rows-6 border-l border-surface-edge" style={{ minHeight: 540 }}>
+          <MonthList cursor={cursor} postsByDay={postsByDay} isThisMonth={isThisMonth} today={today}
+            selectedId={selectedId} onSelect={(id) => {
+              setSelectedId(id);
+              setTimeout(() => document.getElementById('calendar-post-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+            }} />
+          <div className="hidden md:grid grid-cols-7 grid-rows-6 border-l border-surface-edge" style={{ minHeight: 540 }}>
             {cells.map((d, i) => {
               const dayPosts = d ? (postsByDay[d] || []) : [];
               const isToday = isThisMonth && d === today.getDate();
@@ -2265,8 +2438,8 @@
                       </div>
                       <div className="space-y-1">
                         {dayPosts.slice(0, 2).map(p => {
-                          const plat = PLATFORMS[p.platform];
-                          const stat = STATUSES[p.status];
+                          const plat = platformMeta(p.platform);
+                          const stat = STATUSES[p.status] || STATUSES.draft;
                           const isSel = selected && selected.id === p.id;
                           return (
                             <button key={p.id} onClick={() => setSelectedId(p.id)}
@@ -2288,9 +2461,11 @@
             })}
           </div>
         </Card>
-        {selected ? <PostDetail post={selected} onEdit={() => setEditing(selected)} /> : (
-          <Card><div className="text-sm text-ink-soft">Click any post on the calendar to see the draft and the agent's reasoning.</div></Card>
-        )}
+        <div id="calendar-post-detail" className="scroll-mt-20">
+          {selected ? <PostDetail post={selected} onEdit={() => setEditing(selected)} /> : (
+            <Card><div className="text-sm text-ink-soft">Tap any post on the calendar to see the draft and the agent's reasoning.</div></Card>
+          )}
+        </div>
         <PostEditModal post={editing} onClose={() => setEditing(null)} />
       </div>
     );
@@ -2634,7 +2809,7 @@
           }
         />
         {error && (
-          <div className="mx-8 mt-5 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-start gap-2">
+          <div className="mx-4 md:mx-8 mt-5 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-start gap-2">
             <Icon name="alert" size={16} className="mt-0.5 shrink-0" />
             <div className="flex-1">{error}</div>
             <button className="text-bad/60 hover:text-bad" onClick={() => setError(null)}>
@@ -2643,7 +2818,7 @@
           </div>
         )}
         {toast && (
-          <div className="mx-8 mt-5 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 flex items-start gap-2">
+          <div className="mx-4 md:mx-8 mt-5 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 flex items-start gap-2">
             <Icon name="check" size={16} className="mt-0.5 shrink-0" />
             <div className="flex-1">{toast}</div>
             <button className="text-emerald-700/60 hover:text-emerald-800" onClick={() => setToast(null)}>
@@ -2652,7 +2827,7 @@
           </div>
         )}
         {pendingCount === 0 && !error && (
-          <div className="px-8 py-16 text-center">
+          <div className="px-4 md:px-8 py-10 md:py-16 text-center">
             <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-emerald-50 text-emerald-600 mb-3">
               <Icon name="check" size={26} strokeWidth={2.2} />
             </div>
@@ -2660,7 +2835,7 @@
             <p className="text-sm text-ink-soft mt-1">When the agent drafts something new, it'll show up here for your sign-off.</p>
           </div>
         )}
-        <div className="px-8 py-7 grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="px-4 md:px-8 py-5 md:py-7 grid grid-cols-1 lg:grid-cols-2 gap-5">
           {approvals.map(item => {
             const busy = !!inFlight[item.id];
             return (
@@ -2720,8 +2895,10 @@
                   <div className="shrink-0 mt-0.5"><Icon name="sparkles" size={13} className="text-brand-500" /></div>
                   <p className="text-ink-soft italic leading-relaxed flex-1">{item.note}</p>
                 </div>
-                <div className="flex items-center gap-2 pt-1">
-                  <Button icon="check" variant="ok" className="flex-1"
+                {/* Narrow cards (phones, and two-up cards on laptops): a full-width
+                    Approve, then Edit / Copy / Reject below it. One row on wide screens. */}
+                <div className="grid grid-cols-3 gap-2 pt-1 xl:flex xl:items-center">
+                  <Button icon="check" variant="ok" className="col-span-3 py-2.5 xl:py-2 xl:flex-1"
                     disabled={busy}
                     onClick={() => decide(item, 'approve')}>Approve</Button>
                   {/* Pause and budget proposals apply exact values, so there's
@@ -3067,9 +3244,9 @@
             </div>
           }
         />
-        <div className="px-8 pt-2"><TabBar tabs={insightTabs} value={tab} onChange={setTab} /></div>
+        <div className="px-4 md:px-8 pt-2"><TabBar tabs={insightTabs} value={tab} onChange={setTab} /></div>
         {perfError && (
-          <div className="mx-8 mt-5 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-start gap-2">
+          <div className="mx-4 md:mx-8 mt-5 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-start gap-2">
             <Icon name="alert" size={16} className="mt-0.5 shrink-0" />
             <div className="flex-1">{perfError}</div>
             <button className="text-bad/60 hover:text-bad" onClick={() => setPerfError(null)}>
@@ -3078,7 +3255,7 @@
           </div>
         )}
         {perfToast && (
-          <div className="mx-8 mt-5 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 flex items-start gap-2">
+          <div className="mx-4 md:mx-8 mt-5 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 flex items-start gap-2">
             <Icon name="check" size={16} className="mt-0.5 shrink-0" />
             <div className="flex-1">{perfToast}</div>
             <button className="text-emerald-700/60 hover:text-emerald-800" onClick={() => setPerfToast(null)}>
@@ -3370,7 +3547,7 @@
       return (
         <div className="fade-in">
           <TopBar breadcrumb="Workspace" title="Ads & Spend" subtitle="Loading…" />
-          <div className="px-8 py-16 text-center text-ink-faint text-sm">Loading ad data…</div>
+          <div className="px-4 md:px-8 py-10 md:py-16 text-center text-ink-faint text-sm">Loading ad data…</div>
         </div>
       );
     }
@@ -3419,10 +3596,10 @@
             </div>
           }
         />
-        <div className="px-8 pt-2"><TabBar tabs={adTabs} value={tab} onChange={setTab} /></div>
+        <div className="px-4 md:px-8 pt-2"><TabBar tabs={adTabs} value={tab} onChange={setTab} /></div>
 
         {error && (
-          <div className="mx-8 mt-5 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-start gap-2">
+          <div className="mx-4 md:mx-8 mt-5 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-start gap-2">
             <Icon name="alert" size={16} className="mt-0.5 shrink-0" />
             <div className="flex-1">{error}</div>
             <button className="text-bad/60 hover:text-bad" onClick={() => setError(null)}>
@@ -3431,7 +3608,7 @@
           </div>
         )}
 
-        <div className="px-8 py-7">
+        <div className="px-4 md:px-8 py-5 md:py-7">
           {/* Top stat row — visible on all tabs */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <StatTile label="Total spend (this month)"
@@ -4129,7 +4306,7 @@
           }
         />
         {error && (
-          <div className="mx-8 mt-5 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-start gap-2">
+          <div className="mx-4 md:mx-8 mt-5 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-start gap-2">
             <Icon name="alert" size={16} className="mt-0.5 shrink-0" />
             <div className="flex-1">{error}</div>
             <button className="text-bad/60 hover:text-bad" onClick={() => setError(null)}>
@@ -4138,7 +4315,7 @@
           </div>
         )}
         {toast && (
-          <div className="mx-8 mt-5 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 flex items-start gap-2">
+          <div className="mx-4 md:mx-8 mt-5 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 flex items-start gap-2">
             <Icon name="check" size={16} className="mt-0.5 shrink-0" />
             <div className="flex-1">{toast}</div>
             <button className="text-emerald-700/60 hover:text-emerald-800" onClick={() => setToast(null)}>
@@ -4146,7 +4323,7 @@
             </button>
           </div>
         )}
-        <div className="px-8 py-7 grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="px-4 md:px-8 py-5 md:py-7 grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* Aggregate + sparkline */}
           <Card>
             <SectionHeader title="Rating trend" subtitle="Last six months" />
@@ -4445,9 +4622,9 @@
             </div>
           }
         />
-        <div className="px-8 pt-2"><TabBar tabs={tabs} value={tab} onChange={setTab} /></div>
+        <div className="px-4 md:px-8 pt-2"><TabBar tabs={tabs} value={tab} onChange={setTab} /></div>
         {planError && (
-          <div className="mx-8 mt-5 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-start gap-2">
+          <div className="mx-4 md:mx-8 mt-5 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-start gap-2">
             <Icon name="alert" size={16} className="mt-0.5 shrink-0" />
             <div className="flex-1">{planError}</div>
             <button className="text-bad/60 hover:text-bad" onClick={() => setPlanError(null)}>
@@ -4456,7 +4633,7 @@
           </div>
         )}
         {planToast && (
-          <div className="mx-8 mt-5 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 flex items-start gap-2">
+          <div className="mx-4 md:mx-8 mt-5 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 flex items-start gap-2">
             <Icon name="check" size={16} className="mt-0.5 shrink-0" />
             <div className="flex-1">{planToast}</div>
             <button className="text-emerald-700/60 hover:text-emerald-800" onClick={() => setPlanToast(null)}>
@@ -4464,7 +4641,7 @@
             </button>
           </div>
         )}
-        <div className="px-8 py-7 space-y-5">
+        <div className="px-4 md:px-8 py-5 md:py-7 space-y-5">
           {/* "Train the bot on this" handoff banner — shown when the owner
               came in from a Chatbot transcript. Confirms the captured phrase
               and offers a one-click append to customer_language. */}
@@ -5095,7 +5272,7 @@
             </div>
           }
         />
-        <div className="px-8 py-7 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5 flex-1">
+        <div className="px-4 md:px-8 py-5 md:py-7 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5 flex-1">
           {/* Conversation */}
           <Card padded={false} className="flex flex-col">
             <div ref={conversationRef} className="p-6 space-y-6 flex-1 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 260px)' }}>
@@ -5613,7 +5790,7 @@
 
     if (loading) {
       return (
-        <div className="px-8 py-7">
+        <div className="px-4 md:px-8 py-5 md:py-7">
           <TopBar breadcrumb="Inventory" title="Inventory" subtitle="Live inventory feeds." />
           <div className="text-ink-soft text-sm mt-6">Loading inventory data…</div>
         </div>
@@ -5621,7 +5798,7 @@
     }
     if (!invState) {
       return (
-        <div className="px-8 py-7">
+        <div className="px-4 md:px-8 py-5 md:py-7">
           <TopBar breadcrumb="Inventory" title="Inventory" subtitle="Live inventory feeds." />
           <Card className="mt-6">
             <div className="text-rose-700 text-sm">{error || 'Inventory endpoint returned no data.'}</div>
@@ -5669,16 +5846,16 @@
             </div>
           }
         />
-        <div className="px-8 pt-2"><TabBar tabs={tabs} value={tab} onChange={setTab} /></div>
+        <div className="px-4 md:px-8 pt-2"><TabBar tabs={tabs} value={tab} onChange={setTab} /></div>
 
         {error && (
-          <div className="mx-8 mt-3 px-4 py-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-sm flex items-center justify-between">
+          <div className="mx-4 md:mx-8 mt-3 px-4 py-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-sm flex items-center justify-between">
             <span>{error}</span>
             <button className="text-rose-600 hover:text-rose-800" onClick={() => setError(null)}><Icon name="x" size={14} /></button>
           </div>
         )}
 
-        <div className="px-8 py-7 space-y-5">
+        <div className="px-4 md:px-8 py-5 md:py-7 space-y-5">
           {!invState.tierEligible && (
             <Card>
               <div className="flex items-start gap-4">
@@ -6133,7 +6310,7 @@
 
     if (loading) {
       return (
-        <div className="px-8 py-7">
+        <div className="px-4 md:px-8 py-5 md:py-7">
           <TopBar breadcrumb="Chatbot" title="Chatbot Preview" subtitle="Consumer conversations with your chatbot." />
           <div className="text-ink-soft text-sm mt-6">Loading conversations…</div>
         </div>
@@ -6141,7 +6318,7 @@
     }
     if (!state) {
       return (
-        <div className="px-8 py-7">
+        <div className="px-4 md:px-8 py-5 md:py-7">
           <TopBar breadcrumb="Chatbot" title="Chatbot Preview" subtitle="Consumer conversations with your chatbot." />
           <Card className="mt-6">
             <div className="text-rose-700 text-sm">{error || 'Chatbot endpoint returned no data.'}</div>
@@ -6185,13 +6362,13 @@
         />
 
         {error && (
-          <div className="mx-8 mt-3 px-4 py-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-sm flex items-center justify-between">
+          <div className="mx-4 md:mx-8 mt-3 px-4 py-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-sm flex items-center justify-between">
             <span>{error}</span>
             <button className="text-rose-600 hover:text-rose-800" onClick={() => setError(null)}><Icon name="x" size={14} /></button>
           </div>
         )}
 
-        <div className="px-8 py-7 space-y-5">
+        <div className="px-4 md:px-8 py-5 md:py-7 space-y-5">
           {/* Day-1 empty state */}
           {!state.hasAnyConversation ? (
             <Card>
@@ -6753,8 +6930,8 @@
           subtitle={titles[tab].subtitle}
           right={<Pill color="violet">Account #{String(business.id || 0).padStart(4, '0')}</Pill>}
         />
-        <div className="px-8 pt-2"><TabBar tabs={tabs} value={tab} onChange={setTab} /></div>
-        <div className="px-8 py-7 space-y-5">
+        <div className="px-4 md:px-8 pt-2"><TabBar tabs={tabs} value={tab} onChange={setTab} /></div>
+        <div className="px-4 md:px-8 py-5 md:py-7 space-y-5">
           {tab === 'account' && (
             <div className="space-y-5 fade-in">
               {/* Plan + Publisher partner row */}
@@ -7479,7 +7656,7 @@ fetch('${location.origin}/api/chatbot/ingest', {
     render() {
       if (!this.state.error) return this.props.children;
       return (
-        <div className="px-8 py-10 max-w-2xl">
+        <div className="px-4 md:px-8 py-10 max-w-2xl">
           <div role="alert" className="px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-bad">
             <div className="font-semibold">This screen hit an error.</div>
             <div className="mt-1 text-ink-soft">Other tabs still work. Reloading usually clears it; if not, let your Amplafai contact know. ({String(this.state.error?.message || this.state.error)})</div>
@@ -7573,7 +7750,7 @@ fetch('${location.origin}/api/chatbot/ingest', {
         <div key={i} className="flex flex-col sm:flex-row gap-2 sm:items-start">
           <input aria-label={`${addLabel} ${i + 1} name`} className={`sm:w-52 shrink-0 ${FIELD_CLS}`} value={it.label} placeholder={labelPlaceholder}
             onChange={e => onChange(items.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} />
-          <textarea aria-label={`${addLabel} ${i + 1} detail`} rows={2} className={`flex-1 min-w-0 ${FIELD_CLS}`} value={it.detail} placeholder={detailPlaceholder}
+          <textarea aria-label={`${addLabel} ${i + 1} detail`} rows={3} className={`flex-1 min-w-0 ${FIELD_CLS}`} value={it.detail} placeholder={detailPlaceholder}
             onChange={e => onChange(items.map((x, j) => j === i ? { ...x, detail: e.target.value } : x))} />
           <button type="button" aria-label={`Remove ${it.label || 'item'}`}
             className="self-end sm:self-center p-2 rounded-lg text-ink-faint hover:text-bad hover:bg-red-50"
@@ -7959,7 +8136,7 @@ fetch('${location.origin}/api/chatbot/ingest', {
   // Shown to teammates whose role can't change anything. The server refuses
   // their edits anyway (403 with a plain-English reason); this says so first.
   const ViewOnlyNotice = ({ role }) => (
-    <div role="status" className="mx-auto max-w-[1600px] px-8 pt-4">
+    <div role="status" className="mx-auto max-w-[1600px] px-4 md:px-8 pt-4">
       <div className="px-4 py-2.5 rounded-lg bg-surface-card border border-surface-edge text-sm text-ink-soft flex items-center gap-2">
         <Icon name="eye" size={15} strokeWidth={2} className="shrink-0" />
         <span><span className="font-medium text-ink">View-only access{role ? ` (${role})` : ''}.</span> You can look around, but posts, replies, budgets, and settings can only be changed by the owner or an editor.</span>
@@ -7969,7 +8146,7 @@ fetch('${location.origin}/api/chatbot/ingest', {
 
   // The 30-day deletion clock is running (set from the admin console).
   const DeletionNotice = ({ due }) => (
-    <div role="alert" className="mx-auto max-w-[1600px] px-8 pt-4">
+    <div role="alert" className="mx-auto max-w-[1600px] px-4 md:px-8 pt-4">
       <div className="px-4 py-2.5 rounded-lg bg-red-50 border border-red-200 text-sm text-bad flex items-center gap-2">
         <Icon name="alert" size={15} strokeWidth={2} className="shrink-0" />
         <span><span className="font-medium">This account is scheduled for deletion on {new Date(due + 'Z').toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}.</span> Everything here is erased that day. To keep it, contact Amplafai before then; to keep a copy, use Settings → Download your data.</span>
@@ -8089,6 +8266,40 @@ fetch('${location.origin}/api/chatbot/ingest', {
     );
   };
 
+  // Phones: the four things owners do most sit in a bottom bar; everything
+  // else is one tap away under More (the full sidebar as a drawer).
+  const MOBILE_TABS = [
+    { id: 'home',      label: 'Home',      icon: 'home' },
+    { id: 'approvals', label: 'Approvals', icon: 'inbox' },
+    { id: 'compose',   label: 'Compose',   icon: 'sparkles' },
+    { id: 'calendar',  label: 'Calendar',  icon: 'calendar' },
+  ];
+  const MobileTabBar = ({ current, onNavigate, onMenu }) => {
+    const { approvals } = useDashboard();
+    const waiting = (approvals || []).length;
+    const inMore = !MOBILE_TABS.some(t => t.id === current);
+    const cls = (active) => `relative flex flex-col items-center justify-center gap-0.5 pt-2 pb-1.5 text-[11px] ${active ? 'text-brand-600 font-semibold' : 'text-ink-soft'}`;
+    return (
+      <nav aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-surface-edge grid grid-cols-5"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        {MOBILE_TABS.map(t => (
+          <button key={t.id} type="button" onClick={() => onNavigate(t.id)} aria-current={current === t.id ? 'page' : undefined}
+            className={cls(current === t.id)}>
+            <Icon name={t.icon} size={21} strokeWidth={current === t.id ? 2.3 : 1.9} />
+            <span>{t.label}</span>
+            {t.id === 'approvals' && waiting > 0 && (
+              <span className="absolute top-1 left-1/2 ml-1.5 min-w-[18px] text-center bg-accent text-brand-800 text-[10px] font-semibold rounded-full px-1 leading-[18px]">{waiting}</span>
+            )}
+          </button>
+        ))}
+        <button type="button" onClick={onMenu} aria-label="More: every section" className={cls(inMore)}>
+          <Icon name="moreh" size={21} strokeWidth={inMore ? 2.3 : 1.9} />
+          <span>More</span>
+        </button>
+      </nav>
+    );
+  };
+
   const App = () => {
     // Initial view honors ?tab=<view>: the LinkedIn OAuth callback returns to
     // /?tab=settings&li=<status>, and reminder emails link to /?tab=approvals.
@@ -8124,9 +8335,13 @@ fetch('${location.origin}/api/chatbot/ingest', {
     // the captured intent here and navigate to plan; MarketingPlanView reads it
     // and renders a banner to confirm-or-dismiss the add to customer language.
     const [pendingTrain, setPendingTrain] = useState(null);
+    const [menuOpen, setMenuOpen] = useState(false);
     const navigate = (nextView, nextScrollToId = null) => {
+      setMenuOpen(false);
       setView(nextView);
       setScrollToId(nextScrollToId);
+      // A new screen starts at its top (the page scrolls inside <main>).
+      try { document.querySelector('main')?.scrollTo({ top: 0 }); } catch {}
     };
     const handleTrain = (payload) => {
       setPendingTrain(payload);
@@ -8213,10 +8428,18 @@ fetch('${location.origin}/api/chatbot/ingest', {
     return (
       <DashboardMutateContext.Provider value={mutate}>
       <DashboardContext.Provider value={data}>
-      <div className="flex h-screen w-full bg-surface">
+      <NavContext.Provider value={navigate}>
+      <div className="flex h-dvh w-full bg-surface">
         {loadError && <BootstrapErrorBanner message={loadError} />}
-        <Sidebar current={view} onNavigate={(v) => navigate(v)} />
-        <main className={`flex-1 overflow-y-auto ${loadError ? 'pt-9' : ''}`}>
+        <Sidebar current={view} onNavigate={(v) => navigate(v)} className="hidden md:flex" />
+        {menuOpen && (
+          <div className="md:hidden fixed inset-0 z-50 flex" role="dialog" aria-modal="true" aria-label="Menu">
+            <div className="absolute inset-0 bg-ink/40 fade-in" onClick={() => setMenuOpen(false)} />
+            <Sidebar current={view} onNavigate={(v) => navigate(v)} onClose={() => setMenuOpen(false)}
+              className="relative flex w-72 max-w-[85vw] shadow-xl slide-in-left" />
+          </div>
+        )}
+        <main className={`flex-1 min-w-0 overflow-y-auto pb-20 md:pb-0 ${loadError ? 'pt-9' : ''}`}>
           {bootstrap?.access && !bootstrap.access.can?.publish_post && <ViewOnlyNotice role={bootstrap.access.role} />}
           {bootstrap?.business?.deletionDueAt && <DeletionNotice due={bootstrap.business.deletionDueAt} />}
           <ViewErrorBoundary view={view}>
@@ -8236,12 +8459,15 @@ fetch('${location.origin}/api/chatbot/ingest', {
           </ViewErrorBoundary>
         </main>
 
+        <MobileTabBar current={view} onNavigate={(v) => navigate(v)} onMenu={() => setMenuOpen(true)} />
+
         <TalkToHumanModal
           open={humanOpen}
           onClose={() => setHumanOpen(false)}
           business={business}
         />
       </div>
+      </NavContext.Provider>
       </DashboardContext.Provider>
       </DashboardMutateContext.Provider>
     );
