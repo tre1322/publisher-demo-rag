@@ -139,7 +139,7 @@
   // version your browser is showing (rendered in the sidebar footer).
   // Keep it ONE concise line: it renders in the sidebar, so a changelog here
   // leaks internal roadmap language to customers. History lives in git.
-  const BUILD_VERSION = '2026-10-03 · v55 — setup wizard: Claude drafts the voice brief and plans week one.';
+  const BUILD_VERSION = '2026-10-03 · v56 — approval reminders + Monday summary emails; links land on the right screen.';
 
   // ----------------------------------------------------------------
   // Live data context. App.useEffect fetches /api/bootstrap and provides
@@ -6391,6 +6391,21 @@
   /* ============================================================
      VIEW: SETTINGS
      ============================================================ */
+  // What each notification really does today (Phase 2). Stored rows carry
+  // older labels from the demo seed; these win so the copy stays honest.
+  const NOTIFICATION_LABELS = {
+    post_scheduled: 'Posts waiting for your approval',
+    weekly_digest: 'Weekly summary',
+  };
+  const NOTIFICATION_VIA = {
+    post_scheduled: 'Email · at most once a day, when new drafts are waiting',
+    weekly_digest: 'Email · Monday mornings: last week, this week, and a new draft',
+    neg_review: 'Not sent yet · starts once your Google reviews are connected',
+    ad_pacing: 'Not sent yet · starts with managed ad budgets',
+    knowledge_gap: 'Not sent yet',
+    competitive_intel: 'Not sent yet',
+  };
+
   const SettingsView = ({ onTalkToHuman, linkedinReturn }) => {
     const { business, stats, attention, weekRecap, posts, approvals, performance, reviews, marketingPlan, chat, settings, voiceBrief, access, onboarding } = useDashboard();
     const firstPublished = (posts || []).filter(p => p.status === 'published').sort((a, b) => (a.date || '').localeCompare(b.date || ''))[0];
@@ -7380,13 +7395,13 @@ fetch('${location.origin}/api/chatbot/ingest', {
                 </div>
               </Card>
               <Card>
-                <SectionHeader title="When to ping you" subtitle="Pick the moments worth interrupting your day. Email alerts are switching on in an upcoming update; your choices are saved and apply then." />
+                <SectionHeader title="When to ping you" subtitle="Emails go to the owners and editors of this business. Turn off anything you don't want." />
                 <ul className="space-y-3">
                   {notifs.map((n) => (
                     <li key={n.key} className={`flex items-center justify-between p-3 rounded-lg border ${n.muted ? 'border-surface-edge bg-surface opacity-60' : 'border-surface-edge bg-white'}`}>
                       <div>
-                        <div className={`text-sm font-medium ${n.muted ? 'text-ink-faint' : 'text-ink'}`}>{n.label}</div>
-                        <div className="text-xs text-ink-faint">{n.via}</div>
+                        <div className={`text-sm font-medium ${n.muted ? 'text-ink-faint' : 'text-ink'}`}>{NOTIFICATION_LABELS[n.key] || n.label}</div>
+                        <div className="text-xs text-ink-faint">{NOTIFICATION_VIA[n.key] || n.via}</div>
                       </div>
                       <button
                         type="button"

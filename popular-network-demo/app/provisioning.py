@@ -41,9 +41,9 @@ DEMO_ONLY_DETAIL = (
 
 DEFAULT_NOTIFICATIONS = [
     {"key": "neg_review",     "label": "New negative review (2★ or below)", "on": True, "via": "Email"},
-    {"key": "post_scheduled", "label": "Posts waiting for your approval",   "on": True, "via": "Email"},
+    {"key": "post_scheduled", "label": "Posts waiting for your approval",   "on": True, "via": "Email · at most once a day"},
     {"key": "ad_pacing",      "label": "Ad spend pacing alerts",            "on": True, "via": "Email"},
-    {"key": "weekly_digest",  "label": "Weekly summary",                    "on": True, "via": "Email · Mondays"},
+    {"key": "weekly_digest",  "label": "Weekly summary",                    "on": True, "via": "Email · Monday mornings"},
 ]
 
 

@@ -85,6 +85,12 @@
     const submitBtn = document.getElementById("submit-btn");
     const errorBanner = document.getElementById("error-banner");
 
+    // Same-site paths only: "/?tab=x" yes; "//evil.com" or "https://..." no.
+    function safeNext() {
+      const n = new URLSearchParams(window.location.search).get("next") || "";
+      return n.startsWith("/") && !n.startsWith("//") && !n.includes("\\") ? n : "/";
+    }
+
     function showError(msg) {
       errorBanner.textContent = msg;
       errorBanner.classList.remove("hidden");
@@ -118,8 +124,9 @@
         });
         if (resp.ok) {
           // Cookie was set by the server. Hard navigate so the gate-checked
-          // root route sees the cookie on the next request.
-          window.location = "/";
+          // root route sees the cookie on the next request. An email link
+          // that sent them here (?next=/?tab=approvals&b=7) wins over Home.
+          window.location = safeNext();
           return;
         }
         let detail = "Sign-in failed.";

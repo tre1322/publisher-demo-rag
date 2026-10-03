@@ -288,6 +288,39 @@ def invite(
                          created_by_user_id=user_id)
 
 
+class PreviewBody(BaseModel):
+    kind: str
+
+
+@router.post("/businesses/{business_id}/notifications/preview")
+def preview_notification(
+    business_id: int,
+    body: PreviewBody,
+    user_id: int = Depends(require_superuser),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Email the signed-in admin (not the client) what this business's
+    reminder or weekly summary looks like right now. No timing checks, no
+    state change, and no new agent suggestion is drafted into their queue."""
+    from datetime import datetime as _dt
+
+    from .. import notifications
+
+    biz = _get_business(db, business_id)
+    me = db.get(User, user_id)
+    if body.kind == "approvals":
+        res = notifications.send_approvals_reminder(db, biz, to=[me.email])
+        if res.get("reason") == "nothing_pending":
+            raise HTTPException(status_code=409, detail="Nothing is waiting for approval, so there's no reminder to send.")
+    elif body.kind == "weekly":
+        res = notifications.send_weekly_summary(db, biz, _dt.utcnow(), to=[me.email], suggest=False)
+        db.rollback()
+    else:
+        raise HTTPException(status_code=422, detail="kind must be 'approvals' or 'weekly'")
+    first = (res.get("results") or [{}])[0]
+    return {"ok": bool(res.get("sent")), "to": me.email, "reason": first.get("reason")}
+
+
 @router.post("/businesses/{business_id}/open")
 def open_business(business_id: int, request: Request, db: Session = Depends(get_db)) -> dict[str, Any]:
     _get_business(db, business_id)
