@@ -39,6 +39,7 @@ DELETION_GRACE = timedelta(days=30)
 # Never written into an export: credentials and token material.
 _SECRET_COLUMNS = frozenset({
     "password_hash", "token_hash", "key_hash", "oauth_token", "refresh_token", "oauth_state",
+    "posting_profile_key",
 })
 
 
