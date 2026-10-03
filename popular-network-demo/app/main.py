@@ -116,6 +116,11 @@ def _startup() -> None:
     # Phase 2: onboarding wizard progress.
     _add_col_if_missing("businesses", "onboarding_json", "JSON")
     _add_col_if_missing("settings", "notify_state_json", "JSON")
+    # Phase 3: billing mode per business; terms acceptance per person.
+    _add_col_if_missing("businesses", "billing_mode", "VARCHAR(16)")
+    _add_col_if_missing("users", "terms_version", "VARCHAR(32)")
+    _add_col_if_missing("users", "terms_accepted_at", "DATETIME")
+    _add_col_if_missing("users", "terms_accepted_ip", "VARCHAR(64)")
     inserted = seed_if_empty()
     if inserted:
         log.info("Seeded Quadd.ai (business_id=1) — Day-1 customer w/ voice brief loaded")

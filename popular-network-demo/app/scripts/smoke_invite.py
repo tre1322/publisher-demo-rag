@@ -109,11 +109,17 @@ def main() -> int:
             check("3. preview email matches", preview.get("email") == "newhire@example.com", str(preview))
             check("3. preview role matches", preview.get("role") == "editor", str(preview))
 
-            # 4. Claim (anon)
+            # 4. Claim (anon). Without agreeing to the terms → refused (Phase 3).
+            r = anon.post("/api/auth/invites/claim", json={
+                "token": raw_token, "password": "claim-pw-correct-horse", "display_name": "New Hire",
+            })
+            check("4a. claim without accepting the terms -> 422", r.status_code == 422
+                  and r.json().get("detail") == "terms_not_accepted", r.text)
             r = anon.post("/api/auth/invites/claim", json={
                 "token": raw_token,
                 "password": "claim-pw-correct-horse",
                 "display_name": "New Hire",
+                "accept_terms": True,
             })
             check("4. claim -> 200", r.status_code == 200, r.text)
             claim = r.json()
