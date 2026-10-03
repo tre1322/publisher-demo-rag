@@ -22,8 +22,9 @@ business id in the path.
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -37,6 +38,7 @@ from ..data_lifecycle import cancel_deletion, export_business, purge_business, s
 from ..db import get_db
 from ..models import Business, BusinessUser, Escalation, Invite, User
 from ..provisioning import create_business
+from .. import subscriptions
 from ..onboarding import get_state as get_onboarding_state
 from ..onboarding import save_state as save_onboarding_state
 from ..voice_brief import load_voice_brief, validate_brief
@@ -129,6 +131,7 @@ def _business_row(db: Session, biz: Business) -> dict[str, Any]:
         "hasVoiceBrief": load_voice_brief(biz) is not None,
         "voiceInterview": biz.voice_interview,
         "onboardingStatus": get_onboarding_state(biz)["status"],
+        "billing": _billing_row(db, biz),
         "members": [{"email": u.email, "role": bu.role, "active": u.is_active} for bu, u in members],
         "pendingInvites": [
             {"id": i.id, "email": i.email, "role": i.role, "expiresAt": i.expires_at.isoformat()}
@@ -137,6 +140,23 @@ def _business_row(db: Session, biz: Business) -> dict[str, Any]:
         "openRequests": [
             {"id": e.id, "message": e.message, "createdAt": e.created_at.isoformat()} for e in open_requests
         ],
+    }
+
+
+def _billing_row(db: Session, biz: Business) -> dict[str, Any]:
+    state = subscriptions.billing_state(db, biz)
+    sub = subscriptions.get_subscription(db, biz.id)
+    key = os.getenv("STRIPE_SECRET_KEY", "")
+    stripe_base = "https://dashboard.stripe.com/test" if key.startswith("sk_test") else "https://dashboard.stripe.com"
+    return {
+        "mode": state["mode"],
+        "state": state["state"],
+        "status": state["status"],
+        "configured": state["configured"],
+        "currentPeriodEnd": state["currentPeriodEnd"],
+        "cancelAtPeriodEnd": state["cancelAtPeriodEnd"],
+        "graceEndsAt": state["graceEndsAt"],
+        "stripeCustomerUrl": f"{stripe_base}/customers/{sub.stripe_customer_id}" if sub and sub.stripe_customer_id else None,
     }
 
 
@@ -152,6 +172,7 @@ class CreateBusinessBody(BaseModel):
     website: Optional[str] = Field(default=None, max_length=200)
     owner_email: Optional[EmailStr] = None
     demo: bool = False
+    billing_mode: Literal["stripe", "outside"] = "stripe"
 
 
 class UpdateBusinessBody(BaseModel):
@@ -163,6 +184,7 @@ class UpdateBusinessBody(BaseModel):
     tier: Optional[int] = None
     website: Optional[str] = Field(default=None, max_length=200)
     demo: Optional[bool] = None
+    billing_mode: Optional[Literal["stripe", "outside"]] = None
 
 
 class VoiceBriefBody(BaseModel):
@@ -211,6 +233,7 @@ def create(
         db,
         name=body.name, owner=body.owner, location=body.location, publisher=body.publisher,
         phone=body.phone, tier=body.tier, website=website, demo=body.demo,
+        billing_mode=body.billing_mode,
     )
     if website:
         biz.allowed_origins_json = _widget_origins(website)
@@ -232,9 +255,17 @@ def update(business_id: int, body: UpdateBusinessBody, db: Session = Depends(get
     if body.owner is not None:
         parts = body.owner.split()
         biz.owner_initials = ("".join(p[0] for p in parts[:2]) or "?").upper()
+    if body.billing_mode is not None:
+        biz.billing_mode = body.billing_mode
     if body.tier is not None:
         if body.tier not in TIER_PRICES:
             raise HTTPException(status_code=422, detail=f"plan tier must be one of {sorted(TIER_PRICES)}")
+        if body.tier != biz.tier and subscriptions.get_subscription(db, biz.id) is not None \
+                and (subscriptions.get_subscription(db, biz.id).status or "") not in ("", "canceled", "incomplete_expired"):
+            # A paying client's plan follows Stripe; changing it here would
+            # put the dashboard out of step with what they're charged.
+            raise HTTPException(status_code=409, detail="This client pays by card, so change the plan in Stripe "
+                                                        "(or have them use Manage billing).")
         biz.tier, biz.tier_label, biz.monthly_price = body.tier, TIER_LABELS[body.tier], TIER_PRICES[body.tier]
     if body.website is not None:
         if body.website.strip():

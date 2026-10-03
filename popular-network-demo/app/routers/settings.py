@@ -158,7 +158,8 @@ def create_escalation(
     }
 
 
-@router.get("/account/export", dependencies=[Depends(require_capability("manage_settings"))])
+# billing=False: the terms promise a copy of your data even after cancelling.
+@router.get("/account/export", dependencies=[Depends(require_capability("manage_settings", billing=False))])
 def export_my_data(business_id: int = Depends(get_tenant_id), db: Session = Depends(get_db)) -> JSONResponse:
     """The owner downloads a copy of everything Amplafai holds for their
     business (privacy policy: data on request). Owner-only."""

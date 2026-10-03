@@ -67,14 +67,55 @@ _CAPABILITY_VERB: dict[str, str] = {
 }
 
 
-def has_capability(request: Request, capability: Capability) -> bool:
-    """Superusers pass every check; everyone else goes through the matrix."""
+# Phase 3: what an unpaid (or not-yet-paid) business can still do. Looking,
+# paying, and taking a copy of its data (the terms promise export after
+# cancelling) never depend on payment.
+_BILLING_EXEMPT = frozenset({"view_dashboard", "manage_billing"})
+
+
+def billing_state(request: Request) -> Optional[dict]:
+    """The active business's billing state, looked up once per request."""
+    if hasattr(request.state, "_billing_state"):
+        return request.state._billing_state
+    state = None
+    bid = getattr(request.state, "business_id", None)
+    if bid is not None:
+        from .. import subscriptions
+        from ..db import SessionLocal
+        from ..models import Business
+
+        if subscriptions.is_configured():
+            with SessionLocal() as db:
+                biz = db.get(Business, bid)
+                if biz is not None and subscriptions.enforced(biz):
+                    state = subscriptions.billing_state(db, biz)
+    request.state._billing_state = state
+    return state
+
+
+def billing_blocks(request: Request) -> Optional[str]:
+    """Why billing stops changes right now (owner-facing), or None."""
+    from .. import subscriptions
+
+    state = billing_state(request)
+    if state and subscriptions.blocks_writes(state):
+        return subscriptions.blocked_message(state)
+    return None
+
+
+def has_capability(request: Request, capability: Capability, *, billing: bool = True) -> bool:
+    """Superusers pass every check; everyone else goes through the matrix,
+    then (unless billing=False) the business's payment status."""
     if getattr(request.state, "is_superuser", False):
         return True
-    return can(getattr(request.state, "user_role", None) or "", capability)
+    if not can(getattr(request.state, "user_role", None) or "", capability):
+        return False
+    if billing and capability not in _BILLING_EXEMPT and billing_blocks(request):
+        return False
+    return True
 
 
-def require_capability(capability: Capability):
+def require_capability(capability: Capability, *, billing: bool = True):
     """Route dependency: 403 unless the signed-in role has `capability`.
 
     Use it on the decorator so the handler signature stays unchanged:
@@ -83,8 +124,11 @@ def require_capability(capability: Capability):
     """
 
     def _checker(request: Request) -> None:
-        if has_capability(request, capability):
+        if has_capability(request, capability, billing=billing):
             return
+        if has_capability(request, capability, billing=False):
+            # The role allows it; payment status doesn't (402 Payment Required).
+            raise HTTPException(status_code=402, detail=billing_blocks(request))
         role = getattr(request.state, "user_role", None) or "current"
         verb = _CAPABILITY_VERB.get(capability, "do that")
         raise HTTPException(

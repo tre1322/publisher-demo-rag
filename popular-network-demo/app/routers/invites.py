@@ -76,6 +76,8 @@ class ClaimRequest(BaseModel):
     token: str = Field(min_length=10, max_length=120)
     password: str = Field(min_length=8, max_length=128)
     display_name: Optional[str] = Field(default=None, max_length=120)
+    # Phase 3: the "I agree to the Terms of Service" box. Required.
+    accept_terms: bool = False
 
 
 # ---------- owner-side endpoints (auth + role-gated) ----------
@@ -257,6 +259,8 @@ def claim_invite_public(
     inv = _lookup_invite(db, body.token)
     if inv is None:
         raise HTTPException(404, "invite_not_found_or_invalid")
+    if not body.accept_terms:
+        raise HTTPException(422, "terms_not_accepted")
 
     # Existing user with this email? Link rather than create. New user? Create.
     user = db.query(User).filter(User.email == inv.email).first()
@@ -288,6 +292,13 @@ def claim_invite_public(
             invited_by_user_id=inv.created_by_user_id,
         )
         db.add(bu)
+
+    # Record which terms they agreed to (Phase 3).
+    from ..subscriptions import TERMS_VERSION
+
+    user.terms_version = TERMS_VERSION
+    user.terms_accepted_at = datetime.utcnow()
+    user.terms_accepted_ip = request.client.host if request.client else None
 
     # Mark invite accepted.
     inv.accepted_at = datetime.utcnow()

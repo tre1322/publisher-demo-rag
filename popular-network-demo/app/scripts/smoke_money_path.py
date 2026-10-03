@@ -151,7 +151,8 @@ def _run(client, app) -> None:  # noqa: C901 — linear smoke script
     raw_token = r.json()["rawToken"]
     with TestClientFactory(app) as editor:
         r = editor.post("/api/auth/invites/claim", json={
-            "token": raw_token, "password": "editor-pw-correct-horse", "display_name": "Ed Itor"})
+            "token": raw_token, "password": "editor-pw-correct-horse", "display_name": "Ed Itor",
+            "accept_terms": True})
         check("B6 editor claims invite", r.status_code == 200, r.text)
         r = editor.put("/api/settings/ad-autonomy", json={"enabled": True})
         check("B7 editor cannot enable autonomous spend → 403", r.status_code == 403, r.text)

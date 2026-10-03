@@ -90,6 +90,7 @@ def create_business(
     tier: int = 2,
     website: Optional[str] = None,
     demo: bool = False,
+    billing_mode: str = "stripe",
 ) -> Business:
     """Create a business with a clean first day. Flushes; caller commits."""
     if tier not in TIER_PRICES:
@@ -113,6 +114,9 @@ def create_business(
         ase_certified=False,
         is_demo=demo,
         website=(website or "").strip() or None,
+        # Phase 3: "stripe" = the owner pays by card in the app; "outside" =
+        # billed some other way. Demo accounts never pay.
+        billing_mode="outside" if demo else billing_mode,
     )
     db.add(biz)
     db.flush()

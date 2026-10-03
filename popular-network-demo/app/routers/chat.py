@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 
 from ..agent.system_prompt import build_system_prompt
 from ..agent.tools import MAX_TOOL_ITERATIONS, TOOL_SCHEMAS, execute_tool
-from ..auth.deps import get_tenant_id, has_capability
+from ..auth.deps import billing_blocks, get_tenant_id, has_capability
 from ..db import get_db
 from ..models import ChatTurn
 
@@ -132,6 +132,12 @@ def take_turn(
     are raised before the generator starts so they surface as proper HTTP
     statuses rather than SSE errors.
     """
+    # Phase 3: an unpaid business can read its dashboard but not run the agent.
+    if not getattr(request.state, "is_superuser", False):
+        blocked = billing_blocks(request)
+        if blocked:
+            raise HTTPException(status_code=402, detail=blocked)
+
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise HTTPException(

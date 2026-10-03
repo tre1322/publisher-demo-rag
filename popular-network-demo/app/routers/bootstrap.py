@@ -14,7 +14,8 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from ..auth.deps import get_tenant_id, has_capability
+from .. import subscriptions
+from ..auth.deps import billing_blocks, get_tenant_id, has_capability
 from ..onboarding import get_state as get_onboarding_state
 from ..voice_brief import load_voice_brief
 from ..auth.permissions import ALL_CAPABILITIES
@@ -469,6 +470,7 @@ def get_bootstrap(
     )
 
     onboarding_state = get_onboarding_state(biz)
+    billing_state_payload = subscriptions.billing_state(db, biz)
     payload: dict[str, Any] = {
         "business": _business_payload(biz),
         # Who is looking. The server enforces every capability on its own;
@@ -529,12 +531,14 @@ def get_bootstrap(
         },
         # Phase F.2 — billing slim slice.
         "billing": {
-            "tier":              biz.tier,
             "tierLabel":         biz.tier_label,
             "monthlyPrice":      biz.monthly_price,
             "invoiceCount":      billing_invoice_count,
             "currentUsage":      usage_by_key,
-            "stripeEnabled":     False,
+            # Phase 3: payment state (state, status, tier, currentPeriodEnd,
+            # graceEndsAt, ...) from app/subscriptions.py.
+            **billing_state_payload,
+            "stripeEnabled":     billing_state_payload["enforced"],
         },
         # Phase F.3 — chatbot slim slice (Phase G polish: + hasAnyKey).
         "chatbot": {
@@ -553,6 +557,10 @@ def _access_payload(request: Request) -> dict[str, Any]:
         "role": role,
         "isSuperuser": bool(getattr(request.state, "is_superuser", False)),
         "can": {c: has_capability(request, c) for c in ALL_CAPABILITIES},
+        # What the role could do if payment weren't in the way, so the UI can
+        # tell "view-only teammate" apart from "unpaid business".
+        "canByRole": {c: has_capability(request, c, billing=False) for c in ALL_CAPABILITIES},
+        "billingBlocked": billing_blocks(request),
     }
 
 

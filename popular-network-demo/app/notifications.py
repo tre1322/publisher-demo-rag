@@ -105,6 +105,14 @@ def _eligible(biz: Business) -> bool:
     return not biz.is_demo and biz.deletion_due_at is None
 
 
+def _unpaid(db: Session, biz: Business) -> bool:
+    """Phase 3: no reminders or Claude-drafted suggestions for a business that
+    hasn't paid (or is past its grace period)."""
+    from . import subscriptions
+
+    return subscriptions.enforced(biz) and subscriptions.blocks_writes(subscriptions.billing_state(db, biz))
+
+
 # --------------------------------------------------------------------------- #
 # Posts waiting
 # --------------------------------------------------------------------------- #
@@ -262,7 +270,7 @@ def run_due(db: Session, now: Optional[datetime] = None) -> dict[str, list[int]]
         if not _eligible(biz):
             continue
         settings = db.get(SettingsRow, biz.id)
-        if settings is None or not recipients(db, biz.id):
+        if settings is None or not recipients(db, biz.id) or _unpaid(db, biz):
             continue
         try:
             state = _state(settings)

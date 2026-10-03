@@ -94,7 +94,8 @@ def main() -> None:
 
 def _claim(client, invite, password):
     token = invite["claimUrl"].split("token=", 1)[1]
-    r = client.post("/api/auth/invites/claim", json={"token": token, "password": password, "display_name": "x"})
+    r = client.post("/api/auth/invites/claim", json={"token": token, "password": password, "display_name": "x",
+                                                         "accept_terms": True})
     check(f"claim {invite['email']}", r.status_code == 200, r.text)
 
 

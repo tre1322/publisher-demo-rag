@@ -149,7 +149,8 @@ STATE: dict = {}
 
 def _claim(client, invite, password, name):
     token = invite["claimUrl"].split("token=", 1)[1]
-    r = client.post("/api/auth/invites/claim", json={"token": token, "password": password, "display_name": name})
+    r = client.post("/api/auth/invites/claim", json={"token": token, "password": password, "display_name": name,
+                                                         "accept_terms": True})
     check(f"claim invite for {invite['email']}", r.status_code == 200, r.text)
 
 

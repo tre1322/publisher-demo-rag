@@ -189,7 +189,8 @@ def _run(app, admin, outsider, owner) -> None:  # noqa: C901 — linear smoke
     # ---- D. invited owner signs in ----------------------------------------------
     print("\nD. the owner claims the invite")
     token = inv["claimUrl"].split("token=", 1)[1]
-    r = owner.post("/api/auth/invites/claim", json={"token": token, "password": OWNER_PW, "display_name": "Pat Smith"})
+    r = owner.post("/api/auth/invites/claim", json={"token": token, "password": OWNER_PW, "display_name": "Pat Smith",
+                                                         "accept_terms": True})
     check("D1 claim → 200", r.status_code == 200, r.text)
     boot = owner.get("/api/bootstrap").json()
     check("D2 owner lands on Smith Hardware", boot["business"]["id"] == biz_id, boot["business"]["name"])

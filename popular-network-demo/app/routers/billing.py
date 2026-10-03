@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -176,8 +176,14 @@ def get_billing(business_id: int = Depends(get_tenant_id), db: Session = Depends
         "invoices":        [invoice_payload(i) for i in invoices],
         "paidToDateCents": paid_to_date_cents,
         "pendingTierChange": tier_change_payload(pending) if pending else None,
-        "stripeEnabled":   False,  # mirrors BILLING_ENABLED=false in prod
+        "stripeEnabled":   _stripe_on(biz),
     }
+
+
+def _stripe_on(biz: Business) -> bool:
+    from .. import subscriptions
+
+    return subscriptions.enforced(biz)
 
 
 @router.get("/billing/usage")
@@ -243,3 +249,90 @@ def request_tier_change(
     db.commit()
     db.refresh(req)
     return tier_change_payload(req)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — Stripe (see app/subscriptions.py)
+# ---------------------------------------------------------------------------
+
+class CheckoutBody(BaseModel):
+    tier: int = Field(ge=1, le=4)
+
+
+def _base(request: Request) -> str:
+    from .. import subscriptions
+
+    return subscriptions.base_url(str(request.base_url))
+
+
+@router.get("/billing/status")
+def billing_status(business_id: int = Depends(get_tenant_id), db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Payment state for the dashboard (also in /api/bootstrap as `billing`)."""
+    from .. import subscriptions
+
+    biz = db.get(Business, business_id)
+    if biz is None:
+        raise HTTPException(status_code=404, detail="business not found")
+    return subscriptions.billing_state(db, biz)
+
+
+@router.post("/billing/checkout", dependencies=[Depends(require_capability("manage_billing"))])
+def billing_checkout(body: CheckoutBody, request: Request, business_id: int = Depends(get_tenant_id),
+                     db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Open Stripe Checkout for a plan. The plan starts only when Stripe's
+    webhook confirms payment, never because this page was visited."""
+    from .. import subscriptions
+    from ..models import User
+
+    if not subscriptions.is_configured():
+        raise HTTPException(status_code=503, detail="Card payments aren't switched on yet. Tell Amplafai.")
+    biz = db.get(Business, business_id)
+    if biz is None:
+        raise HTTPException(status_code=404, detail="business not found")
+    user = db.get(User, getattr(request.state, "user_id", None) or 0)
+    try:
+        url = subscriptions.start_checkout(db, biz, tier=body.tier, email=user.email if user else "",
+                                           base=_base(request))
+    except subscriptions.BillingError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
+    return {"ok": True, "url": url}
+
+
+@router.post("/billing/portal", dependencies=[Depends(require_capability("manage_billing"))])
+def billing_portal(request: Request, business_id: int = Depends(get_tenant_id),
+                   db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Stripe's customer portal: card, invoices, changing plan, cancelling."""
+    from .. import subscriptions
+
+    if not subscriptions.is_configured():
+        raise HTTPException(status_code=503, detail="Card payments aren't switched on yet. Tell Amplafai.")
+    biz = db.get(Business, business_id)
+    if biz is None:
+        raise HTTPException(status_code=404, detail="business not found")
+    try:
+        return {"ok": True, "url": subscriptions.portal_url(db, biz, base=_base(request))}
+    except subscriptions.BillingError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
+
+
+@router.post("/billing/webhook")
+async def stripe_webhook(request: Request, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Stripe → us. No session cookie (exempt in the auth middleware); the
+    Stripe-Signature header, checked against STRIPE_WEBHOOK_SECRET, is the auth."""
+    import json
+    import os
+
+    import stripe
+
+    from .. import subscriptions
+
+    secret = os.getenv("STRIPE_WEBHOOK_SECRET")
+    if not secret:
+        raise HTTPException(status_code=503, detail="webhook not configured")
+    payload = await request.body()
+    try:
+        stripe.Webhook.construct_event(payload, request.headers.get("stripe-signature"), secret)
+    except (ValueError, stripe.SignatureVerificationError):
+        raise HTTPException(status_code=400, detail="bad signature") from None
+    summary = subscriptions.apply_event(db, json.loads(payload))
+    return {"received": True, "action": summary.get("action")}

@@ -64,6 +64,10 @@ class Business(Base):
     # the deletion once deletion_due_at passes. NULL = not scheduled.
     deletion_requested_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     deletion_due_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # Phase 3. How this business pays: "stripe" (card in the app; access
+    # follows payment) or "outside" (billed outside the app, or the demo).
+    # NULL = "outside" for rows that predate billing.
+    billing_mode: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     # Phase H.2.2 — widget CORS allowlist. JSON list of allowed origins
     # (e.g. ["https://cottonwoodcountycitizen.com", "https://staging.example.com"]).
     # When null/empty, /api/widget/chat accepts any Origin (v1 default — most
@@ -731,6 +735,11 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)  # deactivate = soft-disable login without deleting history
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # Phase 3. Which Terms of Service this person agreed to (the terms'
+    # effective date, e.g. "2026-06-01"), when, and from where.
+    terms_version: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    terms_accepted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    terms_accepted_ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
 
 class UserSession(Base):
@@ -826,3 +835,63 @@ class PasswordReset(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     requested_ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — billing (Stripe)
+# ---------------------------------------------------------------------------
+# Stripe is the source of truth for whether a business has paid. The signed
+# webhook (app/subscriptions.py apply_event) is the only writer of these rows;
+# checkout success pages never mark anything paid on their own.
+
+
+class Subscription(Base):
+    """A business's Stripe subscription. One current row per business."""
+
+    __tablename__ = "subscriptions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"), index=True, unique=True)
+    stripe_customer_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    stripe_subscription_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, unique=True)
+    tier: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Stripe's own status words: incomplete, incomplete_expired, trialing,
+    # active, past_due, unpaid, canceled, paused. NULL = never subscribed.
+    status: Mapped[Optional[str]] = mapped_column(String(24), nullable=True)
+    current_period_end: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False)
+    canceled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # First failed payment of the current unpaid stretch; the 7-day grace
+    # period counts from here. Cleared when a payment succeeds.
+    past_due_since: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # Unix time of the newest Stripe event applied, so a delayed older event
+    # can't roll the status back.
+    last_event_created: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PlanChange(Base):
+    """Audit trail: every tier or status change, and what caused it."""
+
+    __tablename__ = "plan_changes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"), index=True)
+    from_tier: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    to_tier: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    from_status: Mapped[Optional[str]] = mapped_column(String(24), nullable=True)
+    to_status: Mapped[Optional[str]] = mapped_column(String(24), nullable=True)
+    source: Mapped[str] = mapped_column(String(120))  # e.g. "stripe:evt_123 customer.subscription.updated"
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class StripeEvent(Base):
+    """Stripe event ids already applied. Stripe retries deliveries; this makes
+    each event count once."""
+
+    __tablename__ = "stripe_events"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    type: Mapped[str] = mapped_column(String(80))
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

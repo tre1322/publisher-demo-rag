@@ -64,6 +64,11 @@
             placeholder="At least 8 characters"
           />
         </div>
+        <label for="accept-terms" class="flex items-start gap-2 text-sm text-slate-700">
+          <input type="checkbox" id="accept-terms" disabled class="mt-0.5 h-4 w-4 rounded border-slate-300" />
+          <span>I agree to the <a href="https://amplafai.com/terms" target="_blank" rel="noopener" class="underline">Terms of Service</a>
+            and <a href="https://amplafai.com/privacy" target="_blank" rel="noopener" class="underline">Privacy Policy</a>.</span>
+        </label>
 
         <button
           type="submit" id="submit-btn" disabled
@@ -88,6 +93,8 @@
     const displayName = document.getElementById("display-name");
     const password = document.getElementById("password");
     const submitBtn = document.getElementById("submit-btn");
+    const acceptTerms = document.getElementById("accept-terms");
+    let loaded = false;
 
     function showError(msg) {
       errorBanner.textContent = msg;
@@ -100,12 +107,16 @@
     function setEnabled(on) {
       displayName.disabled = !on;
       password.disabled = !on;
-      submitBtn.disabled = !on;
+      acceptTerms.disabled = !on;
+      // Disabled-visible: the button waits for the terms box, too.
+      submitBtn.disabled = !on || !acceptTerms.checked;
     }
+    acceptTerms.addEventListener("change", () => setEnabled(loaded));
 
     const ERROR_COPY = {
       invite_not_found_or_invalid: "This invite link is invalid, expired, or already used. Ask your publisher to resend.",
       email_already_registered_please_login: "Looks like you already have an account with this email. Sign in instead.",
+      terms_not_accepted: "Tick the box to agree to the Terms of Service before creating your account.",
     };
 
     function getToken() {
@@ -136,6 +147,7 @@
           escapeHtml(data.role) + "</strong>" +
           (data.publisher ? " via " + escapeHtml(data.publisher) : "") + ".";
         emailDisplay.value = data.email;
+        loaded = true;
         setEnabled(true);
       } catch (err) {
         showError("Network error loading invite. Try refreshing.");
@@ -159,6 +171,7 @@
             token: getToken(),
             password: password.value,
             display_name: displayName.value.trim() || null,
+            accept_terms: acceptTerms.checked,
           }),
         });
         if (r.ok) { window.location = "/"; return; }
