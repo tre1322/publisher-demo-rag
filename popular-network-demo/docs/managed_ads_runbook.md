@@ -124,11 +124,15 @@ links their ad account (step B).
 
 ### A. Switch it on (Trevor, once Meta approves the app)
 
-Prerequisites: a Business-type Meta app owned by Amplafai's business, Business Verification, and
-App Review approval for advanced access to `ads_management` and `ads_read` (Meta requires that for
+**Amplafai's Meta business is the Citizen Publishing business portfolio** (Trevor's decision, Oct 3,
+2026). Wherever this runbook says "Amplafai's business" for Meta, it means that portfolio, and that is
+the name clients see when they add Amplafai as a partner, so tell them to expect it.
+
+Prerequisites: a Business-type Meta app (named Amplafai) owned by the Citizen Publishing portfolio,
+Business Verification of Citizen Publishing, and App Review approval for advanced access to `ads_management` and `ads_read` (Meta requires that for
 managing other businesses' ad accounts).
 
-1. **System user.** In Amplafai's Business settings → Users → System users, add an Admin system user
+1. **System user.** In the Citizen Publishing portfolio's Business settings → Users → System users, add an Admin system user
    (e.g. "Amplafai server"). Add the app to it (Assign assets → Apps).
 2. **Token.** Generate a token for that system user and the Amplafai app with: `ads_management`,
    `ads_read`, `business_management`, `pages_read_engagement`, `pages_show_list`, `pages_manage_ads`.
@@ -151,7 +155,8 @@ the test campaign) counts toward that.
 
 ### B. Link each client (Amplafai staff)
 
-1. The client adds Amplafai's business as a **partner** on their ad account (permission to manage
+1. The client adds Amplafai's Meta business (it appears as **Citizen Publishing**; give them its business
+   ID from Business settings → Business info) as a **partner** on their ad account (permission to manage
    campaigns) **and on their Facebook Page** (permission to create ads), as in section 1.
 2. In Amplafai's Business settings, give the "Amplafai server" system user access to the client's
    shared ad account and Page. *(Meta's docs describe assigning a system user to an ad account; that
